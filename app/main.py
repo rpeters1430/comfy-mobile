@@ -193,6 +193,8 @@ class Job(BaseModel):
     models: dict[str,str] = Field(default_factory=dict,max_length=8)
     loras: dict[str,LoraChoice] = Field(default_factory=dict,max_length=16)
     extra_loras: list[LoraChoice] = Field(default_factory=list,max_length=MAX_EXTRA_LORAS)
+    sampling: dict[str,dict[str,str|float]] = Field(default_factory=dict,max_length=8)
+    size: dict[str,int] | None = None
 
 @app.post('/api/jobs')
 async def jobs(job: Job, authorization: str | None = Header(default=None)):
@@ -213,7 +215,7 @@ async def jobs(job: Job, authorization: str | None = Header(default=None)):
         raise HTTPException(400, {'message': 'Workflow cannot run', 'errors': validation['errors'], 'warnings': validation['warnings']})
     # Only the {{prompt}} placeholder is replaced, so negative prompts and instructions are never rewritten.
     try:
-        apply_controls(graph,info,job.models,{k:v.model_dump() for k,v in job.loras.items()},[v.model_dump() for v in job.extra_loras])
+        apply_controls(graph,info,job.models,{k:v.model_dump() for k,v in job.loras.items()},[v.model_dump() for v in job.extra_loras],job.sampling,job.size)
         applied=apply_job(graph,job.prompt,job.images,job.seed)
     except (ControlError, JobError) as exc:
         raise HTTPException(400,str(exc)) from exc

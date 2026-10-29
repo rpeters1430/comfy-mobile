@@ -62,6 +62,10 @@ details.controls summary small { display: block; color: var(--muted); overflow: 
 .lora input[type=range] { flex: 1; padding: 0; margin: 0; border: 0; background: none; }
 .lora output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
 .lora.off select, .lora.off input[type=range], .lora.off output { opacity: .45; }
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.settings-grid label { margin-top: 6px; }
+.aspects { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.aspects .chip { padding: 8px 12px; }
 
 .slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 6px; }
 .slot { position: relative; aspect-ratio: 1; border: 1px dashed #566078; border-radius: 12px; display: grid; place-items: center; overflow: hidden; background: #111827; color: var(--muted); text-align: center; font-size: 14px; padding: 8px; }
@@ -135,7 +139,7 @@ nav button[aria-current="page"] { color: white; background: #2a3247; }
       </div>
       <p id="no-prompt" class="status hide">This workflow writes its own prompt from your image.</p>
       <details class="controls hide" id="controls-box">
-        <summary>Models &amp; LoRAs<small id="controls-summary"></small></summary>
+        <summary>Models &amp; settings<small id="controls-summary"></small></summary>
         <div id="controls"></div>
       </details>
       <div class="row" style="align-items:flex-end">
@@ -311,9 +315,9 @@ function renderWorkflows() {
   $('unavailable').replaceChildren(...off.map(workflowButton));
 }
 
-document.querySelectorAll('.chip').forEach(c => c.onclick = () => {
+document.querySelectorAll('.chip[data-kind]').forEach(c => c.onclick = () => {
   filter = c.dataset.kind;
-  document.querySelectorAll('.chip').forEach(x => x.setAttribute('aria-pressed', String(x === c)));
+  document.querySelectorAll('.chip[data-kind]').forEach(x => x.setAttribute('aria-pressed', String(x === c)));
   renderWorkflows();
 });
 
@@ -449,18 +453,27 @@ async function loadControls(wf) {
   try {
     found = (await api('/workflows/' + encodeURIComponent(wf.id).replace(/%2F/g, '/') + '/validate')).controls;
   } catch (e) { return; }
-  if (selected !== wf || !found || (!found.models.length && !found.loras.length)) return;
+  if (selected !== wf || !found || (!found.models.length && !found.loras.length && !found.samplers.length && !found.size)) return;
   controls = found;
   // Restore the last choices, keeping only files ComfyUI still has.
   const saved = savedControls()[wf.id] || {};
   const loraOk = name => controls.lora_options.includes(name);
-  choices = { models: {}, loras: {}, extra: [] };
+  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '' };
   for (const m of controls.models) choices.models[m.node] = m.options.includes(saved.models?.[m.node]) ? saved.models[m.node] : m.value;
   for (const l of controls.loras) {
     const s = saved.loras?.[l.node];
     choices.loras[l.node] = s && loraOk(s.name) ? s : { name: l.value, strength: l.strength, on: true };
   }
   if (controls.can_add_lora) choices.extra = (saved.extra || []).filter(x => loraOk(x.name)).slice(0, MAX_EXTRA_LORAS);
+  for (const smp of controls.samplers) {
+    const values = { ...smp.values };
+    for (const [field, value] of Object.entries(saved.sampling?.[smp.node] || {}))
+      if (field in values && typeof value === typeof values[field] &&
+          (field === 'sampler_name' ? controls.sampler_options.includes(value) : field === 'scheduler' ? controls.scheduler_options.includes(value) : true))
+        values[field] = value;
+    choices.sampling[smp.node] = values;
+  }
+  if (controls.size && ASPECTS.includes(saved.aspect)) choices.aspect = saved.aspect;
   $('controls-box').classList.remove('hide');
   renderControls();
 }
@@ -507,22 +520,78 @@ function renderControls() {
     rows.push(el('div', { class: 'lora' }, el('div', { class: 'row between' }, el('label', { style: 'margin:0' }, 'Added LoRA'), remove),
       select, el('div', { class: 'row' }, ...strengthRow(x, changed))));
   });
-  const buttons = el('div', { class: 'row', style: 'margin-top:10px' });
   if (controls.can_add_lora && choices.extra.length < MAX_EXTRA_LORAS && controls.lora_options.length) {
-    const add = el('button', { class: 'ghost', type: 'button' }, '+ Add LoRA');
+    const add = el('button', { class: 'ghost', type: 'button', style: 'margin-top:10px' }, '+ Add LoRA');
     add.onclick = () => {
       const pick = controls.lora_options.find(o => folderOf(o) === loraFamilies[0]) || controls.lora_options[0];
       choices.extra.push({ name: pick, strength: 1 });
       changed(); renderControls();
     };
-    buttons.append(add);
+    rows.push(add);
   }
-  const reset = el('button', { class: 'ghost', type: 'button' }, 'Reset to workflow');
+  if (controls.size) rows.push(sizeSection(changed));
+  const bases = controls.samplers.filter(c => c.role === 'base').length;
+  controls.samplers.forEach((smp, i) => rows.push(samplerSection(smp,
+    smp.role === 'refine' ? 'Hi-res / refine pass' : bases > 1 ? `Sampler ${i + 1}` : 'Sampler', changed)));
+  const reset = el('button', { class: 'ghost', type: 'button', style: 'margin-top:12px' }, 'Reset to workflow');
   reset.onclick = () => { const all = savedControls(); delete all[selected.id]; store(CONTROLS_KEY, JSON.stringify(all)); loadControls(selected); };
-  buttons.append(reset);
-  rows.push(buttons);
+  rows.push(reset);
   $('controls').replaceChildren(...rows);
   renderSummary();
+}
+
+const ASPECTS = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9'];
+
+// Same pixel count as the workflow's own size (what the model was tuned for), in multiples of 64.
+function aspectSize(aspect, base) {
+  const [a, b] = aspect.split(':').map(Number), area = base.width * base.height;
+  const width = Math.max(256, Math.round(Math.sqrt(area * a / b) / 64) * 64);
+  return { width, height: Math.max(256, Math.round(width * b / a / 64) * 64) };
+}
+function chosenSize(c) { return controls?.size && c?.aspect ? aspectSize(c.aspect, controls.size) : controls?.size || null; }
+
+function sizeSection(changed) {
+  const note = el('small', { class: 'status' });
+  const chips = ['', ...ASPECTS].map(aspect => {
+    const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(choices.aspect === aspect) }, aspect || 'Original');
+    chip.onclick = () => {
+      choices.aspect = aspect;
+      chips.forEach(c => c.setAttribute('aria-pressed', String(c === chip)));
+      show(); changed();
+    };
+    return chip;
+  });
+  const show = () => { const size = chosenSize(choices); note.textContent = `${size.width} × ${size.height}`; };
+  show();
+  return el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, 'Shape'), el('div', { class: 'aspects' }, chips), note);
+}
+
+function samplerSection(smp, title, changed) {
+  const values = choices.sampling[smp.node], fields = [];
+  const number = (field, label, step, min, max) => {
+    const input = el('input', { type: 'number', inputmode: 'decimal', step, min, max, 'aria-label': label });
+    input.value = values[field];
+    input.onchange = () => {
+      const v = Number(input.value);
+      if (input.value === '' || !Number.isFinite(v) || v < min || v > max) { input.value = values[field]; return; }
+      values[field] = field === 'steps' ? Math.round(v) : v;
+      input.value = values[field];
+      changed();
+    };
+    return el('div', {}, el('label', {}, label), input);
+  };
+  const pick = (field, label, options) => {
+    const select = el('select', { 'aria-label': label }, options.map(o => new Option(o, o)));
+    select.value = values[field];
+    select.onchange = () => { values[field] = select.value; changed(); };
+    return el('div', {}, el('label', {}, label), select);
+  };
+  if ('steps' in values) fields.push(number('steps', 'Steps', 1, 1, 150));
+  if ('cfg' in values) fields.push(number('cfg', 'CFG', 'any', 0, 30));
+  if ('sampler_name' in values && controls.sampler_options.length) fields.push(pick('sampler_name', 'Sampler', controls.sampler_options));
+  if ('scheduler' in values && controls.scheduler_options.length) fields.push(pick('scheduler', 'Scheduler', controls.scheduler_options));
+  if ('denoise' in values) fields.push(number('denoise', 'Denoise', 'any', 0.01, 1));
+  return el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, title), el('div', { class: 'settings-grid' }, fields));
 }
 
 function controlsText(c) {
@@ -530,6 +599,11 @@ function controlsText(c) {
   const parts = Object.values(c.models || {}).map(fileLabel);
   const loras = [...Object.values(c.loras || {}).filter(l => l.on), ...(c.extra || [])];
   if (loras.length) parts.push(loras.map(l => `${fileLabel(l.name)} ${Number(l.strength).toFixed(2)}`).join(', '));
+  const size = chosenSize(c);
+  if (size && c.aspect) parts.push(`${size.width}×${size.height}`);
+  const base = controls?.samplers.find(smp => smp.role === 'base');
+  const v = base && c.sampling?.[base.node];
+  if (v && 'steps' in v) parts.push(`${v.steps} steps` + ('cfg' in v ? ` · CFG ${v.cfg}` : ''));
   return parts.join(' · ');
 }
 function renderSummary() { $('controls-summary').textContent = controlsText(choices); }
@@ -543,7 +617,14 @@ function controlsPayload(c) {
     const x = c.loras[l.node], strength = x.on ? x.strength : 0;
     if (x.name !== l.value || strength !== l.strength) loras[l.node] = { name: x.name, strength };
   }
-  return { models, loras, extra_loras: c.extra.map(x => ({ name: x.name, strength: x.strength })) };
+  const sampling = {};
+  for (const smp of controls.samplers) {
+    const changes = Object.fromEntries(Object.entries(c.sampling?.[smp.node] || {}).filter(([f, v]) => v !== smp.values[f]));
+    if (Object.keys(changes).length) sampling[smp.node] = changes;
+  }
+  const size = c.aspect ? chosenSize(c) : null;
+  return { models, loras, extra_loras: c.extra.map(x => ({ name: x.name, strength: x.strength })), sampling,
+    ...(size && (size.width !== controls.size.width || size.height !== controls.size.height) ? { size } : {}) };
 }
 
 function randomSeed() { return Math.floor(Math.random() * 2 ** 48); }
