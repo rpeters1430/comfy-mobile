@@ -98,7 +98,7 @@ Periodic polling, recording remote deletions as archived instead of deleting, ke
 | ✅ Saved prompts per workflow (on the device for now; NAS-side presets later) | High | S |
 | ✅ PWA share target: share a photo from the gallery straight into an image-to-video or edit workflow | High | M |
 | ✅ Notification when a job finishes while the app is backgrounded (true push when the app is closed still needs Web Push + VAPID) | High | M |
-| LoRA / checkpoint picker from `/object_info` lists | Medium | S |
+| ✅ Model and LoRA picker: swap the checkpoint/UNet, change or turn off the workflow's LoRAs, add up to 4 more (auto-detected, no `📱` titles needed) | Medium | S |
 | Show the auto-caption text produced by the captioning workflows, edit it, then run again | Medium | M |
 | ✅ PC status: online, VRAM in use, "free VRAM" button | Medium | S |
 | Wake-on-LAN for the PC from the NAS | Medium | S |
