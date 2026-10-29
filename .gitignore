@@ -7,3 +7,6 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# Local ComfyUI snapshots (machine-specific)
+fixtures/*.local.json
