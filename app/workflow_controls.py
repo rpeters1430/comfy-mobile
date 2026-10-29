@@ -1,5 +1,6 @@
-"""Per-run model and LoRA choices, found in a converted API graph so workflows need no editing."""
+"""Per-run model, LoRA, sampler and size choices, found in a converted API graph so workflows need no editing."""
 import math
+import re
 
 try:
     from app.workflow_conversion import _enum_options
@@ -10,6 +11,16 @@ MODEL_FIELDS = {"CheckpointLoaderSimple": "ckpt_name", "UNETLoader": "unet_name"
 LORA_LOADERS = ("LoraLoader", "LoraLoaderModelOnly")
 MAX_EXTRA_LORAS = 4
 MAX_STRENGTH = 5.0
+# Plain values the phone may change on each sampler-type node.
+SAMPLER_FIELDS = {
+    "KSampler": ("steps", "cfg", "sampler_name", "scheduler", "denoise"),
+    "KSamplerAdvanced": ("steps", "cfg", "sampler_name", "scheduler"),
+    "KSamplerSelect": ("sampler_name",),
+    "CFGGuider": ("cfg",),
+    "BasicScheduler": ("steps", "scheduler", "denoise"),
+}
+LIMITS = {"steps": (1, 150), "cfg": (0.0, 30.0), "denoise": (0.01, 1.0)}
+MAX_SIDE, MAX_PIXELS = 2048, 2048 * 2048
 
 
 class ControlError(ValueError):
@@ -40,6 +51,34 @@ def _lora_anchor(graph, models):
         current = loras[0]
 
 
+def _sampler_role(node):
+    """Full generation, or a later pass that only refines (hi-res fix, detailer)."""
+    inputs = node["inputs"]
+    denoise = inputs.get("denoise", 1)
+    partial = node["class_type"] == "KSamplerAdvanced" and (inputs.get("add_noise") == "disable" or inputs.get("start_at_step", 0) != 0)
+    return "refine" if partial or (isinstance(denoise, (int, float)) and denoise < 0.99) else "base"
+
+
+def _samplers(graph):
+    found = []
+    for node_id, node in graph.items():
+        fields = SAMPLER_FIELDS.get(node["class_type"], ())
+        values = {f: node["inputs"][f] for f in fields
+                  if f in node["inputs"] and not isinstance(node["inputs"][f], (list, dict, bool))}
+        if node["class_type"] == "KSampler" and _sampler_role(node) == "base":
+            values.pop("denoise", None)  # a full pass stays at 1; lowering it only makes sense for refiners
+        if values:
+            found.append({"node": node_id, "class": node["class_type"], "role": _sampler_role(node), "values": values})
+    return sorted(found, key=lambda c: (c["role"] != "base", c["node"]))
+
+
+def _latents(graph):
+    """Empty latent nodes with a plain size: the output size of text-to-image workflows."""
+    return [node_id for node_id, node in graph.items()
+            if re.fullmatch(r"Empty\w*LatentImage", node["class_type"])
+            and all(isinstance(node["inputs"].get(f), int) and not isinstance(node["inputs"].get(f), bool) for f in ("width", "height"))]
+
+
 def find_controls(graph: dict, object_info: dict) -> dict:
     models, loras = [], []
     for node_id, node in graph.items():
@@ -50,8 +89,13 @@ def find_controls(graph: dict, object_info: dict) -> dict:
         elif node["class_type"] in LORA_LOADERS and isinstance(node["inputs"].get("lora_name"), str):
             loras.append({"node": node_id, "value": node["inputs"]["lora_name"],
                           "strength": node["inputs"].get("strength_model", 1.0)})
+    latents = _latents(graph)
+    size = {"width": graph[latents[0]]["inputs"]["width"], "height": graph[latents[0]]["inputs"]["height"]} if latents else None
     return {"models": models, "loras": loras, "lora_options": _options(object_info, "LoraLoaderModelOnly", "lora_name"),
-            "can_add_lora": _lora_anchor(graph, models) is not None}
+            "can_add_lora": _lora_anchor(graph, models) is not None,
+            "samplers": _samplers(graph), "size": size,
+            "sampler_options": _options(object_info, "KSampler", "sampler_name"),
+            "scheduler_options": _options(object_info, "KSampler", "scheduler")}
 
 
 def _strength(value):
@@ -60,11 +104,59 @@ def _strength(value):
     return float(value)
 
 
-def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, extra_loras: list) -> None:
+def _number(field, value):
+    low, high = LIMITS[field]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not low <= value <= high:
+        raise ControlError(f"{field} must be between {low:g} and {high:g}")
+    if field == "steps":
+        if value != int(value):
+            raise ControlError("steps must be a whole number")
+        return int(value)
+    return float(value)
+
+
+def _apply_sampling(graph, found, sampling):
+    by_node = {c["node"]: c for c in found["samplers"]}
+    options = {"sampler_name": set(found["sampler_options"]), "scheduler": set(found["scheduler_options"])}
+    for node_id, changes in sampling.items():
+        control = by_node.get(node_id)
+        if control is None:
+            raise ControlError(f"Node {node_id} has no sampler settings in this workflow")
+        for field, value in changes.items():
+            if field not in control["values"]:
+                raise ControlError(f"{field} cannot be changed on node {node_id}")
+            if field in options:
+                if value not in options[field]:
+                    raise ControlError(f"Unknown {field.replace('_name', '')}: {value}")
+            else:
+                value = _number(field, value)
+            graph[node_id]["inputs"][field] = value
+
+
+def _apply_size(graph, size):
+    width, height = size.get("width"), size.get("height")
+    for side in (width, height):
+        if isinstance(side, bool) or not isinstance(side, int) or not 256 <= side <= MAX_SIDE or side % 8:
+            raise ControlError(f"Width and height must be multiples of 8 between 256 and {MAX_SIDE}")
+    if width * height > MAX_PIXELS:
+        raise ControlError("Image size is too large")
+    latents = _latents(graph)
+    if not latents:
+        raise ControlError("This workflow takes its size from the input image")
+    for node_id in latents:
+        graph[node_id]["inputs"]["width"], graph[node_id]["inputs"]["height"] = width, height
+
+
+def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, extra_loras: list,
+                   sampling: dict | None = None, size: dict | None = None) -> None:
     """Apply phone choices in place. Only nodes and options found by find_controls are accepted."""
-    if not (models or loras or extra_loras):
+    if not (models or loras or extra_loras or sampling or size):
         return
     found = find_controls(graph, object_info)
+    if sampling:
+        _apply_sampling(graph, found, sampling)
+    if size:
+        _apply_size(graph, size)
     by_model = {c["node"]: c for c in found["models"]}
     by_lora = {c["node"]: c for c in found["loras"]}
     lora_options = set(found["lora_options"])

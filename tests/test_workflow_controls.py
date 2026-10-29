@@ -8,7 +8,19 @@ INFO = {
     "UNETLoader": {"input": {"required": {"unet_name": ["COMBO", {"options": ["Flux\\klein.safetensors"]}]}}},
     "LoraLoader": {"input": {"required": {"lora_name": [LORAS]}}},
     "LoraLoaderModelOnly": {"input": {"required": {"lora_name": [LORAS]}}},
+    "KSampler": {"input": {"required": {"sampler_name": [["euler", "dpmpp_2m"]], "scheduler": [["simple", "karras"]]}}},
 }
+
+
+def sampled():
+    return {
+        "6": {"class_type": "EmptyLatentImage", "inputs": {"width": 1024, "height": 1024, "batch_size": 1}},
+        "7": {"class_type": "KSampler", "inputs": {"model": ["1", 0], "latent_image": ["6", 0], "steps": 30, "cfg": 5.5,
+                                                    "sampler_name": "euler", "scheduler": "karras", "denoise": 1.0}},
+        "9": {"class_type": "KSampler", "inputs": {"model": ["1", 0], "latent_image": ["8", 0], "steps": 16, "cfg": 5.5,
+                                                    "sampler_name": "euler", "scheduler": "karras", "denoise": 0.45}},
+        "10": {"class_type": "CFGGuider", "inputs": {"model": ["1", 0], "cfg": ["11", 0]}},
+    }
 
 
 class ControlTests(unittest.TestCase):
@@ -79,6 +91,47 @@ class ControlTests(unittest.TestCase):
         self.assertFalse(find_controls(graph, INFO)["can_add_lora"])
         with self.assertRaises(ControlError):
             apply_controls(graph, INFO, {}, {}, [{"name": LORAS[1], "strength": 1}])
+
+
+    def test_finds_samplers_and_size(self):
+        found = find_controls(sampled(), INFO)
+        self.assertEqual([("7", "base", {"steps": 30, "cfg": 5.5, "sampler_name": "euler", "scheduler": "karras"}),
+                          ("9", "refine", {"steps": 16, "cfg": 5.5, "sampler_name": "euler", "scheduler": "karras", "denoise": 0.45})],
+                         [(c["node"], c["role"], c["values"]) for c in found["samplers"]])
+        self.assertEqual({"width": 1024, "height": 1024}, found["size"])
+        self.assertEqual(["euler", "dpmpp_2m"], found["sampler_options"])
+
+    def test_applies_sampling_and_size(self):
+        graph = sampled()
+        apply_controls(graph, INFO, {}, {}, [], {"7": {"steps": 20.0, "cfg": 4, "sampler_name": "dpmpp_2m"}, "9": {"denoise": 0.3}},
+                       {"width": 832, "height": 1216})
+        self.assertEqual((20, 4.0, "dpmpp_2m"), tuple(graph["7"]["inputs"][k] for k in ("steps", "cfg", "sampler_name")))
+        self.assertIsInstance(graph["7"]["inputs"]["steps"], int)
+        self.assertEqual(0.3, graph["9"]["inputs"]["denoise"])
+        self.assertEqual((832, 1216), (graph["6"]["inputs"]["width"], graph["6"]["inputs"]["height"]))
+
+    def test_rejects_bad_sampling_and_size(self):
+        cases = [({"7": {"denoise": 0.5}}, None),           # a full pass keeps denoise 1
+                 ({"10": {"cfg": 3}}, None),                # linked value
+                 ({"6": {"steps": 3}}, None),               # not a sampler
+                 ({"7": {"steps": 2.5}}, None),
+                 ({"7": {"steps": 500}}, None),
+                 ({"7": {"cfg": float("inf")}}, None),
+                 ({"7": {"sampler_name": "rm -rf"}}, None),
+                 ({"7": {"seed": 1}}, None),
+                 (None, {"width": 1000, "height": 1003}),
+                 (None, {"width": 4096, "height": 4096}),
+                 (None, {"width": True, "height": 1024})]
+        for sampling, size in cases:
+            with self.subTest(sampling=sampling, size=size), self.assertRaises(ControlError):
+                apply_controls(sampled(), INFO, {}, {}, [], sampling, size)
+
+    def test_size_needs_an_empty_latent(self):
+        graph = sampled()
+        graph["6"]["inputs"]["width"] = ["12", 0]
+        self.assertIsNone(find_controls(graph, INFO)["size"])
+        with self.assertRaises(ControlError):
+            apply_controls(graph, INFO, {}, {}, [], None, {"width": 1024, "height": 1024})
 
 
 if __name__ == "__main__":

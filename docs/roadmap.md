@@ -99,6 +99,8 @@ Periodic polling, recording remote deletions as archived instead of deleting, ke
 | ✅ PWA share target: share a photo from the gallery straight into an image-to-video or edit workflow | High | M |
 | ✅ Notification when a job finishes while the app is backgrounded (true push when the app is closed still needs Web Push + VAPID) | High | M |
 | ✅ Model and LoRA picker: swap the checkpoint/UNet, change or turn off the workflow's LoRAs, add up to 4 more (auto-detected, no `📱` titles needed) | Medium | S |
+| ✅ Sampler settings (steps, CFG, sampler, scheduler, hi-res denoise) and output shape (1:1 … 16:9), ported from the Open WebUI ComfyUI Studio function | Medium | S |
+| Caption options for auto-caption workflows (type, length, content mode, lighting/camera toggles) and named presets, also from ComfyUI Studio | Medium | M |
 | Show the auto-caption text produced by the captioning workflows, edit it, then run again | Medium | M |
 | ✅ PC status: online, VRAM in use, "free VRAM" button | Medium | S |
 | Wake-on-LAN for the PC from the NAS | Medium | S |
