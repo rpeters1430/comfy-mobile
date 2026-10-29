@@ -9,7 +9,7 @@ from starlette.background import BackgroundTask
 from workflow_validation import inspect_workflow, load_workflow
 from workflow_sync import WorkflowSync
 from workflow_conversion import convert_ui, ConversionError
-from workflow_jobs import JobError, MAX_UPLOAD, apply_job, check_view, find_output, job_outputs, upload_name, view_query
+from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, job_outputs, upload_name, view_query
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
@@ -279,15 +279,17 @@ async def job_output_list(prompt_id: str, authorization: str | None = Header(def
 
 @app.get('/api/jobs/{prompt_id}/view')
 async def job_view(prompt_id: str, filename: str, expires: int, sig: str, subfolder: str = '', type: str = 'output',
-                   range: str | None = Header(default=None)):
+                   thumb: bool = False, range: str | None = Header(default=None)):
     '''Stream one output file. Authorized by the signed URL from /outputs, so <img> and <video> work.'''
     if not re.fullmatch(r'[0-9a-fA-F-]{36}',prompt_id): raise HTTPException(400,'Invalid job id')
     if not check_view(TOKEN,prompt_id,filename,subfolder,type,expires,sig): raise HTTPException(401,'Link expired or invalid')
-    data=await request('GET',f'/history/{prompt_id}')
-    if not find_output(data.get(prompt_id,{}),filename,subfolder,type): raise HTTPException(404,'Not an output of this job')
+    # The signature is only ever issued for this job's own outputs, so no /history round trip is needed here.
+    params={'filename':filename,'subfolder':subfolder,'type':type}
+    # ComfyUI re-encodes the image as WebP: a fraction of a full PNG, for cards and the gallery.
+    if thumb and not filename.lower().endswith(VIDEO_EXT): params['preview']='webp;80'
     client=httpx.AsyncClient(timeout=httpx.Timeout(60.0,connect=4.0))
     try:
-        upstream=await client.send(client.build_request('GET',f'{COMFY}/view',params={'filename':filename,'subfolder':subfolder,'type':type},
+        upstream=await client.send(client.build_request('GET',f'{COMFY}/view',params=params,
                                                         headers={'Range':range} if range else {}),stream=True)
     except httpx.HTTPError as exc:
         await client.aclose(); raise HTTPException(502,'ComfyUI could not serve the file') from exc
@@ -296,5 +298,6 @@ async def job_view(prompt_id: str, filename: str, expires: int, sig: str, subfol
     if upstream.status_code not in (200,206):
         await close(); raise HTTPException(502,'ComfyUI could not serve the file')
     headers={k:upstream.headers[k] for k in ('content-type','content-length','content-range','accept-ranges') if k in upstream.headers}
-    headers['cache-control']='private, max-age=3600'
+    # Output files never change and the URL is stable until it expires, so let the phone keep them.
+    headers['cache-control']=f'private, max-age={max(0,expires-int(time.time()))}, immutable'
     return StreamingResponse(upstream.aiter_bytes(),status_code=upstream.status_code,headers=headers,background=BackgroundTask(close))

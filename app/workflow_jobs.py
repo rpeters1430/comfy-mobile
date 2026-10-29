@@ -52,6 +52,9 @@ def apply_job(graph: dict, prompt: str, images: list[str], seed: int | None) -> 
     return {"prompt_used": replacements > 0}
 
 
+VIDEO_EXT = (".mp4", ".webm", ".mkv", ".mov")
+
+
 def job_outputs(entry: dict) -> list[dict]:
     """Files and text a finished job produced, from its /history entry."""
     files = []
@@ -61,7 +64,7 @@ def job_outputs(entry: dict) -> list[dict]:
                 continue
             for item in items:
                 if isinstance(item, dict) and isinstance(item.get("filename"), str):
-                    kind = "video" if key in ("videos", "gifs") or item["filename"].lower().endswith((".mp4", ".webm", ".mkv", ".mov")) else "image"
+                    kind = "video" if key in ("videos", "gifs") or item["filename"].lower().endswith(VIDEO_EXT) else "image"
                     files.append({"node": node_id, "kind": kind, "filename": item["filename"],
                                   "subfolder": item.get("subfolder", ""), "type": item.get("type", "output"),
                                   "preview": item.get("type", "output") != "output"})
@@ -70,7 +73,9 @@ def job_outputs(entry: dict) -> list[dict]:
     return files
 
 
-VIEW_TTL = 6 * 3600
+VIEW_TTL = 24 * 3600
+# Expiry is rounded up to this step so a file keeps the same URL for hours and the browser can cache it.
+VIEW_STEP = 6 * 3600
 
 
 def view_signature(secret: str, prompt_id: str, filename: str, subfolder: str, kind: str, expires: int) -> str:
@@ -80,7 +85,7 @@ def view_signature(secret: str, prompt_id: str, filename: str, subfolder: str, k
 
 
 def view_query(secret: str, prompt_id: str, item: dict, now: float | None = None) -> dict:
-    expires = int((now or time.time()) + VIEW_TTL)
+    expires = -(-int((now or time.time()) + VIEW_TTL) // VIEW_STEP) * VIEW_STEP
     return {"filename": item["filename"], "subfolder": item["subfolder"], "type": item["type"], "expires": expires,
             "sig": view_signature(secret, prompt_id, item["filename"], item["subfolder"], item["type"], expires)}
 
@@ -89,11 +94,3 @@ def check_view(secret: str, prompt_id: str, filename: str, subfolder: str, kind:
     if not secret or expires < (now or time.time()):
         return False
     return hmac.compare_digest(sig, view_signature(secret, prompt_id, filename, subfolder, kind, expires))
-
-
-def find_output(entry: dict, filename: str, subfolder: str, kind: str) -> dict | None:
-    """Only files a job actually produced may be fetched through the viewer."""
-    for item in job_outputs(entry):
-        if item["kind"] != "text" and (item["filename"], item["subfolder"], item["type"]) == (filename, subfolder, kind):
-            return item
-    return None
