@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from workflow_validation import inspect_workflow, load_workflow
 from workflow_sync import WorkflowSync
+from workflow_conversion import convert_ui, ConversionError
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
@@ -84,6 +85,11 @@ async def validate_workflow(workflow_id: str, authorization: str | None = Header
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         raise HTTPException(400, str(exc)) from exc
     info = await request('GET', '/object_info')
+    if isinstance(graph.get('nodes'), list):
+        try:
+            graph = convert_ui(graph, info)
+        except ConversionError as exc:
+            return {'format': 'ui', 'runnable': False, 'errors': [str(exc)], 'warnings': []}
     return inspect_workflow(graph, info)
 
 
@@ -144,10 +150,16 @@ class Job(BaseModel):
 async def jobs(job: Job, authorization: str | None = Header(default=None)):
     auth(authorization)
     try:
-        graph = load_workflow(WF_DIR, job.workflow_id)
+        root, name = (SYNC_DIR, job.workflow_id[7:]) if job.workflow_id.startswith('synced/') else (WF_DIR, job.workflow_id)
+        graph = load_workflow(root, name)
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         raise HTTPException(400, str(exc)) from exc
     info = await request('GET', '/object_info')
+    if isinstance(graph.get('nodes'), list):
+        try:
+            graph = convert_ui(graph, info)
+        except ConversionError as exc:
+            raise HTTPException(400, {'message': 'Conversion unsupported', 'errors': [str(exc)]}) from exc
     validation = inspect_workflow(graph, info)
     if not validation['runnable']:
         raise HTTPException(400, {'message': 'Workflow cannot run', 'errors': validation['errors'], 'warnings': validation['warnings']})
