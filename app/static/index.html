@@ -419,13 +419,17 @@ const MAX_EXTRA_LORAS = 4;
 function fileLabel(path) { return String(path).split(/[\\/]/).pop().replace(/\.(safetensors|ckpt|pt|gguf)$/i, ''); }
 function folderOf(path) { const parts = String(path).split(/[\\/]/); return parts.length > 1 ? parts[0] : ''; }
 
-// The workflow's own folder (SDXL, Flux, ...) comes first so compatible files are easy to find.
-function modelSelect(options, value, family, label) {
+// One group per folder. The workflow's own folders (SDXL, Flux, ...) come first so compatible files are easy to find.
+function modelSelect(options, value, families, label) {
   const select = el('select', { 'aria-label': label });
-  const own = options.filter(o => folderOf(o) === family), rest = options.filter(o => folderOf(o) !== family);
-  const opt = o => new Option(fileLabel(o) + (folderOf(o) && folderOf(o) !== family ? `  (${folderOf(o)})` : ''), o);
-  if (own.length && rest.length) select.append(el('optgroup', { label: family || 'Top level' }, own.map(opt)), el('optgroup', { label: 'Other' }, rest.map(opt)));
-  else select.append(...options.map(opt));
+  const groups = new Map();
+  for (const o of options) groups.has(folderOf(o)) ? groups.get(folderOf(o)).push(o) : groups.set(folderOf(o), [o]);
+  if (groups.size < 2) select.append(...options.map(o => new Option(fileLabel(o), o)));
+  else {
+    const rank = f => families.includes(f) ? families.indexOf(f) : families.length + (f === '' ? 1 : 0);
+    const order = [...groups.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    select.append(...order.map(f => el('optgroup', { label: f || 'Top level' }, groups.get(f).map(o => new Option(fileLabel(o), o)))));
+  }
   select.value = value;
   return select;
 }
@@ -471,18 +475,21 @@ function strengthRow(choice, onChange) {
 
 function renderControls() {
   if (!controls || !choices) return;
-  const family = folderOf(controls.models[0]?.value || '');
-  const loraFamily = folderOf(controls.loras[0]?.value || '') || family;
+  // A top-level checkpoint says nothing about its family, so the LoRA folders hint at it too (and vice versa).
+  const modelFolders = controls.models.map(m => folderOf(m.value)).filter(Boolean);
+  const loraFolders = controls.loras.map(l => folderOf(l.value)).filter(Boolean);
+  const families = [...new Set([...modelFolders, ...loraFolders])];
+  const loraFamilies = [...new Set([...loraFolders, ...modelFolders])];
   const changed = () => { saveControls(); renderSummary(); };
   const rows = [];
   controls.models.forEach((m, i) => {
-    const select = modelSelect(m.options, choices.models[m.node], folderOf(m.value), 'Model');
+    const select = modelSelect(m.options, choices.models[m.node], [...new Set([folderOf(m.value) || families[0], ...families, folderOf(m.value)])].filter(f => f !== undefined), 'Model');
     select.onchange = () => { choices.models[m.node] = select.value; changed(); };
     rows.push(el('label', {}, controls.models.length > 1 ? `Model ${i + 1}` : 'Model'), select);
   });
   controls.loras.forEach((l, i) => {
     const choice = choices.loras[l.node];
-    const select = modelSelect(controls.lora_options, choice.name, loraFamily, 'LoRA');
+    const select = modelSelect(controls.lora_options, choice.name, loraFamilies, 'LoRA');
     const box = el('div', { class: 'lora' + (choice.on ? '' : ' off') });
     select.onchange = () => { choice.name = select.value; changed(); };
     const toggle = el('input', { type: 'checkbox', style: 'width:auto;margin:0 8px 0 0', 'aria-label': 'Use this LoRA' });
@@ -493,7 +500,7 @@ function renderControls() {
     rows.push(box);
   });
   choices.extra.forEach((x, i) => {
-    const select = modelSelect(controls.lora_options, x.name, loraFamily, 'Added LoRA');
+    const select = modelSelect(controls.lora_options, x.name, loraFamilies, 'Added LoRA');
     select.onchange = () => { x.name = select.value; changed(); };
     const remove = el('button', { class: 'ghost', type: 'button', 'aria-label': 'Remove LoRA' }, '✕');
     remove.onclick = () => { choices.extra.splice(i, 1); changed(); renderControls(); };
@@ -504,7 +511,7 @@ function renderControls() {
   if (controls.can_add_lora && choices.extra.length < MAX_EXTRA_LORAS && controls.lora_options.length) {
     const add = el('button', { class: 'ghost', type: 'button' }, '+ Add LoRA');
     add.onclick = () => {
-      const pick = controls.lora_options.find(o => folderOf(o) === loraFamily) || controls.lora_options[0];
+      const pick = controls.lora_options.find(o => folderOf(o) === loraFamilies[0]) || controls.lora_options[0];
       choices.extra.push({ name: pick, strength: 1 });
       changed(); renderControls();
     };
