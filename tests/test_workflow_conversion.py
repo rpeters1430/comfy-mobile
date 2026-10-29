@@ -67,6 +67,24 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(convert_ui(graph, schema)["1"]["inputs"],
                          {"add_noise": "enable", "noise_seed": 42, "steps": 30})
 
+    def test_force_input_has_no_widget_slot(self):
+        schema = {
+            "Captioner": {"input": {"required": {"length": [["short", "long"], {}]}, "optional": {
+                "lighting": ["BOOLEAN", {}], "character_name": ["STRING", {"forceInput": True}],
+                "watermark": ["BOOLEAN", {}], "ollama_url": ["STRING", {}]}}},
+            "PrimitiveString": {"input": {"required": {"value": ["STRING", {}]}}},
+            "CLIPTextEncode": {"input": {"required": {"text": ["STRING", {}]}}},
+        }
+        graph = {"nodes": [
+            {"id": 1, "type": "Captioner", "inputs": [{"name": "character_name", "link": 7}],
+             "widgets_values": ["long", True, False, "http://host:11434"]},
+            {"id": 2, "type": "PrimitiveString", "inputs": [], "widgets_values": ["Ann"]},
+            {"id": 3, "type": "CLIPTextEncode", "inputs": [], "widgets_values": ["{{prompt}}"]},
+        ], "links": [[7, 2, 0, 1, 0, "STRING"]]}
+        self.assertEqual(convert_ui(graph, schema)["1"]["inputs"],
+                         {"character_name": ["2", 0], "length": "long", "lighting": True,
+                          "watermark": False, "ollama_url": "http://host:11434"})
+
     def test_linked_prompt_text_not_overwritten(self):
         schema = {
             "CLIPTextEncode": {"input": {"required": {"text": ["STRING", {}]}}},

@@ -37,7 +37,8 @@ SUBGRAPH_INPUT, SUBGRAPH_OUTPUT = "-10", "-20"
 def _map_widgets(fields, values):
     """Map widgets_values onto inputs in schema order.
 
-    ComfyUI keeps a slot for every widget, even when it is linked, and serializes a
+    ComfyUI keeps a slot for every widget, even when it is linked (but `forceInput` inputs
+    are sockets with no widget, so they have none), and serializes a
     control widget (randomize/fixed) after seed-like INTs. A V3 dynamic combo is followed
     by its chosen option's sub-widgets, sent to the API as `<combo>.<sub>` keys.
     Returns (values by key, schema of the chosen dynamic sub-inputs, their required keys).
@@ -53,12 +54,14 @@ def _map_widgets(fields, values):
             dtype = definition[0]
             if not (dtype in WIDGET_TYPES or dtype == DYNAMIC_COMBO or isinstance(dtype, list)):
                 continue
+            options = definition[1] if len(definition) > 1 and isinstance(definition[1], dict) else {}
+            if options.get("forceInput"):
+                continue  # a socket only: the frontend gives it no widget, so it has no saved value
             if pos >= len(values):
                 return
             key = prefix + name
             mapped[key] = values[pos]
             pos += 1
-            options = definition[1] if len(definition) > 1 and isinstance(definition[1], dict) else {}
             if dtype == "INT" and options.get("control_after_generate", not nested and name in ("seed", "noise_seed")):
                 pos += 1
             if dtype == DYNAMIC_COMBO:

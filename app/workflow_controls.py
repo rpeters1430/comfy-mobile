@@ -1,4 +1,4 @@
-"""Per-run model, LoRA, sampler and size choices, found in a converted API graph so workflows need no editing."""
+"""Per-run model, LoRA, sampler, size and caption choices, found in a converted API graph so workflows need no editing."""
 import math
 import re
 
@@ -20,6 +20,11 @@ SAMPLER_FIELDS = {
     "BasicScheduler": ("steps", "scheduler", "denoise"),
 }
 LIMITS = {"steps": (1, 150), "cfg": (0.0, 30.0), "denoise": (0.01, 1.0)}
+# Auto-caption (VLM) nodes: the choices and switches the Open WebUI function exposed as caption Valves.
+CAPTION_CLASSES = ("Qwen3VLAbliteratedPromptPair", "Qwen3VLAbliteratedCaption", "JoyCaptionPromptPair")
+CAPTION_CHOICES = ("model", "caption_type", "length", "content_mode")
+CAPTION_TOGGLES = ("vulgar_slang", "lighting", "camera_angle", "shot_type", "composition", "depth_of_field",
+                   "camera_settings", "aesthetic_quality", "mention_mood")
 MAX_SIDE, MAX_PIXELS = 2048, 2048 * 2048
 
 
@@ -79,6 +84,22 @@ def _latents(graph):
             and all(isinstance(node["inputs"].get(f), int) and not isinstance(node["inputs"].get(f), bool) for f in ("width", "height"))]
 
 
+def _captions(graph, object_info):
+    found = []
+    for node_id, node in graph.items():
+        if node["class_type"] not in CAPTION_CLASSES:
+            continue
+        inputs, values, options = node["inputs"], {}, {}
+        for field in CAPTION_CHOICES:
+            choices = _options(object_info, node["class_type"], field)
+            if isinstance(inputs.get(field), str) and choices:
+                values[field], options[field] = inputs[field], choices
+        values.update({f: inputs[f] for f in CAPTION_TOGGLES if isinstance(inputs.get(f), bool)})
+        if values:
+            found.append({"node": node_id, "class": node["class_type"], "values": values, "options": options})
+    return found
+
+
 def find_controls(graph: dict, object_info: dict) -> dict:
     models, loras = [], []
     for node_id, node in graph.items():
@@ -93,7 +114,7 @@ def find_controls(graph: dict, object_info: dict) -> dict:
     size = {"width": graph[latents[0]]["inputs"]["width"], "height": graph[latents[0]]["inputs"]["height"]} if latents else None
     return {"models": models, "loras": loras, "lora_options": _options(object_info, "LoraLoaderModelOnly", "lora_name"),
             "can_add_lora": _lora_anchor(graph, models) is not None,
-            "samplers": _samplers(graph), "size": size,
+            "samplers": _samplers(graph), "size": size, "captions": _captions(graph, object_info),
             "sampler_options": _options(object_info, "KSampler", "sampler_name"),
             "scheduler_options": _options(object_info, "KSampler", "scheduler")}
 
@@ -133,6 +154,23 @@ def _apply_sampling(graph, found, sampling):
             graph[node_id]["inputs"][field] = value
 
 
+def _apply_caption(graph, found, caption):
+    by_node = {c["node"]: c for c in found["captions"]}
+    for node_id, changes in caption.items():
+        control = by_node.get(node_id)
+        if control is None:
+            raise ControlError(f"Node {node_id} is not a caption node in this workflow")
+        for field, value in changes.items():
+            if field not in control["values"]:
+                raise ControlError(f"{field} cannot be changed on node {node_id}")
+            if field in control["options"]:
+                if value not in control["options"][field]:
+                    raise ControlError(f"Unknown {field.replace('_', ' ')}: {value}")
+            elif not isinstance(value, bool):
+                raise ControlError(f"{field} must be on or off")
+            graph[node_id]["inputs"][field] = value
+
+
 def _apply_size(graph, size):
     width, height = size.get("width"), size.get("height")
     for side in (width, height):
@@ -148,13 +186,15 @@ def _apply_size(graph, size):
 
 
 def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, extra_loras: list,
-                   sampling: dict | None = None, size: dict | None = None) -> None:
+                   sampling: dict | None = None, size: dict | None = None, caption: dict | None = None) -> None:
     """Apply phone choices in place. Only nodes and options found by find_controls are accepted."""
-    if not (models or loras or extra_loras or sampling or size):
+    if not (models or loras or extra_loras or sampling or size or caption):
         return
     found = find_controls(graph, object_info)
     if sampling:
         _apply_sampling(graph, found, sampling)
+    if caption:
+        _apply_caption(graph, found, caption)
     if size:
         _apply_size(graph, size)
     by_model = {c["node"]: c for c in found["models"]}
