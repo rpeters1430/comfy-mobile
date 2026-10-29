@@ -67,14 +67,18 @@ async def catalog(authorization: str | None = Header(default=None)):
                 data=json.loads(path.read_text(encoding='utf-8'))
                 if isinstance(data,dict) and isinstance(data.get('nodes'),list):
                     fmt='ui'; node_types=sorted({n.get('type','') for n in data['nodes'] if isinstance(n,dict)})
-                    runnable=False
+                    try:
+                        converted=convert_ui(data,info)
+                        runnable=inspect_workflow(converted,info)['runnable']
+                    except (ConversionError,ValueError,TypeError,KeyError):
+                        runnable=False
                 elif isinstance(data,dict) and data and all(isinstance(v,dict) and 'class_type' in v and isinstance(v.get('inputs'),dict) for v in data.values()):
                     fmt='api'; node_types=sorted({v['class_type'] for v in data.values()}); runnable=True
                 else: continue
                 workflows.append({'id':rel,'name':path.stem,'format':fmt,'runnable':runnable,'node_types':node_types})
             except (OSError,ValueError,TypeError):
                 continue
-    return {'models':out,'workflows':workflows,'updated_at':int(time.time()),'note':'UI-format workflows are discoverable but must be exported in API format before execution'}
+    return {'models':out,'workflows':workflows,'updated_at':int(time.time()),'note':'Supported UI-format workflows are converted on submission; unsupported subgraphs require expansion'}
 
 @app.get('/api/workflows/{workflow_id:path}/validate')
 async def validate_workflow(workflow_id: str, authorization: str | None = Header(default=None)):
