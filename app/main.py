@@ -9,6 +9,7 @@ from starlette.background import BackgroundTask
 from workflow_validation import inspect_workflow, load_workflow
 from workflow_sync import WorkflowSync
 from workflow_conversion import convert_ui, ConversionError
+from workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls
 from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, job_outputs, upload_name, view_query
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
@@ -129,7 +130,7 @@ async def validate_workflow(workflow_id: str, authorization: str | None = Header
             graph = convert_ui(graph, info)
         except ConversionError as exc:
             return {'format': 'ui', 'runnable': False, 'errors': [str(exc)], 'warnings': []}
-    return inspect_workflow(graph, info)
+    return {**inspect_workflow(graph, info), 'controls': find_controls(graph, info)}
 
 
 @app.get('/api/comfy/workflows/discovery')
@@ -180,11 +181,18 @@ async def history(authorization: str | None = Header(default=None)):
     data=await request('GET','/history?max_items=25')
     return [{'id':key,'status':value.get('status',{}).get('status_str','unknown'),'outputs':list(value.get('outputs',{}))} for key,value in data.items()]
 
+class LoraChoice(BaseModel):
+    name: str = Field(max_length=300)
+    strength: float
+
 class Job(BaseModel):
     workflow_id: str = Field(max_length=240)
     prompt: str = Field(default='',max_length=10000)
     images: list[str] = Field(default_factory=list,max_length=8)
     seed: int | None = Field(default=None,ge=0,le=18446744073709551615)
+    models: dict[str,str] = Field(default_factory=dict,max_length=8)
+    loras: dict[str,LoraChoice] = Field(default_factory=dict,max_length=16)
+    extra_loras: list[LoraChoice] = Field(default_factory=list,max_length=MAX_EXTRA_LORAS)
 
 @app.post('/api/jobs')
 async def jobs(job: Job, authorization: str | None = Header(default=None)):
@@ -205,8 +213,9 @@ async def jobs(job: Job, authorization: str | None = Header(default=None)):
         raise HTTPException(400, {'message': 'Workflow cannot run', 'errors': validation['errors'], 'warnings': validation['warnings']})
     # Only the {{prompt}} placeholder is replaced, so negative prompts and instructions are never rewritten.
     try:
+        apply_controls(graph,info,job.models,{k:v.model_dump() for k,v in job.loras.items()},[v.model_dump() for v in job.extra_loras])
         applied=apply_job(graph,job.prompt,job.images,job.seed)
-    except JobError as exc:
+    except (ControlError, JobError) as exc:
         raise HTTPException(400,str(exc)) from exc
     result=await request('POST','/prompt',json={'prompt':graph,'client_id':'image-studio-mobile'})
     return {'prompt_id':result.get('prompt_id'),'node_errors':result.get('node_errors',{}),**applied}
