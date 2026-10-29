@@ -38,7 +38,14 @@ def convert_ui(data, object_info):
             widget_map = widget_values
         elif isinstance(widget_values, list):
             widget_fields = [k for k, v in fields.items() if isinstance(v, list) and v and (v[0] in ("STRING", "INT", "FLOAT", "BOOLEAN") or isinstance(v[0], list)) and not any(i.get("name") == k and i.get("link") is not None for i in node.get("inputs", []))]
-            widget_map = dict(zip(widget_fields, widget_values))
+            # ComfyUI serializes control widgets (seed randomize/fixed, etc.)
+            # alongside actual input widgets. Never shift later values to fit.
+            if kind == "KSampler":
+                names = ("seed", "control_after_generate", "steps", "cfg", "sampler_name", "scheduler", "denoise")
+                widget_map = dict(zip(names, widget_values))
+                widget_map.pop("control_after_generate", None)
+            else:
+                widget_map = dict(zip(widget_fields, widget_values))
         else:
             widget_map = {}
         for item in node.get("inputs", []):
@@ -57,6 +64,18 @@ def convert_ui(data, object_info):
                 inputs[field] = definition[1]["default"]
             if field not in inputs:
                 raise ConversionError(f"Missing required value for {kind}.{field}")
+        # Reject values which are provably incompatible with ComfyUI schema.
+        for field, value in inputs.items():
+            definition = fields.get(field)
+            if not isinstance(definition, list) or not definition or isinstance(value, list):
+                continue
+            dtype = definition[0]
+            if isinstance(dtype, list) and value not in dtype:
+                raise ConversionError(f"{kind}.{field}: saved value {value!r} is not available in ComfyUI")
+            if dtype == "INT" and (isinstance(value, bool) or not isinstance(value, int)):
+                raise ConversionError(f"{kind}.{field}: expected integer, got {value!r}")
+            if dtype == "FLOAT" and (isinstance(value, bool) or not isinstance(value, (int, float))):
+                raise ConversionError(f"{kind}.{field}: expected number, got {value!r}")
         result[str(node["id"])] = {"class_type": kind, "inputs": inputs}
     if not result:
         raise ConversionError("No executable nodes")
