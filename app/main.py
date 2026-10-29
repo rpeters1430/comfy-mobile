@@ -3,7 +3,7 @@ from pathlib import Path
 from urllib.parse import urlencode, urlparse
 import httpx
 from fastapi import FastAPI, HTTPException, Header, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 from workflow_validation import inspect_workflow, load_workflow
@@ -14,16 +14,18 @@ from workflow_jobs import JobError, MAX_UPLOAD, apply_job, check_view, find_outp
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
 WF_DIR = Path(os.getenv('WORKFLOW_DIR','/workflows'))
+STATIC = Path(os.getenv('STATIC_DIR','/app/static'))
 SYNC_DIR = Path(os.getenv('WORKFLOW_SYNC_DIR','/workflow-sync'))
 workflow_sync = WorkflowSync(COMFY, SYNC_DIR)
 app = FastAPI(title='Image Studio Mobile', version='0.4.0-dev')
 
-async def request(method, path, **kwargs):
+async def request(method, path, expect_json=True, **kwargs):
     async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=4.0)) as client:
         try:
             r = await client.request(method, f'{COMFY}{path}', **kwargs)
             r.raise_for_status()
-            return r.json()
+            # /interrupt, /queue and /free answer with an empty body.
+            return r.json() if expect_json else {}
         except httpx.HTTPStatusError as e:
             # Preserve ComfyUI's validation message, but never echo arbitrary HTML.
             response = e.response
@@ -47,10 +49,23 @@ def auth(authorization: str | None):
         raise HTTPException(401,'Valid studio token required')
 
 @app.get('/')
-def home(): return FileResponse('/app/static/index.html')
+def home(): return FileResponse(STATIC/'index.html')
 
 @app.get('/manifest.webmanifest')
-def manifest(): return FileResponse('/app/static/manifest.webmanifest')
+def manifest(): return FileResponse(STATIC/'manifest.webmanifest',media_type='application/manifest+json')
+
+@app.get('/sw.js')
+def service_worker(): return FileResponse(STATIC/'sw.js',media_type='text/javascript',headers={'Cache-Control':'no-cache'})
+
+@app.get('/icon-{size}.png')
+def icon(size: int):
+    if size not in (192,512): raise HTTPException(404)
+    return FileResponse(STATIC/f'icon-{size}.png')
+
+@app.post('/share-target')
+def share_target_fallback():
+    '''The service worker normally answers the share; this only runs before it is installed.'''
+    return RedirectResponse('/?shared=0',status_code=303)
 
 @app.get('/api/auth/check')
 def check_auth(authorization: str | None = Header(default=None)):
@@ -222,6 +237,28 @@ async def job_status(prompt_id: str, authorization: str | None = Header(default=
     data=await request('GET',f'/history/{prompt_id}')
     return data.get(prompt_id,{'status':'pending'})
 
+@app.post('/api/jobs/{prompt_id}/cancel')
+async def cancel_job(prompt_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    if not re.fullmatch(r'[0-9a-fA-F-]{36}',prompt_id): raise HTTPException(400,'Invalid job id')
+    q=await request('GET','/queue')
+    if any(isinstance(item,list) and len(item)>1 and item[1]==prompt_id for item in q.get('queue_pending',[])):
+        await request('POST','/queue',expect_json=False,json={'delete':[prompt_id]})
+        return {'cancelled':'pending'}
+    # Only interrupt when this job is the one running: older ComfyUI ignores prompt_id
+    # and would stop whatever is running, including jobs started on the PC.
+    if any(isinstance(item,list) and len(item)>1 and item[1]==prompt_id for item in q.get('queue_running',[])):
+        await request('POST','/interrupt',expect_json=False,json={'prompt_id':prompt_id})
+        return {'cancelled':'running'}
+    return {'cancelled':None}
+
+@app.post('/api/comfy/free')
+async def free_memory(authorization: str | None = Header(default=None)):
+    '''Ask ComfyUI to unload models and free VRAM (applied when its queue is idle).'''
+    auth(authorization)
+    await request('POST','/free',expect_json=False,json={'unload_models':True,'free_memory':True})
+    return {'requested':True}
+
 @app.get('/api/jobs/{prompt_id}/outputs')
 async def job_output_list(prompt_id: str, authorization: str | None = Header(default=None)):
     auth(authorization)
@@ -236,7 +273,8 @@ async def job_output_list(prompt_id: str, authorization: str | None = Header(def
             item={**item,'url':f'/api/jobs/{prompt_id}/view?'+urlencode(view_query(TOKEN,prompt_id,item))}
         outputs.append(item)
     errors=[m[1] for m in status.get('messages',[]) if isinstance(m,list) and len(m)==2 and m[0]=='execution_error']
-    return {'status':status.get('status_str','unknown'),'completed':status.get('completed',False),'outputs':outputs,
+    interrupted=any(isinstance(m,list) and m and m[0]=='execution_interrupted' for m in status.get('messages',[]))
+    return {'status':status.get('status_str','unknown'),'completed':status.get('completed',False),'outputs':outputs,'interrupted':interrupted,
             'errors':[{k:e.get(k) for k in ('node_id','node_type','exception_message')} for e in errors if isinstance(e,dict)]}
 
 @app.get('/api/jobs/{prompt_id}/view')

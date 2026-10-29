@@ -19,9 +19,9 @@ docker build -t comfy-mobile .
 
 `tests/test_bundled_workflows.py` is a bare pytest-style function, so `unittest discover` does not collect it. Run it with `python -m pytest tests/test_bundled_workflows.py` (pytest is not in requirements). It asserts there are exactly 30 files in `workflows/`, so update the count if you add or remove one.
 
-Running locally: `app/main.py` uses flat imports (`from workflow_sync import ...`) and serves `/app/static/index.html` by absolute path, because the Dockerfile copies `app/` to `/app` and runs `uvicorn main:app` from there. Tests import the modules as `app.workflow_*`. Nothing imports `main.py` in tests, so keep logic in the `workflow_*` modules where it can be tested. Running outside Docker needs `cd app` and env vars, and `/` will 404 unless `/app/static` exists.
+Running locally: `app/main.py` uses flat imports (`from workflow_sync import ...`) and serves `/app/static/index.html` by absolute path, because the Dockerfile copies `app/` to `/app` and runs `uvicorn main:app` from there. Tests import the modules as `app.workflow_*`. Nothing imports `main.py` in tests, so keep logic in the `workflow_*` modules where it can be tested. Running outside Docker: `cd app` and set the env vars plus `STATIC_DIR=static` (it defaults to the Docker path `/app/static`).
 
-Configuration is env-only: `COMFYUI_URL`, `STUDIO_TOKEN` (required, or every endpoint returns 401), `WORKFLOW_DIR` (bundled, mounted read-only), `WORKFLOW_SYNC_DIR` (writable).
+Configuration is env-only: `COMFYUI_URL`, `STUDIO_TOKEN` (required, or every endpoint returns 401), `WORKFLOW_DIR` (bundled, mounted read-only), `WORKFLOW_SYNC_DIR` (writable), `STATIC_DIR` (local runs only).
 
 ## Architecture
 
@@ -35,6 +35,8 @@ Configuration is env-only: `COMFYUI_URL`, `STUDIO_TOKEN` (required, or every end
   - Bare model filenames resolve to a unique subfolder entry. `LoadImage.image` is not validated; jobs fill it (`image_inputs`). List widget values are sent as `{"__value__": [...]}` because ComfyUI reads bare lists as links. Preview nodes with a required socketless widget (ImageCompare) are dropped.
 - **Prompt injection point**: `bind_prompt` writes `{{prompt}}` into the single top-level prompt field: an unlinked non-negative CLIPTextEncode, a `PrimitiveString(Multiline)` titled "…prompt…" (not negative/prefix/trigger), or an unlinked subgraph input named/labelled `prompt`. None means the workflow takes no typed prompt (auto-caption), which is valid; more than one fails. `workflow_jobs.apply_job` replaces the placeholder, fills uploaded images in `image_inputs` order and overrides `seed`/`noise_seed`.
 - **Jobs I/O (`workflow_jobs`)**: `/api/uploads` takes a raw PNG/JPEG/WebP body, names it `mobile_<uuid>.<ext>` from magic bytes and forwards it to ComfyUI; jobs only accept those names. `/api/jobs/{id}/outputs` lists files with HMAC-signed `view` URLs (keyed off `STUDIO_TOKEN`, 6 h expiry) because `<img>`/`<video>` can't send a Bearer header; `/view` only serves files that job produced and passes Range through.
+- **Job control**: `/api/jobs/{id}/cancel` deletes a pending job, or interrupts it only if it is the running one (older ComfyUI ignores `prompt_id` on `/interrupt` and would stop anything). `/api/comfy/free` asks ComfyUI to unload models. These ComfyUI endpoints return empty bodies, hence `request(..., expect_json=False)`.
+- **PWA**: `static/sw.js` handles the Web Share Target (`POST /share-target` → Cache Storage → `/?shared=N`) and notification clicks; it never caches the app or API. The server-side `/share-target` route is only a fallback before the worker is installed. Saved prompts and the gallery live in `localStorage` (per device).
 - **`workflow_sync.WorkflowSync`**: one-way pull from ComfyUI's `/userdata?dir=workflows` into `SYNC_DIR`. It allows a strict filename allowlist (`SAFE_NAME`) and at most 200 files of 2 MB each, compares SHA-256 hashes, writes atomically via `.partial` and `os.replace`, refuses symlinks, never deletes, and serializes runs with an `asyncio.Lock`. `docs/workflow-sync-plan.md` lists the planned behaviour that isn't built yet.
 
 ## Conventions

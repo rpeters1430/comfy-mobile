@@ -87,6 +87,14 @@ nav button[aria-current="page"] { color: white; background: #2a3247; }
 
   <!-- Create -->
   <section id="tab-create">
+    <div class="panel hide" id="shared-banner" role="status">
+      <div class="row between">
+        <strong id="shared-title">Shared photo ready</strong>
+        <button class="ghost" id="shared-dismiss" type="button" aria-label="Discard shared photos">✕</button>
+      </div>
+      <div class="slots" id="shared-previews" style="grid-template-columns:repeat(auto-fill,minmax(70px,1fr))"></div>
+      <p class="status">Pick a workflow below and the photos fill its image slots in order.</p>
+    </div>
     <div class="panel">
       <div class="chips" role="group" aria-label="Filter workflows">
         <button class="chip" data-kind="all" aria-pressed="true">All</button>
@@ -111,13 +119,24 @@ nav button[aria-current="page"] { color: white; background: #2a3247; }
       <div id="prompt-box">
         <label for="prompt">Prompt</label>
         <textarea id="prompt" placeholder="Describe what you want to create…"></textarea>
+        <div class="row">
+          <select id="saved-prompts" aria-label="Saved prompts" style="flex:1"><option value="">Saved prompts…</option></select>
+          <button class="ghost" id="save-prompt" type="button">★ Save</button>
+          <button class="ghost" id="delete-prompt" type="button" aria-label="Delete selected saved prompt">🗑</button>
+        </div>
       </div>
       <p id="no-prompt" class="status hide">This workflow writes its own prompt from your image.</p>
-      <label for="seed">Seed</label>
-      <div class="row">
-        <input id="seed" type="number" min="0" inputmode="numeric" placeholder="Workflow default" style="flex:1">
-        <button class="ghost" id="random-seed" type="button">🎲 Random</button>
+      <div class="row" style="align-items:flex-end">
+        <div style="flex:2">
+          <label for="seed">Seed</label>
+          <input id="seed" type="number" min="0" inputmode="numeric" placeholder="Random each run">
+        </div>
+        <div style="flex:1">
+          <label for="runs">Runs</label>
+          <select id="runs"><option>1</option><option>2</option><option>4</option><option>8</option></select>
+        </div>
       </div>
+      <p class="status" style="margin:2px 0 0">Leave the seed empty for a new image every run. With a seed, runs use seed, seed+1, …</p>
       <button class="primary" id="generate" type="submit">Generate</button>
       <p id="form-error" class="status error" role="alert"></p>
     </form>
@@ -151,9 +170,18 @@ nav button[aria-current="page"] { color: white; background: #2a3247; }
       <p id="sync-status" class="status">Pull saved workflows from ComfyUI.</p>
     </div>
     <div class="panel">
-      <h2>ComfyUI</h2>
+      <div class="row between"><h2>ComfyUI</h2><button class="secondary" id="free-vram" type="button">Free VRAM</button></div>
       <p id="system" class="status">Connect to see status.</p>
       <p id="models" class="status"></p>
+      <p id="free-status" class="status"></p>
+    </div>
+    <div class="panel">
+      <div class="row between"><h2>Notifications</h2><button class="secondary" id="notify" type="button">Enable</button></div>
+      <p id="notify-status" class="status">Get a notification when a job finishes while the app is in the background.</p>
+    </div>
+    <div class="panel">
+      <h2>Share photos into the app</h2>
+      <p class="status">Install the app (browser menu → <em>Add to Home screen</em> / <em>Install app</em>). Then share a photo from your gallery and choose <strong>Image Studio</strong>.</p>
     </div>
   </section>
 </main>
@@ -168,6 +196,8 @@ nav button[aria-current="page"] { color: white; background: #2a3247; }
 const $ = id => document.getElementById(id);
 const STORAGE_KEY = 'image-studio-mobile:token:v1';
 const GALLERY_KEY = 'image-studio-mobile:jobs:v1';
+const PROMPTS_KEY = 'image-studio-mobile:prompts:v1';
+const SHARED_CACHE = 'shared-images';
 const MAX_SIDE = 2048;
 
 let token = '';
@@ -175,6 +205,8 @@ let catalog = null;
 let filter = 'all';
 let selected = null;   // catalog workflow entry
 let slots = [];        // per image input: {name, uploading}
+let sharedFiles = [];  // photos shared into the app, waiting for a workflow
+let swReg = null;
 
 function store(key, value) { try { value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch (e) {} }
 function load(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
@@ -281,7 +313,12 @@ function selectWorkflow(wf) {
   $('images-label').textContent = wf.image_inputs > 1 ? `Input images (${wf.image_inputs}, in order)` : 'Input image';
   $('form-error').textContent = '';
   renderSlots();
+  renderSavedPrompts();
   renderWorkflows();
+  if (sharedFiles.length && slots.length) {
+    sharedFiles.slice(0, slots.length).forEach((file, i) => pickImage(i, file));
+    clearShared();
+  }
   $('form').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -332,7 +369,36 @@ async function pickImage(i, file) {
   }
 }
 
-$('random-seed').onclick = () => { $('seed').value = Math.floor(Math.random() * 2 ** 48); };
+/* ---------- saved prompts (per workflow, this device) ---------- */
+function savedPrompts() { try { return JSON.parse(load(PROMPTS_KEY) || '{}'); } catch (e) { return {}; } }
+function promptKey() { return selected ? prettyName(selected.name) : ''; }
+function renderSavedPrompts() {
+  const list = savedPrompts()[promptKey()] || [];
+  $('saved-prompts').replaceChildren(new Option(list.length ? `Saved prompts (${list.length})…` : 'No saved prompts yet', ''),
+    ...list.map((text, i) => new Option(text.length > 60 ? text.slice(0, 57) + '…' : text, String(i))));
+}
+$('saved-prompts').onchange = () => {
+  const list = savedPrompts()[promptKey()] || [];
+  if ($('saved-prompts').value !== '') $('prompt').value = list[Number($('saved-prompts').value)] || '';
+};
+$('save-prompt').onclick = () => {
+  const text = $('prompt').value.trim();
+  if (!text || !selected) return;
+  const all = savedPrompts();
+  all[promptKey()] = [text, ...(all[promptKey()] || []).filter(t => t !== text)].slice(0, 30);
+  store(PROMPTS_KEY, JSON.stringify(all));
+  renderSavedPrompts();
+};
+$('delete-prompt').onclick = () => {
+  const index = $('saved-prompts').value;
+  if (index === '') return;
+  const all = savedPrompts();
+  all[promptKey()] = (all[promptKey()] || []).filter((_, i) => i !== Number(index));
+  store(PROMPTS_KEY, JSON.stringify(all));
+  renderSavedPrompts();
+};
+
+function randomSeed() { return Math.floor(Math.random() * 2 ** 48); }
 
 /* ---------- jobs ---------- */
 function galleryJobs() { try { return JSON.parse(load(GALLERY_KEY) || '[]'); } catch (e) { return []; } }
@@ -346,13 +412,14 @@ $('form').onsubmit = async event => {
   if (slots.some(s => !s.name)) return void ($('form-error').textContent = slots.length > 1 ? `Add all ${slots.length} images first.` : 'Add an image first.');
   const prompt = $('prompt').value.trim();
   if (selected.takes_prompt && !prompt) return void ($('form-error').textContent = 'Enter a prompt.');
-  const seed = $('seed').value === '' ? null : Number($('seed').value);
+  const base = $('seed').value === '' ? null : Number($('seed').value);
+  const runs = Number($('runs').value) || 1;
   $('generate').disabled = true;
   try {
-    const r = await api('/jobs', { method: 'POST', json: { workflow_id: selected.id, prompt, images: slots.map(s => s.name), seed } });
-    const job = { id: r.prompt_id, workflow: prettyName(selected.name), prompt: selected.takes_prompt ? prompt : '', created: Date.now() };
-    rememberJob(job);
-    openJob(job, true);
+    for (let i = 0; i < runs; i++) {
+      await submitJob({ workflowId: selected.id, workflow: prettyName(selected.name), takesPrompt: selected.takes_prompt,
+        prompt: selected.takes_prompt ? prompt : '', images: slots.map(s => s.name), seed: base === null ? randomSeed() : base + i }, i === 0);
+    }
   } catch (e) {
     $('form-error').textContent = e.message;
   } finally {
@@ -360,21 +427,41 @@ $('form').onsubmit = async event => {
   }
 };
 
+async function submitJob(params, focus) {
+  const r = await api('/jobs', { method: 'POST', json: { workflow_id: params.workflowId, prompt: params.prompt, images: params.images, seed: params.seed } });
+  const job = { ...params, id: r.prompt_id, created: Date.now() };
+  rememberJob(job);
+  openJob(job, focus);
+  return job;
+}
+
 const openJobs = new Map();
 
 function openJob(job, focus) {
   if (openJobs.has(job.id)) { openJobs.get(job.id).card.scrollIntoView({ behavior: 'smooth' }); return; }
   const state = el('p', { class: 'status', 'aria-live': 'polite' }, 'Queued…');
   const results = el('div', { class: 'results' });
-  const close = el('button', { class: 'ghost', type: 'button' }, '✕');
+  const close = el('button', { class: 'ghost', type: 'button', 'aria-label': 'Close' }, '✕');
+  const cancel = el('button', { class: 'ghost', type: 'button' }, '■ Cancel');
+  const actions = el('div', { class: 'row' }, cancel);
   const card = el('div', { class: 'panel job' },
     el('div', { class: 'row between' }, el('strong', {}, job.workflow), close),
     job.prompt ? el('small', { style: 'display:block;margin-top:4px;overflow-wrap:anywhere' }, job.prompt) : null,
-    state, results);
+    job.seed != null ? el('small', { style: 'display:block' }, `seed ${job.seed}`) : null,
+    state, results, actions);
   $('jobs').prepend(card);
-  const entry = { card, state, results, stopped: false };
+  const entry = { card, state, results, actions, stopped: false };
   openJobs.set(job.id, entry);
   close.onclick = () => { entry.stopped = true; openJobs.delete(job.id); card.remove(); };
+  cancel.onclick = async () => {
+    cancel.disabled = true;
+    try {
+      const r = await api(`/jobs/${job.id}/cancel`, { method: 'POST' });
+      if (r.cancelled === 'pending') { entry.stopped = true; showActions(job, entry); entry.state.textContent = 'Cancelled'; }
+      else if (r.cancelled === 'running') { entry.stopping = true; entry.state.textContent = 'Stopping…'; }
+      else cancel.disabled = false;
+    } catch (e) { entry.state.textContent = 'Cancel failed: ' + e.message; cancel.disabled = false; }
+  };
   showTab('create');
   if (focus) card.scrollIntoView({ behavior: 'smooth' });
   poll(job, entry);
@@ -399,7 +486,7 @@ async function poll(job, entry) {
       if (r.completed || (r.status !== 'pending' && r.status !== 'unknown')) return showResults(job, entry, r);
       const pos = await queuePosition(job.id);
       const secs = Math.round((Date.now() - started) / 1000);
-      entry.state.textContent = pos === 0 ? `Generating… ${secs}s` : pos ? `Waiting in queue (#${pos}) · ${secs}s` : `Working… ${secs}s`;
+      entry.state.textContent = entry.stopping ? 'Stopping…' : pos === 0 ? `Generating… ${secs}s` : pos ? `Waiting in queue (#${pos}) · ${secs}s` : `Working… ${secs}s`;
     } catch (e) {
       if (++failures >= 5) { entry.state.textContent = 'Lost contact: ' + e.message; entry.state.className = 'status error'; return; }
     }
@@ -412,10 +499,32 @@ function mediaFor(item, thumb) {
   return el('img', { src: item.url, alt: item.filename, loading: 'lazy', decoding: 'async' });
 }
 
+function showActions(job, entry) {
+  const buttons = [];
+  if (job.workflowId) {
+    buttons.push(el('button', { class: 'secondary', type: 'button', onclick: () => runAgain(job, randomSeed()) }, '↻ Run again'));
+    if (job.seed != null) buttons.push(el('button', { class: 'ghost', type: 'button', onclick: () => runAgain(job, job.seed) }, 'Same seed'));
+  }
+  entry.actions.replaceChildren(...buttons);
+}
+
+async function runAgain(job, seed) {
+  try { await submitJob({ ...job, id: undefined, seed }, true); }
+  catch (e) { const entry = openJobs.get(job.id); if (entry) entry.state.textContent = 'Could not start: ' + e.message; }
+}
+
+function notifyDone(job, ok) {
+  if (!document.hidden || !swReg || !('Notification' in window) || Notification.permission !== 'granted') return;
+  swReg.showNotification(ok ? `${job.workflow} is ready` : `${job.workflow} failed`, {
+    body: job.prompt || 'Tap to open', icon: '/icon-192.png', tag: job.id, data: { url: '/?job=' + job.id } });
+}
+
 function showResults(job, entry, r) {
   const ok = r.status === 'success';
-  entry.state.className = 'status ' + (ok ? 'ok' : 'error');
-  entry.state.textContent = ok ? 'Done' : 'Failed: ' + (r.errors.map(e => `${e.node_type}: ${e.exception_message}`).join('\n') || r.status);
+  showActions(job, entry);
+  notifyDone(job, ok);
+  entry.state.className = 'status ' + (ok ? 'ok' : r.interrupted ? '' : 'error');
+  entry.state.textContent = ok ? 'Done' : r.interrupted ? 'Cancelled' : 'Failed: ' + (r.errors.map(e => `${e.node_type}: ${e.exception_message}`).join('\n') || r.status);
   const finals = r.outputs.filter(o => o.kind !== 'text' && !o.preview);
   const previews = r.outputs.filter(o => o.kind !== 'text' && o.preview);
   const texts = r.outputs.filter(o => o.kind === 'text');
@@ -489,6 +598,24 @@ $('forget').onclick = () => {
   setStatus('Saved token cleared');
 };
 $('refresh').onclick = refresh;
+$('free-vram').onclick = async () => {
+  $('free-vram').disabled = true;
+  try {
+    await api('/comfy/free', { method: 'POST' });
+    $('free-status').textContent = 'Requested. ComfyUI unloads models once its queue is idle.';
+    setTimeout(refresh, 3000);
+  } catch (e) { $('free-status').textContent = 'Failed: ' + e.message; }
+  finally { $('free-vram').disabled = false; }
+};
+function renderNotify() {
+  const supported = 'Notification' in window && 'serviceWorker' in navigator;
+  const state = supported ? Notification.permission : 'unsupported';
+  $('notify').classList.toggle('hide', state !== 'default');
+  if (state === 'granted') $('notify-status').textContent = 'On. You get a notification when a job finishes while the app is in the background.';
+  if (state === 'denied') $('notify-status').textContent = 'Blocked. Allow notifications for this site in your browser settings.';
+  if (state === 'unsupported') $('notify-status').textContent = 'Not supported in this browser.';
+}
+$('notify').onclick = async () => { await Notification.requestPermission(); renderNotify(); };
 $('sync-now').onclick = async () => {
   const button = $('sync-now');
   button.disabled = true; $('sync-status').textContent = 'Synchronizing…';
@@ -501,10 +628,55 @@ $('sync-now').onclick = async () => {
   finally { button.disabled = false; }
 };
 
-(function start() {
+/* ---------- photos shared from other apps ---------- */
+async function loadShared() {
+  if (!('caches' in window)) return;
+  const cache = await caches.open(SHARED_CACHE);
+  const keys = (await cache.keys()).sort((a, b) => a.url.localeCompare(b.url, undefined, { numeric: true }));
+  sharedFiles = [];
+  for (const key of keys) {
+    const r = await cache.match(key);
+    const blob = await r.blob();
+    sharedFiles.push(new File([blob], decodeURIComponent(r.headers.get('X-Name') || 'shared'), { type: blob.type }));
+  }
+  renderShared();
+}
+function renderShared() {
+  $('shared-banner').classList.toggle('hide', !sharedFiles.length);
+  if (!sharedFiles.length) return;
+  $('shared-title').textContent = sharedFiles.length === 1 ? 'Shared photo ready' : `${sharedFiles.length} shared photos ready`;
+  $('shared-previews').replaceChildren(...sharedFiles.map(f => el('div', { class: 'slot' }, el('img', { src: URL.createObjectURL(f), alt: '' }))));
+  if (filter === 'all' || filter === 'text') document.querySelector('.chip[data-kind="image"]').click();
+}
+function clearShared() {
+  sharedFiles = [];
+  if ('caches' in window) caches.delete(SHARED_CACHE);
+  renderShared();
+}
+$('shared-dismiss').onclick = clearShared;
+
+function openFromUrl(url) {
+  const params = new URL(url, location.href).searchParams;
+  const id = params.get('job');
+  if (id && /^[0-9a-fA-F-]{36}$/.test(id)) openJob(galleryJobs().find(j => j.id === id) || { id, workflow: 'Job' }, true);
+}
+
+(async function start() {
+  if ('serviceWorker' in navigator) {
+    try { swReg = await navigator.serviceWorker.register('/sw.js'); } catch (e) {}
+    navigator.serviceWorker.addEventListener('message', event => event.data?.type === 'open-job' && openFromUrl(event.data.url));
+  }
+  renderNotify();
   const saved = load(STORAGE_KEY);
   if (saved) { token = saved; $('token').value = saved; refresh(); }
   else { showTab('settings'); setStatus('Enter your studio token to connect'); }
+  const params = new URLSearchParams(location.search);
+  if (params.has('shared')) {
+    await loadShared().catch(() => {});
+    if (!sharedFiles.length && params.get('shared') === '0') setStatus('Install the app first to share photos into it', 'error');
+  }
+  if (params.has('job') && saved) openFromUrl(location.href);
+  if (params.has('shared') || params.has('job')) history.replaceState(null, '', '/');
 })();
 </script>
 </body>
