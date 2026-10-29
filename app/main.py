@@ -5,11 +5,12 @@ import httpx
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from workflow_validation import inspect_workflow, load_workflow
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
 WF_DIR = Path(os.getenv('WORKFLOW_DIR','/workflows'))
-app = FastAPI(title='Image Studio Mobile', version='0.3.0')
+app = FastAPI(title='Image Studio Mobile', version='0.4.0-dev')
 
 async def request(method, path, **kwargs):
     async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=4.0)) as client:
@@ -39,7 +40,7 @@ def check_auth(authorization: str | None = Header(default=None)):
 async def health(authorization: str | None = Header(default=None)):
     auth(authorization)
     info = await request('GET','/system_stats')
-    return {'comfyui':'online','devices':info.get('devices',[]),'version':'0.3.0'}
+    return {'comfyui':'online','devices':info.get('devices',[]),'version':'0.4.0-dev'}
 
 @app.get('/api/catalog')
 async def catalog(authorization: str | None = Header(default=None)):
@@ -68,6 +69,16 @@ async def catalog(authorization: str | None = Header(default=None)):
                 continue
     return {'models':out,'workflows':workflows,'updated_at':int(time.time()),'note':'UI-format workflows are discoverable but must be exported in API format before execution'}
 
+@app.get('/api/workflows/{workflow_id:path}/validate')
+async def validate_workflow(workflow_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    try:
+        graph = load_workflow(WF_DIR, workflow_id)
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    info = await request('GET', '/object_info')
+    return inspect_workflow(graph, info)
+
 @app.get('/api/queue')
 async def queue(authorization: str | None = Header(default=None)):
     auth(authorization)
@@ -87,14 +98,14 @@ class Job(BaseModel):
 @app.post('/api/jobs')
 async def jobs(job: Job, authorization: str | None = Header(default=None)):
     auth(authorization)
-    # Only locally mounted, explicitly supplied ComfyUI API-format workflows are executable.
-    candidate=(WF_DIR/job.workflow_id).resolve()
-    if not candidate.is_relative_to(WF_DIR.resolve()) or candidate.suffix!='.json' or not candidate.is_file():
-        raise HTTPException(400,'Unknown workflow')
-    if candidate.stat().st_size>2_000_000: raise HTTPException(400,'Workflow too large')
-    graph=json.loads(candidate.read_text())
-    if not isinstance(graph,dict) or not graph or not all(isinstance(v,dict) and 'class_type' in v and isinstance(v.get('inputs'),dict) for v in graph.values()):
-        raise HTTPException(400,'This workflow is in ComfyUI UI format. Open it in ComfyUI and export in API format before submitting from this starter app.')
+    try:
+        graph = load_workflow(WF_DIR, job.workflow_id)
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    info = await request('GET', '/object_info')
+    validation = inspect_workflow(graph, info)
+    if not validation['runnable']:
+        raise HTTPException(400, {'message': 'Workflow cannot run', 'errors': validation['errors'], 'warnings': validation['warnings']})
     # Explicit {{prompt}} placeholders avoid accidentally rewriting negative prompts or instructions.
     replacements=0
     for node in graph.values():
