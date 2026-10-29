@@ -94,15 +94,15 @@ Periodic polling, recording remote deletions as archived instead of deleting, ke
 
 | Feature | Value | Effort |
 | --- | --- | --- |
-| Cancel/interrupt a job, remove queued jobs (`/interrupt`, `/queue` delete) | High | S |
-| Presets and favorites per workflow (saved param sets on the NAS) | High | S |
-| PWA share target: share a photo from the gallery straight into an image-to-video or edit workflow | High | M |
-| Push notification when a long video job finishes | High | M |
+| ✅ Cancel/interrupt a job, remove queued jobs (`/interrupt`, `/queue` delete) | High | S |
+| ✅ Saved prompts per workflow (on the device for now; NAS-side presets later) | High | S |
+| ✅ PWA share target: share a photo from the gallery straight into an image-to-video or edit workflow | High | M |
+| ✅ Notification when a job finishes while the app is backgrounded (true push when the app is closed still needs Web Push + VAPID) | High | M |
 | LoRA / checkpoint picker from `/object_info` lists | Medium | S |
 | Show the auto-caption text produced by the captioning workflows, edit it, then run again | Medium | M |
-| PC status: online, VRAM in use, "free VRAM" button | Medium | S |
+| ✅ PC status: online, VRAM in use, "free VRAM" button | Medium | S |
 | Wake-on-LAN for the PC from the NAS | Medium | S |
-| Batch: N seeds or a prompt list in one tap | Medium | S |
+| ✅ Batch: 1–8 runs with random or consecutive seeds; Run again / Same seed on every result | Medium | S |
 | Before/after compare slider for image-to-image and edit | Low | S |
 | Job history stored on the NAS (ComfyUI history is lost when it restarts) | Medium | M |
 
