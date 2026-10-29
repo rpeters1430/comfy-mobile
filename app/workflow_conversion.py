@@ -58,6 +58,18 @@ def convert_ui(data, object_info):
         result[str(node["id"])] = {"class_type": kind, "inputs": inputs}
     if not result:
         raise ConversionError("No executable nodes")
+    if not any("{{prompt}}" in v for n in result.values() for v in n["inputs"].values() if isinstance(v, str)):
+        candidates = []
+        for source in nodes:
+            key = str(source.get("id"))
+            if key in result and result[key]["class_type"] == "CLIPTextEncode":
+                title = str(source.get("title", "")).lower()
+                if "negative" not in title and "neg prompt" not in title:
+                    candidates.append(key)
+        if len(candidates) == 1:
+            result[candidates[0]]["inputs"]["text"] = "{{prompt}}"
+        else:
+            raise ConversionError("Cannot identify a unique positive prompt node; add {{prompt}} in ComfyUI")
     # Never submit dangling connections.
     for node in result.values():
         for value in node["inputs"].values():
