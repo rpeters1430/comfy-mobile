@@ -1,7 +1,6 @@
 import unittest
 
-from app.workflow_jobs import (JobError, apply_job, check_view, find_output, job_outputs, upload_name,
-                               view_query)
+from app.workflow_jobs import JobError, VIEW_STEP, VIEW_TTL, apply_job, check_view, job_outputs, upload_name, view_query
 
 NAME = "mobile_" + "a" * 32 + ".png"
 
@@ -56,10 +55,11 @@ class JobTests(unittest.TestCase):
         self.assertTrue(job_outputs(entry)[0]["preview"])
         self.assertFalse(job_outputs(self.history())[0]["preview"])
 
-    def test_viewer_only_serves_this_jobs_files(self):
-        self.assertIsNotNone(find_output(self.history(), "clip.mp4", "video", "output"))
-        self.assertIsNone(find_output(self.history(), "clip.mp4", "", "output"))
-        self.assertIsNone(find_output(self.history(), "other.png", "", "output"))
+    def test_view_links_stay_stable_so_the_browser_can_cache_them(self):
+        item = {"filename": "a.png", "subfolder": "", "type": "output"}
+        first = view_query("secret", "job", item, now=VIEW_STEP * 10 + 1)
+        self.assertEqual(first, view_query("secret", "job", item, now=VIEW_STEP * 11 - 1))
+        self.assertGreaterEqual(first["expires"] - (VIEW_STEP * 11 - 1), VIEW_TTL)
 
     def test_signed_view_links(self):
         item = {"filename": "a.png", "subfolder": "", "type": "output"}

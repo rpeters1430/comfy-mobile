@@ -93,7 +93,7 @@ nav button[aria-current="page"] { color: white; background: #2a3247; }
         <button class="ghost" id="shared-dismiss" type="button" aria-label="Discard shared photos">✕</button>
       </div>
       <div class="slots" id="shared-previews" style="grid-template-columns:repeat(auto-fill,minmax(70px,1fr))"></div>
-      <p class="status">Pick a workflow below and the photos fill its image slots in order.</p>
+      <p class="status" id="shared-hint">Pick a workflow below and the photos fill its image slots in order.</p>
     </div>
     <div class="panel">
       <div class="chips" role="group" aria-label="Filter workflows">
@@ -467,9 +467,28 @@ function openJob(job, focus) {
   poll(job, entry);
 }
 
+// Android freezes the app in the background and requests in flight at that moment never answer.
+// On return, drop them and wake every poller at once instead of waiting for them to time out.
+let resumed = new AbortController();
+const wakers = new Set();
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  resumed.abort();
+  resumed = new AbortController();
+  for (const wake of [...wakers]) wake();
+});
+function nap(ms) {
+  return new Promise(ok => {
+    const wake = () => { clearTimeout(timer); wakers.delete(wake); ok(); };
+    const timer = setTimeout(wake, ms);
+    wakers.add(wake);
+  });
+}
+const pollSignal = () => AbortSignal.any([resumed.signal, AbortSignal.timeout(10000)]);
+
 async function queuePosition(id) {
   try {
-    const q = await api('/queue');
+    const q = await api('/queue', { signal: pollSignal() });
     if ((q.queue_running || []).some(item => item[1] === id)) return 0;
     const pending = (q.queue_pending || []).map(item => item[1]);
     return pending.includes(id) ? pending.indexOf(id) + 1 : null;
@@ -480,23 +499,26 @@ async function poll(job, entry) {
   const started = Date.now();
   let failures = 0;
   while (!entry.stopped) {
+    const round = resumed.signal;
     try {
-      const r = await api(`/jobs/${job.id}/outputs`);
+      const r = await api(`/jobs/${job.id}/outputs`, { signal: pollSignal() });
       failures = 0;
       if (r.completed || (r.status !== 'pending' && r.status !== 'unknown')) return showResults(job, entry, r);
       const pos = await queuePosition(job.id);
       const secs = Math.round((Date.now() - started) / 1000);
       entry.state.textContent = entry.stopping ? 'Stopping…' : pos === 0 ? `Generating… ${secs}s` : pos ? `Waiting in queue (#${pos}) · ${secs}s` : `Working… ${secs}s`;
     } catch (e) {
+      if (round.aborted) continue;
       if (++failures >= 5) { entry.state.textContent = 'Lost contact: ' + e.message; entry.state.className = 'status error'; return; }
     }
-    await new Promise(ok => setTimeout(ok, 2500));
+    await nap(2500);
   }
 }
 
 function mediaFor(item, thumb) {
   if (item.kind === 'video') return el('video', { src: item.url, controls: !thumb, playsinline: true, preload: 'metadata', muted: thumb, loop: true });
-  return el('img', { src: item.url, alt: item.filename, loading: 'lazy', decoding: 'async' });
+  // Cards show a WebP copy; tapping opens the original file.
+  return el('img', { src: item.url + '&thumb=1', alt: item.filename, loading: 'lazy', decoding: 'async' });
 }
 
 function showActions(job, entry) {
@@ -645,6 +667,7 @@ function renderShared() {
   $('shared-banner').classList.toggle('hide', !sharedFiles.length);
   if (!sharedFiles.length) return;
   $('shared-title').textContent = sharedFiles.length === 1 ? 'Shared photo ready' : `${sharedFiles.length} shared photos ready`;
+  $('shared-hint').textContent = sharedFiles.length === 1 ? 'Pick a workflow below and the photo fills its image slot.' : 'Pick a workflow below and the photos fill its image slots in order.';
   $('shared-previews').replaceChildren(...sharedFiles.map(f => el('div', { class: 'slot' }, el('img', { src: URL.createObjectURL(f), alt: '' }))));
   if (filter === 'all' || filter === 'text') document.querySelector('.chip[data-kind="image"]').click();
 }
