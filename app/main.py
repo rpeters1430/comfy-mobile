@@ -22,7 +22,22 @@ async def request(method, path, **kwargs):
             r = await client.request(method, f'{COMFY}{path}', **kwargs)
             r.raise_for_status()
             return r.json()
-        except (httpx.HTTPError, ValueError) as e:
+        except httpx.HTTPStatusError as e:
+            # Preserve ComfyUI's validation message, but never echo arbitrary HTML.
+            response = e.response
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = None
+            detail = {'message': 'ComfyUI rejected the request', 'status_code': response.status_code}
+            if isinstance(payload, dict):
+                for field in ('error', 'node_errors'):
+                    if field in payload:
+                        detail[field] = payload[field]
+            elif response.status_code >= 500:
+                detail['reason'] = 'ComfyUI server error'
+            raise HTTPException(502, detail) from e
+        except (httpx.RequestError, ValueError) as e:
             raise HTTPException(502, f'ComfyUI request failed: {type(e).__name__}') from e
 
 def auth(authorization: str | None):
