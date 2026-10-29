@@ -1,0 +1,17 @@
+services:
+  image-studio-mobile:
+    image: ghcr.io/rpeters1430/comfy-mobile:latest
+    pull_policy: always
+    container_name: image-studio-mobile
+    restart: unless-stopped
+    ports:
+      - "8095:8095"
+    environment:
+      COMFYUI_URL: ${COMFYUI_URL:?Set your ComfyUI URL}
+      STUDIO_TOKEN: ${STUDIO_TOKEN:?Set a strong access token}
+      WORKFLOW_DIR: /workflows
+    volumes:
+      - ./workflows:/workflows:ro
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true

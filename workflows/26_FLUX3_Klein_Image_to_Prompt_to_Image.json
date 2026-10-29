@@ -1,0 +1,1703 @@
+{
+ "id": "26-flux3-klein-image-to-prompt-to-image",
+ "revision": 0,
+ "last_node_id": 19,
+ "last_link_id": 28,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "LoadImage",
+   "pos": [
+    40,
+    100
+   ],
+   "size": [
+    400,
+    380
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "COMBO",
+     "widget": {
+      "name": "image"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "choose file to upload",
+     "name": "upload",
+     "type": "IMAGEUPLOAD",
+     "widget": {
+      "name": "upload"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "IMAGE",
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      1,
+      16,
+      22
+     ]
+    },
+    {
+     "localized_name": "MASK",
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "1. Input Image",
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "owui_2fd39ec6d40e4b7480405443fcc7f9a5.png",
+    "image"
+   ]
+  },
+  {
+   "id": 2,
+   "type": "Qwen3VLAbliteratedPromptPair",
+   "pos": [
+    480,
+    100
+   ],
+   "size": [
+    476.33359375,
+    886
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "link": 1
+    },
+    {
+     "localized_name": "character_name",
+     "name": "character_name",
+     "shape": 7,
+     "type": "STRING",
+     "link": 17
+    },
+    {
+     "localized_name": "extra_options",
+     "name": "extra_options",
+     "shape": 7,
+     "type": "JOYCAPTION_EXTRA_OPTIONS",
+     "link": null
+    },
+    {
+     "localized_name": "wd14_tags",
+     "name": "wd14_tags",
+     "shape": 7,
+     "type": "STRING",
+     "link": 28
+    },
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "COMBO",
+     "widget": {
+      "name": "model"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "caption_type",
+     "name": "caption_type",
+     "type": "COMBO",
+     "widget": {
+      "name": "caption_type"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "length",
+     "name": "length",
+     "type": "COMBO",
+     "widget": {
+      "name": "length"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "custom_prompt",
+     "name": "custom_prompt",
+     "type": "STRING",
+     "widget": {
+      "name": "custom_prompt"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "positive_prefix",
+     "name": "positive_prefix",
+     "type": "STRING",
+     "widget": {
+      "name": "positive_prefix"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "positive_suffix",
+     "name": "positive_suffix",
+     "type": "STRING",
+     "widget": {
+      "name": "positive_suffix"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "base_negative",
+     "name": "base_negative",
+     "type": "STRING",
+     "widget": {
+      "name": "base_negative"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "generate_negative",
+     "name": "generate_negative",
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "generate_negative"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "max_new_tokens",
+     "name": "max_new_tokens",
+     "type": "INT",
+     "widget": {
+      "name": "max_new_tokens"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "temperature",
+     "name": "temperature",
+     "type": "FLOAT",
+     "widget": {
+      "name": "temperature"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "top_p",
+     "name": "top_p",
+     "type": "FLOAT",
+     "widget": {
+      "name": "top_p"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "content_mode",
+     "name": "content_mode",
+     "shape": 7,
+     "type": "COMBO",
+     "widget": {
+      "name": "content_mode"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "vulgar_slang",
+     "name": "vulgar_slang",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "vulgar_slang"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "lighting",
+     "name": "lighting",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "lighting"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "camera_angle",
+     "name": "camera_angle",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "camera_angle"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "shot_type",
+     "name": "shot_type",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "shot_type"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "composition",
+     "name": "composition",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "composition"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "depth_of_field",
+     "name": "depth_of_field",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "depth_of_field"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "camera_settings",
+     "name": "camera_settings",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "camera_settings"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "aesthetic_quality",
+     "name": "aesthetic_quality",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "aesthetic_quality"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "mention_mood",
+     "name": "mention_mood",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "mention_mood"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "ignore_text_in_image",
+     "name": "ignore_text_in_image",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "ignore_text_in_image"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "watermark",
+     "name": "watermark",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "watermark"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "jpeg_artifacts",
+     "name": "jpeg_artifacts",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "jpeg_artifacts"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "aspect_ratio",
+     "name": "aspect_ratio",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "aspect_ratio"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "unambiguous",
+     "name": "unambiguous",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "unambiguous"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "ollama_url",
+     "name": "ollama_url",
+     "shape": 7,
+     "type": "STRING",
+     "widget": {
+      "name": "ollama_url"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "unload_after_generation",
+     "name": "unload_after_generation",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "unload_after_generation"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "positive",
+     "name": "positive",
+     "type": "STRING",
+     "links": [
+      2,
+      4,
+      18
+     ]
+    },
+    {
+     "localized_name": "negative",
+     "name": "negative",
+     "type": "STRING",
+     "links": null
+    },
+    {
+     "localized_name": "width",
+     "name": "width",
+     "type": "INT",
+     "links": []
+    },
+    {
+     "localized_name": "height",
+     "name": "height",
+     "type": "INT",
+     "links": []
+    }
+   ],
+   "title": "🧠 OLLAMA VISION CAPTION MODEL — NOT a generation model",
+   "properties": {
+    "Node name for S&R": "Qwen3VLAbliteratedPromptPair"
+   },
+   "widgets_values": [
+    "huihui_ai/qwen3-vl-abliterated:8b-instruct",
+    "Descriptive Caption",
+    "medium-length",
+    "",
+    "",
+    "",
+    "lowres, blurry, jpeg artifacts, watermark, signature, text, logo, bad anatomy, bad hands, extra fingers, missing fingers, deformed, disfigured, mutated, extra limbs, cropped, out of frame, worst quality, low quality",
+    true,
+    512,
+    0,
+    0.9,
+    "Uncensored / Explicit (Abliterated)",
+    false,
+    true,
+    true,
+    true,
+    false,
+    false,
+    false,
+    false,
+    true,
+    true,
+    false,
+    false,
+    false,
+    null,
+    "http://127.0.0.1:11434",
+    true
+   ]
+  },
+  {
+   "id": 3,
+   "type": "PreviewAny",
+   "pos": [
+    920,
+    100
+   ],
+   "size": [
+    400,
+    122
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "source",
+     "name": "source",
+     "type": "*",
+     "link": 2
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "STRING",
+     "name": "STRING",
+     "type": "STRING",
+     "links": null
+    }
+   ],
+   "title": "Caption preview",
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 4,
+   "type": "UNETLoader",
+   "pos": [
+    40,
+    540
+   ],
+   "size": [
+    400.0787109375,
+    142
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "unet_name",
+     "name": "unet_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "unet_name"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "weight_dtype",
+     "name": "weight_dtype",
+     "type": "COMBO",
+     "widget": {
+      "name": "weight_dtype"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "MODEL",
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      3
+     ]
+    }
+   ],
+   "title": "✅ FLUX 3 KLEIN DiT | flux3-image-klein-int8-convrot",
+   "properties": {
+    "Node name for S&R": "UNETLoader"
+   },
+   "widgets_values": [
+    "flux3-image-klein-int8-convrot.safetensors",
+    "default"
+   ],
+   "color": "#a26a28"
+  },
+  {
+   "id": 5,
+   "type": "FreeOllamaVRAM",
+   "pos": [
+    480,
+    940
+   ],
+   "size": [
+    400,
+    116
+   ],
+   "flags": {},
+   "order": 14,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 21
+    },
+    {
+     "localized_name": "after",
+     "name": "after",
+     "shape": 7,
+     "type": "*",
+     "link": 18
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "MODEL",
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      9
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "FreeOllamaVRAM"
+   }
+  },
+  {
+   "id": 6,
+   "type": "CLIPLoader",
+   "pos": [
+    40,
+    742
+   ],
+   "size": [
+    493.01328125,
+    168
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "clip_name",
+     "name": "clip_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "clip_name"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "type",
+     "name": "type",
+     "type": "COMBO",
+     "widget": {
+      "name": "type"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "device",
+     "name": "device",
+     "shape": 7,
+     "type": "COMBO",
+     "widget": {
+      "name": "device"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "CLIP",
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      5
+     ]
+    }
+   ],
+   "title": "✅ FLUX 3 TEXT ENCODER — qwen3vl_4b_int8_convrot (type flux3)",
+   "properties": {
+    "Node name for S&R": "CLIPLoader"
+   },
+   "widgets_values": [
+    "qwen3vl_4b_int8_convrot.safetensors",
+    "flux3",
+    "default"
+   ],
+   "color": "#a26a28"
+  },
+  {
+   "id": 7,
+   "type": "VAELoader",
+   "pos": [
+    40,
+    970
+   ],
+   "size": [
+    400,
+    116
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "vae_name",
+     "name": "vae_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "vae_name"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "VAE",
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      14
+     ]
+    }
+   ],
+   "title": "✅ FLUX 3 VAE — flux2-vae",
+   "properties": {
+    "Node name for S&R": "VAELoader"
+   },
+   "widgets_values": [
+    "flux2-vae.safetensors"
+   ],
+   "color": "#a26a28"
+  },
+  {
+   "id": 8,
+   "type": "CLIPTextEncode",
+   "pos": [
+    920,
+    276
+   ],
+   "size": [
+    400,
+    168
+   ],
+   "flags": {},
+   "order": 13,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "clip",
+     "name": "clip",
+     "type": "CLIP",
+     "link": 5
+    },
+    {
+     "localized_name": "text",
+     "name": "text",
+     "type": "STRING",
+     "widget": {
+      "name": "text"
+     },
+     "link": 4
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "CONDITIONING",
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      6,
+      10
+     ]
+    }
+   ],
+   "title": "Positive Prompt",
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    ""
+   ]
+  },
+  {
+   "id": 9,
+   "type": "ConditioningZeroOut",
+   "pos": [
+    1360,
+    100
+   ],
+   "size": [
+    400,
+    116
+   ],
+   "flags": {},
+   "order": 15,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "conditioning",
+     "name": "conditioning",
+     "type": "CONDITIONING",
+     "link": 6
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "CONDITIONING",
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      11
+     ]
+    }
+   ],
+   "title": "Negative (zeroed, CFG 1)",
+   "properties": {
+    "Node name for S&R": "ConditioningZeroOut"
+   }
+  },
+  {
+   "id": 10,
+   "type": "EmptyFlux2LatentImage",
+   "pos": [
+    920,
+    504
+   ],
+   "size": [
+    400,
+    220
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "width",
+     "name": "width",
+     "type": "INT",
+     "widget": {
+      "name": "width"
+     },
+     "link": 24
+    },
+    {
+     "localized_name": "height",
+     "name": "height",
+     "type": "INT",
+     "widget": {
+      "name": "height"
+     },
+     "link": 25
+    },
+    {
+     "localized_name": "batch_size",
+     "name": "batch_size",
+     "type": "INT",
+     "widget": {
+      "name": "batch_size"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "LATENT",
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      12
+     ]
+    }
+   ],
+   "title": "Flux2 Latent",
+   "properties": {
+    "Node name for S&R": "EmptyFlux2LatentImage"
+   },
+   "widgets_values": [
+    1024,
+    1024,
+    1
+   ]
+  },
+  {
+   "id": 11,
+   "type": "KSampler",
+   "pos": [
+    1800,
+    100
+   ],
+   "size": [
+    400,
+    376
+   ],
+   "flags": {},
+   "order": 16,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 9
+    },
+    {
+     "localized_name": "positive",
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 10
+    },
+    {
+     "localized_name": "negative",
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 11
+    },
+    {
+     "localized_name": "latent_image",
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 12
+    },
+    {
+     "localized_name": "seed",
+     "name": "seed",
+     "type": "INT",
+     "widget": {
+      "name": "seed"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "steps",
+     "name": "steps",
+     "type": "INT",
+     "widget": {
+      "name": "steps"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "cfg",
+     "name": "cfg",
+     "type": "FLOAT",
+     "widget": {
+      "name": "cfg"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "sampler_name",
+     "name": "sampler_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "sampler_name"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "scheduler",
+     "name": "scheduler",
+     "type": "COMBO",
+     "widget": {
+      "name": "scheduler"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "denoise",
+     "name": "denoise",
+     "type": "FLOAT",
+     "widget": {
+      "name": "denoise"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "LATENT",
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      13
+     ]
+    }
+   ],
+   "title": "FLUX 3 Klein Sampler (16 steps, CFG 1, euler / simple)",
+   "properties": {
+    "Node name for S&R": "KSampler"
+   },
+   "widgets_values": [
+    791752286430573,
+    "randomize",
+    16,
+    1,
+    "euler",
+    "simple",
+    1
+   ]
+  },
+  {
+   "id": 12,
+   "type": "VAEDecode",
+   "pos": [
+    2240,
+    100
+   ],
+   "size": [
+    400,
+    142
+   ],
+   "flags": {},
+   "order": 17,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "samples",
+     "name": "samples",
+     "type": "LATENT",
+     "link": 13
+    },
+    {
+     "localized_name": "vae",
+     "name": "vae",
+     "type": "VAE",
+     "link": 14
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "IMAGE",
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      15
+     ]
+    }
+   ],
+   "title": "Decode Latent",
+   "properties": {
+    "Node name for S&R": "VAEDecode"
+   }
+  },
+  {
+   "id": 13,
+   "type": "SaveImage",
+   "pos": [
+    2680,
+    100
+   ],
+   "size": [
+    400,
+    380
+   ],
+   "flags": {},
+   "order": 18,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "link": 15
+    },
+    {
+     "localized_name": "filename_prefix",
+     "name": "filename_prefix",
+     "type": "STRING",
+     "widget": {
+      "name": "filename_prefix"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "links": null
+    }
+   ],
+   "title": "Generated Output Image",
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "OpenWebUI_flux3"
+   ]
+  },
+  {
+   "id": 14,
+   "type": "Booru Tagger",
+   "pos": [
+    480,
+    1116
+   ],
+   "size": [
+    350,
+    340
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "tagger_model",
+     "name": "tagger_model",
+     "type": "TAGGER_MODEL",
+     "link": 19
+    },
+    {
+     "localized_name": "tagger_info",
+     "name": "tagger_info",
+     "type": "TAGGER_INFO",
+     "link": 20
+    },
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "link": 16
+    },
+    {
+     "localized_name": "threshold",
+     "name": "threshold",
+     "type": "FLOAT",
+     "widget": {
+      "name": "threshold"
+     },
+     "link": 26
+    },
+    {
+     "localized_name": "character_threshold",
+     "name": "character_threshold",
+     "type": "FLOAT",
+     "widget": {
+      "name": "character_threshold"
+     },
+     "link": 27
+    },
+    {
+     "localized_name": "use_best_threshold",
+     "name": "use_best_threshold",
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "use_best_threshold"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "trailing_comma",
+     "name": "trailing_comma",
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "trailing_comma"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "sort_tags",
+     "name": "sort_tags",
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "sort_tags"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "exclude_tags",
+     "name": "exclude_tags",
+     "type": "STRING",
+     "widget": {
+      "name": "exclude_tags"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "chunk_size",
+     "name": "chunk_size",
+     "type": "INT",
+     "widget": {
+      "name": "chunk_size"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "replace_underscore",
+     "name": "replace_underscore",
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "replace_underscore"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "tags",
+     "name": "tags",
+     "shape": 6,
+     "type": "STRING",
+     "slot_index": 0,
+     "links": null
+    },
+    {
+     "localized_name": "general_tags",
+     "name": "general_tags",
+     "shape": 6,
+     "type": "STRING",
+     "slot_index": 1,
+     "links": [
+      28
+     ]
+    },
+    {
+     "localized_name": "rating",
+     "name": "rating",
+     "shape": 6,
+     "type": "STRING",
+     "slot_index": 2,
+     "links": null
+    },
+    {
+     "localized_name": "character_tags",
+     "name": "character_tags",
+     "shape": 6,
+     "type": "STRING",
+     "slot_index": 3,
+     "links": [
+      17
+     ]
+    }
+   ],
+   "title": "Booru Tagger (PixAI v1.0)",
+   "properties": {
+    "Node name for S&R": "Booru Tagger"
+   },
+   "widgets_values": [
+    0.15,
+    0.24,
+    true,
+    false,
+    false,
+    "",
+    0,
+    true
+   ]
+  },
+  {
+   "id": 15,
+   "type": "MarkdownNote",
+   "pos": [
+    -630,
+    -520
+   ],
+   "size": [
+    730,
+    420
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "MODEL GUIDE — READ BEFORE SELECTING",
+   "properties": {},
+   "widgets_values": [
+    "# MODEL FAMILY: FLUX 3 IMAGE KLEIN\n\n**Compatible model examples / model location:**\ndiffusion_models/flux3-image-klein-int8-convrot.safetensors (distilled, official BFL int8).\n\n**Important:** CLIPLoader = `qwen3vl_4b_int8_convrot.safetensors` with type **flux3** (NOT Krea's qwen3vl_4b_fp8_scaled); VAELoader = `flux2-vae.safetensors` (not flux2-vae_small); latent = EmptyFlux2LatentImage. Distilled: 16 steps, CFG 1, euler / simple. Write full natural-language captions.\n\n**Editing:** use ComfyUI's built-in template *FLUX 3 Image Klein: editing (distilled)*; it uses these same files.\n\n**Ollama caption model vs image model:** In `Qwen3VLAbliteratedPromptPair`, `huihui_ai/qwen3-vl-abliterated:8b-instruct` is an **Ollama image-analysis model**, not your generation checkpoint.\n\n**ComfyUI limitation:** Standard dropdowns still list all matching file types from shared folders; this note and labeled loader indicate what is appropriate, but do not restrict dropdown contents."
+   ],
+   "color": "#222",
+   "bgcolor": "#161616"
+  },
+  {
+   "id": 16,
+   "type": "Load Booru Tagger",
+   "pos": [
+    480,
+    986
+   ],
+   "size": [
+    350,
+    118
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model_name",
+     "name": "model_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "model_name"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "tagger_model",
+     "name": "tagger_model",
+     "type": "TAGGER_MODEL",
+     "slot_index": 0,
+     "links": [
+      19
+     ]
+    },
+    {
+     "localized_name": "tagger_info",
+     "name": "tagger_info",
+     "type": "TAGGER_INFO",
+     "slot_index": 1,
+     "links": [
+      20
+     ]
+    },
+    {
+     "localized_name": "threshold",
+     "name": "threshold",
+     "type": "FLOAT",
+     "slot_index": 2,
+     "links": [
+      26
+     ]
+    },
+    {
+     "localized_name": "character_threshold",
+     "name": "character_threshold",
+     "type": "FLOAT",
+     "slot_index": 3,
+     "links": [
+      27
+     ]
+    }
+   ],
+   "title": "Load Booru Tagger (PixAI v1.0)",
+   "properties": {
+    "Node name for S&R": "Load Booru Tagger"
+   },
+   "widgets_values": [
+    "pixai-tagger-v1.0-fp16"
+   ]
+  },
+  {
+   "id": 17,
+   "type": "LoraLoaderModelOnly",
+   "pos": [
+    533.5537190082644,
+    581.3223140495868
+   ],
+   "size": [
+    315,
+    82
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 4,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 3
+    },
+    {
+     "localized_name": "lora_name",
+     "name": "lora_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "lora_name"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "strength_model",
+     "name": "strength_model",
+     "type": "FLOAT",
+     "widget": {
+      "name": "strength_model"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "MODEL",
+     "name": "MODEL",
+     "type": "MODEL",
+     "slot_index": 0,
+     "links": [
+      21
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoraLoaderModelOnly"
+   },
+   "widgets_values": [
+    "None",
+    0
+   ]
+  },
+  {
+   "id": 18,
+   "type": "ImageScaleToTotalPixels",
+   "pos": [
+    40,
+    540
+   ],
+   "size": [
+    315,
+    106
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "link": 22
+    },
+    {
+     "localized_name": "upscale_method",
+     "name": "upscale_method",
+     "type": "COMBO",
+     "widget": {
+      "name": "upscale_method"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "megapixels",
+     "name": "megapixels",
+     "type": "FLOAT",
+     "widget": {
+      "name": "megapixels"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "resolution_steps",
+     "name": "resolution_steps",
+     "type": "INT",
+     "widget": {
+      "name": "resolution_steps"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "IMAGE",
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      23
+     ]
+    }
+   ],
+   "title": "Match source aspect (size)",
+   "properties": {
+    "Node name for S&R": "ImageScaleToTotalPixels"
+   },
+   "widgets_values": [
+    "lanczos",
+    1,
+    64
+   ]
+  },
+  {
+   "id": 19,
+   "type": "GetImageSize",
+   "pos": [
+    40,
+    690
+   ],
+   "size": [
+    220,
+    90
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "link": 23
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "width",
+     "name": "width",
+     "type": "INT",
+     "links": [
+      24
+     ]
+    },
+    {
+     "localized_name": "height",
+     "name": "height",
+     "type": "INT",
+     "links": [
+      25
+     ]
+    },
+    {
+     "localized_name": "batch_size",
+     "name": "batch_size",
+     "type": "INT",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "GetImageSize"
+   }
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   2,
+   0,
+   "IMAGE"
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   0,
+   "STRING"
+  ],
+  [
+   3,
+   4,
+   0,
+   17,
+   0,
+   "MODEL"
+  ],
+  [
+   6,
+   8,
+   0,
+   9,
+   0,
+   "CONDITIONING"
+  ],
+  [
+   9,
+   5,
+   0,
+   11,
+   0,
+   "MODEL"
+  ],
+  [
+   10,
+   8,
+   0,
+   11,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   11,
+   9,
+   0,
+   11,
+   2,
+   "CONDITIONING"
+  ],
+  [
+   12,
+   10,
+   0,
+   11,
+   3,
+   "LATENT"
+  ],
+  [
+   13,
+   11,
+   0,
+   12,
+   0,
+   "LATENT"
+  ],
+  [
+   14,
+   7,
+   0,
+   12,
+   1,
+   "VAE"
+  ],
+  [
+   15,
+   12,
+   0,
+   13,
+   0,
+   "IMAGE"
+  ],
+  [
+   16,
+   1,
+   0,
+   14,
+   2,
+   "IMAGE"
+  ],
+  [
+   18,
+   2,
+   0,
+   5,
+   1,
+   "*"
+  ],
+  [
+   19,
+   16,
+   0,
+   14,
+   0,
+   "TAGGER_MODEL"
+  ],
+  [
+   20,
+   16,
+   1,
+   14,
+   1,
+   "TAGGER_INFO"
+  ],
+  [
+   21,
+   17,
+   0,
+   5,
+   0,
+   "MODEL"
+  ],
+  [
+   22,
+   1,
+   0,
+   18,
+   0,
+   "IMAGE"
+  ],
+  [
+   23,
+   18,
+   0,
+   19,
+   0,
+   "IMAGE"
+  ],
+  [
+   24,
+   19,
+   0,
+   10,
+   0,
+   "INT"
+  ],
+  [
+   25,
+   19,
+   1,
+   10,
+   1,
+   "INT"
+  ],
+  [
+   26,
+   16,
+   2,
+   14,
+   3,
+   "FLOAT"
+  ],
+  [
+   27,
+   16,
+   3,
+   14,
+   4,
+   "FLOAT"
+  ],
+  [
+   28,
+   14,
+   1,
+   2,
+   3,
+   "STRING"
+  ],
+  [
+   17,
+   14,
+   3,
+   2,
+   1,
+   "STRING"
+  ],
+  [
+   4,
+   2,
+   0,
+   8,
+   1,
+   "STRING"
+  ],
+  [
+   5,
+   6,
+   0,
+   8,
+   0,
+   "CLIP"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 1.1692302600000033,
+   "offset": [
+    -1911.685584369417,
+    34.25972348049311
+   ]
+  },
+  "comfyui_mcp": {
+   "workflow_uuid": "3cb52d03-b4c0-45d9-bc99-48270340adad"
+  }
+ },
+ "version": 0.4
+}

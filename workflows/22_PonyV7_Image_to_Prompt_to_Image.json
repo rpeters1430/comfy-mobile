@@ -1,0 +1,1170 @@
+{
+ "id": "22-ponyv7-image-to-prompt-to-image",
+ "revision": 0,
+ "last_node_id": 20,
+ "last_link_id": 30,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "LoadImage",
+   "pos": [
+    40,
+    100
+   ],
+   "size": [
+    400,
+    380
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      1,
+      16,
+      24
+     ]
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "input_image.png"
+   ],
+   "title": "1. Input Image"
+  },
+  {
+   "id": 2,
+   "type": "Qwen3VLAbliteratedPromptPair",
+   "pos": [
+    480,
+    100
+   ],
+   "size": [
+    400,
+    780
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 1
+    },
+    {
+     "name": "extra_options",
+     "type": "JOYCAPTION_EXTRA_OPTIONS",
+     "link": null
+    },
+    {
+     "name": "character_name",
+     "type": "STRING",
+     "link": 17
+    },
+    {
+     "name": "wd14_tags",
+     "type": "STRING",
+     "link": 30
+    }
+   ],
+   "outputs": [
+    {
+     "name": "positive",
+     "type": "STRING",
+     "links": [
+      2,
+      5,
+      18
+     ]
+    },
+    {
+     "name": "negative",
+     "type": "STRING",
+     "links": [
+      7
+     ]
+    },
+    {
+     "name": "width",
+     "type": "INT",
+     "links": []
+    },
+    {
+     "name": "height",
+     "type": "INT",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "Qwen3VLAbliteratedPromptPair"
+   },
+   "widgets_values": [
+    "huihui_ai/qwen3-vl-abliterated:8b-instruct",
+    "Descriptive Caption",
+    "medium-length",
+    "",
+    "score_9, rating_explicit,",
+    "",
+    "lowres, blurry, jpeg artifacts, watermark, signature, text, logo, bad anatomy, bad hands, extra fingers, missing fingers, deformed, disfigured, mutated, extra limbs, cropped, out of frame, worst quality, low quality",
+    true,
+    512,
+    0.0,
+    0.9,
+    "Uncensored / Explicit (Abliterated)",
+    false,
+    true,
+    true,
+    true,
+    false,
+    false,
+    false,
+    false,
+    true,
+    true,
+    false,
+    false,
+    false,
+    null,
+    "http://127.0.0.1:11434",
+    true
+   ],
+   "title": "🧠 OLLAMA VISION CAPTION MODEL — NOT a generation model"
+  },
+  {
+   "id": 3,
+   "type": "PreviewAny",
+   "pos": [
+    920,
+    100
+   ],
+   "size": [
+    400,
+    116
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "STRING",
+     "link": 2
+    }
+   ],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": null
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": [],
+   "title": "Caption preview"
+  },
+  {
+   "id": 4,
+   "type": "UNETLoader",
+   "pos": [
+    40,
+    540
+   ],
+   "size": [
+    400,
+    142
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      3
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "UNETLoader"
+   },
+   "widgets_values": [
+    "pony_v7_base_int8_convrot.safetensors",
+    "default"
+   ],
+   "title": "✅ PONY V7 (AuraFlow) | pony_v7_base_int8_convrot",
+   "color": "#a26a28",
+   "bgcolor": null
+  },
+  {
+   "id": 5,
+   "type": "FreeOllamaVRAM",
+   "pos": [
+    480,
+    940
+   ],
+   "size": [
+    400,
+    116
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 23
+    },
+    {
+     "name": "after",
+     "type": "*",
+     "link": 18
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      9
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "FreeOllamaVRAM"
+   },
+   "widgets_values": [],
+   "title": "Free Ollama VRAM"
+  },
+  {
+   "id": 6,
+   "type": "CLIPLoader",
+   "pos": [
+    40,
+    742
+   ],
+   "size": [
+    400,
+    168
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      4
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPLoader"
+   },
+   "widgets_values": [
+    "pony_v7_pile_t5xl_fp16.safetensors",
+    "stable_diffusion",
+    "default"
+   ],
+   "title": "✅ PONY V7 TEXT ENCODER — Pile T5-XL",
+   "color": "#a26a28",
+   "bgcolor": null
+  },
+  {
+   "id": 7,
+   "type": "T5TokenizerOptions",
+   "pos": [
+    480,
+    1116
+   ],
+   "size": [
+    400,
+    168
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 4
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      6,
+      8
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "T5TokenizerOptions"
+   },
+   "widgets_values": [
+    768,
+    768
+   ],
+   "title": "T5 768-token prompts (V7 training length)"
+  },
+  {
+   "id": 8,
+   "type": "VAELoader",
+   "pos": [
+    40,
+    970
+   ],
+   "size": [
+    400,
+    116
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      14
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAELoader"
+   },
+   "widgets_values": [
+    "pony_v7_sdxl_vae_fp16.safetensors"
+   ],
+   "title": "✅ PONY V7 VAE — SDXL VAE",
+   "color": "#a26a28",
+   "bgcolor": null
+  },
+  {
+   "id": 9,
+   "type": "CLIPTextEncode",
+   "pos": [
+    920,
+    276
+   ],
+   "size": [
+    400,
+    168
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "text",
+     "type": "STRING",
+     "link": 5,
+     "widget": {
+      "name": "text"
+     }
+    },
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 6
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      10
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    ""
+   ],
+   "title": "Positive Prompt"
+  },
+  {
+   "id": 10,
+   "type": "CLIPTextEncode",
+   "pos": [
+    920,
+    504
+   ],
+   "size": [
+    400,
+    168
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "text",
+     "type": "STRING",
+     "link": 7,
+     "widget": {
+      "name": "text"
+     }
+    },
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 8
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      11
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    ""
+   ],
+   "title": "Negative Prompt"
+  },
+  {
+   "id": 11,
+   "type": "EmptyLatentImage",
+   "pos": [
+    40,
+    1146
+   ],
+   "size": [
+    400,
+    168
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "width",
+     "type": "INT",
+     "link": 26
+    },
+    {
+     "name": "height",
+     "type": "INT",
+     "link": 27
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      12
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "EmptyLatentImage"
+   },
+   "widgets_values": [
+    1280,
+    1280,
+    1
+   ],
+   "title": "Latent"
+  },
+  {
+   "id": 12,
+   "type": "KSampler",
+   "pos": [
+    1360,
+    100
+   ],
+   "size": [
+    400,
+    376
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 9
+    },
+    {
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 10
+    },
+    {
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 11
+    },
+    {
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 12
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      13
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "KSampler"
+   },
+   "widgets_values": [
+    0,
+    "randomize",
+    30,
+    3.5,
+    "euler",
+    "simple",
+    1.0
+   ],
+   "title": "Pony V7 Sampler (30 steps, CFG 3.5, euler / simple)"
+  },
+  {
+   "id": 13,
+   "type": "VAEDecode",
+   "pos": [
+    1800,
+    100
+   ],
+   "size": [
+    400,
+    142
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 13
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 14
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      15
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecode"
+   },
+   "widgets_values": [],
+   "title": "Decode Latent"
+  },
+  {
+   "id": 14,
+   "type": "SaveImage",
+   "pos": [
+    2240,
+    100
+   ],
+   "size": [
+    400,
+    380
+   ],
+   "flags": {},
+   "order": 13,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 15
+    }
+   ],
+   "outputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "links": null
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "OpenWebUI_pony7"
+   ],
+   "title": "Generated Output Image"
+  },
+  {
+   "id": 15,
+   "type": "Booru Tagger",
+   "pos": [
+    480,
+    1344
+   ],
+   "size": [
+    350,
+    340
+   ],
+   "flags": {},
+   "order": 14,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "tagger_model",
+     "type": "TAGGER_MODEL",
+     "link": 21
+    },
+    {
+     "name": "tagger_info",
+     "type": "TAGGER_INFO",
+     "link": 22
+    },
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 16
+    },
+    {
+     "name": "threshold",
+     "type": "FLOAT",
+     "link": 28
+    },
+    {
+     "name": "character_threshold",
+     "type": "FLOAT",
+     "link": 29
+    }
+   ],
+   "outputs": [
+    {
+     "name": "tags",
+     "type": "STRING",
+     "slot_index": 0,
+     "links": null
+    },
+    {
+     "name": "general_tags",
+     "type": "STRING",
+     "slot_index": 1,
+     "links": [
+      30
+     ]
+    },
+    {
+     "name": "rating",
+     "type": "STRING",
+     "slot_index": 2,
+     "links": null
+    },
+    {
+     "name": "character_tags",
+     "type": "STRING",
+     "slot_index": 3,
+     "links": [
+      17
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "Booru Tagger"
+   },
+   "widgets_values": [
+    0.15,
+    0.24,
+    true,
+    false,
+    false,
+    "",
+    0,
+    true
+   ],
+   "title": "Booru Tagger (PixAI v1.0)"
+  },
+  {
+   "id": 16,
+   "type": "MarkdownNote",
+   "pos": [
+    -630,
+    -520
+   ],
+   "size": [
+    730,
+    420
+   ],
+   "flags": {},
+   "order": 15,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {},
+   "widgets_values": [
+    "# MODEL FAMILY: PONY V7 (AuraFlow)\n\n**Compatible model examples / model location:**\ndiffusion_models/pony_v7_base_int8_convrot.safetensors (UNETLoader; int8 + ConvRot made locally, ~1 s/step at 1024²).. Not compatible with Pony XL / SDXL checkpoints or SDXL LoRAs.\n\n**Important:** CLIPLoader = `pony_v7_pile_t5xl_fp16.safetensors` (Pile T5-XL, auto-detected; the type dropdown doesn't matter) followed by T5 Tokenizer Options 768/768; VAELoader = `pony_v7_sdxl_vae_fp16.safetensors`. 768-1536px, 30+ steps, CFG ~3.5, euler / simple.\n\n**Prompt order:** special tags (`score_9`, `style_cluster_N`, `rating_safe/explicit`), then a one-phrase factual description (`<species> <gender> <name> from <source>`), then style, then extra tags. Quality tags are much weaker than in V6.\n\n**Ollama caption model vs image model:** In `Qwen3VLAbliteratedPromptPair`, `huihui_ai/qwen3-vl-abliterated:8b-instruct` is an **Ollama image-analysis model**, not your generation checkpoint.\n\n**ComfyUI limitation:** Standard dropdowns still list all matching file types from shared folders; this note and labeled loader indicate what is appropriate, but do not restrict dropdown contents."
+   ],
+   "title": "MODEL GUIDE — READ BEFORE SELECTING",
+   "color": "#222",
+   "bgcolor": "#161616"
+  },
+  {
+   "id": 17,
+   "type": "Load Booru Tagger",
+   "pos": [
+    480,
+    1214
+   ],
+   "size": [
+    350,
+    90
+   ],
+   "flags": {},
+   "order": 14,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "tagger_model",
+     "type": "TAGGER_MODEL",
+     "slot_index": 0,
+     "links": [
+      21
+     ]
+    },
+    {
+     "name": "tagger_info",
+     "type": "TAGGER_INFO",
+     "slot_index": 1,
+     "links": [
+      22
+     ]
+    },
+    {
+     "name": "threshold",
+     "type": "FLOAT",
+     "slot_index": 2,
+     "links": [
+      28
+     ]
+    },
+    {
+     "name": "character_threshold",
+     "type": "FLOAT",
+     "slot_index": 3,
+     "links": [
+      29
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "Load Booru Tagger"
+   },
+   "widgets_values": [
+    "pixai-tagger-v1.0-fp16"
+   ],
+   "title": "Load Booru Tagger (PixAI v1.0)"
+  },
+  {
+   "id": 18,
+   "type": "LoraLoaderModelOnly",
+   "pos": [
+    360,
+    540
+   ],
+   "size": [
+    315,
+    82
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 4,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "slot_index": 0,
+     "links": [
+      23
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoraLoaderModelOnly"
+   },
+   "widgets_values": [
+    "Pony/JillValentinefromResidentEvil_1600_steps_00001_.safetensors",
+    0.0
+   ]
+  },
+  {
+   "id": 19,
+   "type": "ImageScaleToTotalPixels",
+   "pos": [
+    40,
+    540
+   ],
+   "size": [
+    315,
+    82
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 24
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      25
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ImageScaleToTotalPixels"
+   },
+   "widgets_values": [
+    "lanczos",
+    1.64,
+    64
+   ],
+   "title": "Match source aspect (size)"
+  },
+  {
+   "id": 20,
+   "type": "GetImageSize",
+   "pos": [
+    40,
+    690
+   ],
+   "size": [
+    220,
+    90
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 25
+    }
+   ],
+   "outputs": [
+    {
+     "name": "width",
+     "type": "INT",
+     "links": [
+      26
+     ]
+    },
+    {
+     "name": "height",
+     "type": "INT",
+     "links": [
+      27
+     ]
+    },
+    {
+     "name": "batch_size",
+     "type": "INT",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "GetImageSize"
+   },
+   "widgets_values": []
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   2,
+   0,
+   "IMAGE"
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   0,
+   "STRING"
+  ],
+  [
+   3,
+   4,
+   0,
+   18,
+   0,
+   "MODEL"
+  ],
+  [
+   4,
+   6,
+   0,
+   7,
+   0,
+   "CLIP"
+  ],
+  [
+   5,
+   2,
+   0,
+   9,
+   0,
+   "STRING"
+  ],
+  [
+   6,
+   7,
+   0,
+   9,
+   1,
+   "CLIP"
+  ],
+  [
+   7,
+   2,
+   1,
+   10,
+   0,
+   "STRING"
+  ],
+  [
+   8,
+   7,
+   0,
+   10,
+   1,
+   "CLIP"
+  ],
+  [
+   9,
+   5,
+   0,
+   12,
+   0,
+   "MODEL"
+  ],
+  [
+   10,
+   9,
+   0,
+   12,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   11,
+   10,
+   0,
+   12,
+   2,
+   "CONDITIONING"
+  ],
+  [
+   12,
+   11,
+   0,
+   12,
+   3,
+   "LATENT"
+  ],
+  [
+   13,
+   12,
+   0,
+   13,
+   0,
+   "LATENT"
+  ],
+  [
+   14,
+   8,
+   0,
+   13,
+   1,
+   "VAE"
+  ],
+  [
+   15,
+   13,
+   0,
+   14,
+   0,
+   "IMAGE"
+  ],
+  [
+   16,
+   1,
+   0,
+   15,
+   2,
+   "IMAGE"
+  ],
+  [
+   17,
+   15,
+   3,
+   2,
+   2,
+   "STRING"
+  ],
+  [
+   18,
+   2,
+   0,
+   5,
+   1,
+   "*"
+  ],
+  [
+   21,
+   17,
+   0,
+   15,
+   0,
+   "TAGGER_MODEL"
+  ],
+  [
+   22,
+   17,
+   1,
+   15,
+   1,
+   "TAGGER_INFO"
+  ],
+  [
+   23,
+   18,
+   0,
+   5,
+   0,
+   "MODEL"
+  ],
+  [
+   24,
+   1,
+   0,
+   19,
+   0,
+   "IMAGE"
+  ],
+  [
+   25,
+   19,
+   0,
+   20,
+   0,
+   "IMAGE"
+  ],
+  [
+   26,
+   20,
+   0,
+   11,
+   0,
+   "INT"
+  ],
+  [
+   27,
+   20,
+   1,
+   11,
+   1,
+   "INT"
+  ],
+  [
+   28,
+   17,
+   2,
+   15,
+   3,
+   "FLOAT"
+  ],
+  [
+   29,
+   17,
+   3,
+   15,
+   4,
+   "FLOAT"
+  ],
+  [
+   30,
+   15,
+   1,
+   2,
+   3,
+   "STRING"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.6,
+   "offset": [
+    100,
+    120
+   ]
+  }
+ },
+ "version": 0.4
+}

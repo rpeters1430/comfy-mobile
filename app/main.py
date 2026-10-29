@@ -1,0 +1,115 @@
+import json, os, re, secrets, time
+from pathlib import Path
+from urllib.parse import urlparse
+import httpx
+from fastapi import FastAPI, HTTPException, Header
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+
+COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
+TOKEN = os.getenv('STUDIO_TOKEN','')
+WF_DIR = Path(os.getenv('WORKFLOW_DIR','/workflows'))
+app = FastAPI(title='Image Studio Mobile', version='0.3.0')
+
+async def request(method, path, **kwargs):
+    async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=4.0)) as client:
+        try:
+            r = await client.request(method, f'{COMFY}{path}', **kwargs)
+            r.raise_for_status()
+            return r.json()
+        except (httpx.HTTPError, ValueError) as e:
+            raise HTTPException(502, f'ComfyUI request failed: {type(e).__name__}') from e
+
+def auth(authorization: str | None):
+    if not TOKEN or not authorization or not secrets.compare_digest(authorization, f'Bearer {TOKEN}'):
+        raise HTTPException(401,'Valid studio token required')
+
+@app.get('/')
+def home(): return FileResponse('/app/static/index.html')
+
+@app.get('/manifest.webmanifest')
+def manifest(): return FileResponse('/app/static/manifest.webmanifest')
+
+@app.get('/api/auth/check')
+def check_auth(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return {'authenticated':True}
+
+@app.get('/api/health')
+async def health(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    info = await request('GET','/system_stats')
+    return {'comfyui':'online','devices':info.get('devices',[]),'version':'0.3.0'}
+
+@app.get('/api/catalog')
+async def catalog(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    info = await request('GET','/object_info')
+    names = {'checkpoints':('CheckpointLoaderSimple','ckpt_name'), 'loras':('LoraLoader','lora_name'), 'upscalers':('UpscaleModelLoader','model_name')}
+    out = {}
+    for key,(cls,field) in names.items():
+        inp = info.get(cls,{}).get('input',{}).get('required',{}).get(field,[])
+        out[key] = inp[0] if inp and isinstance(inp[0],list) else []
+    workflows=[]
+    if WF_DIR.exists():
+        for path in sorted(WF_DIR.rglob('*.json')):
+            if path.is_symlink() or len(workflows)>=200: continue
+            rel=path.relative_to(WF_DIR).as_posix()
+            try:
+                data=json.loads(path.read_text(encoding='utf-8'))
+                if isinstance(data,dict) and isinstance(data.get('nodes'),list):
+                    fmt='ui'; node_types=sorted({n.get('type','') for n in data['nodes'] if isinstance(n,dict)})
+                    runnable=False
+                elif isinstance(data,dict) and data and all(isinstance(v,dict) and 'class_type' in v and isinstance(v.get('inputs'),dict) for v in data.values()):
+                    fmt='api'; node_types=sorted({v['class_type'] for v in data.values()}); runnable=True
+                else: continue
+                workflows.append({'id':rel,'name':path.stem,'format':fmt,'runnable':runnable,'node_types':node_types})
+            except (OSError,ValueError,TypeError):
+                continue
+    return {'models':out,'workflows':workflows,'updated_at':int(time.time()),'note':'UI-format workflows are discoverable but must be exported in API format before execution'}
+
+@app.get('/api/queue')
+async def queue(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return await request('GET','/queue')
+
+@app.get('/api/history')
+async def history(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    data=await request('GET','/history?max_items=25')
+    return [{'id':key,'status':value.get('status',{}).get('status_str','unknown'),'outputs':list(value.get('outputs',{}))} for key,value in data.items()]
+
+class Job(BaseModel):
+    workflow_id: str = Field(max_length=240)
+    prompt: str = Field(max_length=10000)
+    seed: int | None = Field(default=None,ge=0,le=18446744073709551615)
+
+@app.post('/api/jobs')
+async def jobs(job: Job, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    # Only locally mounted, explicitly supplied ComfyUI API-format workflows are executable.
+    candidate=(WF_DIR/job.workflow_id).resolve()
+    if not candidate.is_relative_to(WF_DIR.resolve()) or candidate.suffix!='.json' or not candidate.is_file():
+        raise HTTPException(400,'Unknown workflow')
+    if candidate.stat().st_size>2_000_000: raise HTTPException(400,'Workflow too large')
+    graph=json.loads(candidate.read_text())
+    if not isinstance(graph,dict) or not graph or not all(isinstance(v,dict) and 'class_type' in v and isinstance(v.get('inputs'),dict) for v in graph.values()):
+        raise HTTPException(400,'This workflow is in ComfyUI UI format. Open it in ComfyUI and export in API format before submitting from this starter app.')
+    # Explicit {{prompt}} placeholders avoid accidentally rewriting negative prompts or instructions.
+    replacements=0
+    for node in graph.values():
+        for field,value in node['inputs'].items():
+            if isinstance(value,str) and '{{prompt}}' in value:
+                node['inputs'][field]=value.replace('{{prompt}}',job.prompt);replacements+=1
+            if field in ('seed','noise_seed') and job.seed is not None and isinstance(value,int):
+                node['inputs'][field]=job.seed
+    if not replacements: raise HTTPException(400,'Workflow requires a {{prompt}} placeholder')
+    result=await request('POST','/prompt',json={'prompt':graph,'client_id':'image-studio-mobile'})
+    return {'prompt_id':result.get('prompt_id'),'node_errors':result.get('node_errors',{})}
+
+@app.get('/api/jobs/{prompt_id}')
+async def job_status(prompt_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    if not re.fullmatch(r'[0-9a-fA-F-]{36}',prompt_id): raise HTTPException(400,'Invalid job id')
+    data=await request('GET',f'/history/{prompt_id}')
+    return data.get(prompt_id,{'status':'pending'})

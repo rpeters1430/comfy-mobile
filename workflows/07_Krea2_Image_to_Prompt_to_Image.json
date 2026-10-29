@@ -1,0 +1,1183 @@
+{
+ "id": "krea2-image-to-prompt-to-image",
+ "revision": 0,
+ "last_node_id": 20,
+ "last_link_id": 28,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "LoadImage",
+   "pos": [
+    40,
+    100
+   ],
+   "size": [
+    340,
+    360
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "slot_index": 0,
+     "links": [
+      1,
+      16,
+      22
+     ]
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "slot_index": 1,
+     "links": null
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "input_image.png",
+    "image"
+   ],
+   "title": "1. Input Image"
+  },
+  {
+   "id": 2,
+   "type": "Qwen3VLAbliteratedPromptPair",
+   "pos": [
+    420,
+    100
+   ],
+   "size": [
+    400,
+    780
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 1
+    },
+    {
+     "name": "character_name",
+     "type": "STRING",
+     "link": 17
+    },
+    {
+     "name": "wd14_tags",
+     "type": "STRING",
+     "link": 28
+    }
+   ],
+   "outputs": [
+    {
+     "name": "positive",
+     "type": "STRING",
+     "slot_index": 0,
+     "links": [
+      2,
+      18
+     ]
+    },
+    {
+     "name": "negative",
+     "type": "STRING",
+     "slot_index": 1,
+     "links": null
+    },
+    {
+     "name": "width",
+     "type": "INT",
+     "slot_index": 2,
+     "links": []
+    },
+    {
+     "name": "height",
+     "type": "INT",
+     "slot_index": 3,
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "Qwen3VLAbliteratedPromptPair"
+   },
+   "widgets_values": [
+    "huihui_ai/qwen3-vl-abliterated:8b-instruct",
+    "Descriptive Caption",
+    "medium-length",
+    "",
+    "",
+    ", high quality, sharp focus, 8k, photorealistic",
+    "lowres, blurry, bad anatomy, bad hands, cropped, worst quality",
+    false,
+    512,
+    0.5,
+    0.9,
+    "Uncensored / Explicit (Abliterated)",
+    true,
+    true,
+    true,
+    true,
+    false,
+    false,
+    false,
+    false,
+    true,
+    true,
+    false,
+    false,
+    false,
+    false,
+    "http://127.0.0.1:11434",
+    true
+   ],
+   "title": "🧠 OLLAMA VISION CAPTION MODEL — NOT a generation model"
+  },
+  {
+   "id": 3,
+   "type": "UNETLoader",
+   "pos": [
+    860,
+    100
+   ],
+   "size": [
+    380,
+    82
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "slot_index": 0,
+     "links": [
+      14
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "UNETLoader"
+   },
+   "widgets_values": [
+    "finepornV5TurboNSFW_v5_int8_convrot.safetensors",
+    "default"
+   ],
+   "title": "✅ KREA 2 DiT MODEL ONLY | Load Krea 2 Turbo DiT Model",
+   "color": "#a26a28"
+  },
+  {
+   "id": 4,
+   "type": "CLIPLoader",
+   "pos": [
+    860,
+    320
+   ],
+   "size": [
+    380,
+    106
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "slot_index": 0,
+     "links": [
+      6
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPLoader",
+    "models": [
+     {
+      "name": "qwen3vl_4b_fp8_scaled.safetensors",
+      "url": "https://huggingface.co/Comfy-Org/Qwen3-VL/resolve/main/text_encoders/qwen3vl_4b_fp8_scaled.safetensors?download=true",
+      "directory": "text_encoders"
+     }
+    ]
+   },
+   "widgets_values": [
+    "qwen3vl_4b_fp8_scaled.safetensors",
+    "krea2",
+    "default"
+   ],
+   "title": "✅ KREA 2 TEXT ENCODER — qwen3vl_4b_fp8_scaled (NOT Qwen Image generator)",
+   "color": "#a26a28"
+  },
+  {
+   "id": 5,
+   "type": "VAELoader",
+   "pos": [
+    860,
+    470
+   ],
+   "size": [
+    380,
+    60
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "slot_index": 0,
+     "links": [
+      7
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAELoader",
+    "models": [
+     {
+      "name": "qwen_image_vae.safetensors",
+      "url": "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors?download=true",
+      "directory": "vae"
+     }
+    ]
+   },
+   "widgets_values": [
+    "qwen_image_vae.safetensors"
+   ],
+   "title": "✅ KREA 2 VAE — qwen_image_vae.safetensors",
+   "color": "#a26a28"
+  },
+  {
+   "id": 6,
+   "type": "CLIPTextEncode",
+   "pos": [
+    1280,
+    100
+   ],
+   "size": [
+    420,
+    200
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 6
+    },
+    {
+     "name": "text",
+     "type": "STRING",
+     "link": 2,
+     "widget": {
+      "name": "text"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "slot_index": 0,
+     "links": [
+      8,
+      9
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    ""
+   ],
+   "title": "Positive Prompt (from Qwen3-VL Abliterated)"
+  },
+  {
+   "id": 7,
+   "type": "ConditioningZeroOut",
+   "pos": [
+    1280,
+    350
+   ],
+   "size": [
+    220,
+    46
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "conditioning",
+     "type": "CONDITIONING",
+     "link": 8
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "slot_index": 0,
+     "links": [
+      10
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ConditioningZeroOut"
+   },
+   "widgets_values": [],
+   "title": "Zero Negative (Flow Matching)"
+  },
+  {
+   "id": 8,
+   "type": "EmptyLatentImage",
+   "pos": [
+    1280,
+    440
+   ],
+   "size": [
+    315,
+    106
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "width",
+     "type": "INT",
+     "link": 24,
+     "widget": {
+      "name": "width"
+     }
+    },
+    {
+     "name": "height",
+     "type": "INT",
+     "link": 25,
+     "widget": {
+      "name": "height"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "slot_index": 0,
+     "links": [
+      11
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "EmptyLatentImage"
+   },
+   "widgets_values": [
+    1024,
+    1024,
+    1
+   ],
+   "title": "Latent (Aspect-Matched from Input)"
+  },
+  {
+   "id": 9,
+   "type": "KSampler",
+   "pos": [
+    1740,
+    100
+   ],
+   "size": [
+    320,
+    262
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 15
+    },
+    {
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 9
+    },
+    {
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 10
+    },
+    {
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 11
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "slot_index": 0,
+     "links": [
+      12
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "KSampler"
+   },
+   "widgets_values": [
+    123456789,
+    "randomize",
+    8,
+    1.0,
+    "euler",
+    "beta",
+    1.0
+   ],
+   "title": "Krea 2 Sampler (8 Steps, Euler / Beta)"
+  },
+  {
+   "id": 10,
+   "type": "VAEDecode",
+   "pos": [
+    2100,
+    100
+   ],
+   "size": [
+    210,
+    46
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 12
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 7
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "slot_index": 0,
+     "links": [
+      13
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecode"
+   },
+   "widgets_values": [],
+   "title": "Decode Latent"
+  },
+  {
+   "id": 11,
+   "type": "SaveImage",
+   "pos": [
+    2350,
+    100
+   ],
+   "size": [
+    440,
+    520
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 13
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "Krea2_Recreated"
+   ],
+   "title": "Generated Output Image"
+  },
+  {
+   "id": 12,
+   "type": "FreeOllamaVRAM",
+   "pos": [
+    860,
+    200
+   ],
+   "size": [
+    340,
+    60
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 21
+    },
+    {
+     "name": "after",
+     "type": "*",
+     "link": 18
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "slot_index": 0,
+     "links": [
+      15
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "FreeOllamaVRAM"
+   },
+   "widgets_values": [],
+   "title": "Free Ollama VRAM"
+  },
+  {
+   "id": 13,
+   "type": "MarkdownNote",
+   "pos": [
+    860,
+    600
+   ],
+   "size": [
+    400,
+    300
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "Krea 2 Models Guide",
+   "properties": {},
+   "widgets_values": [
+    "## Installed Krea 2 Diffusion Models\n\n**Turbo Models (8 Steps, CFG 1.0, Euler / Beta):**\n- `finepornV5TurboNSFW_v5_int8_convrot.safetensors` *(Default ? Krea 2 Turbo + SNOFS 1.4 + photo/NSFW LoRAs)*\n- `BSSDesirexKrea2_x3_int8_convrot.safetensors` *(DesireX3 merge)*\n- `krea2Lustgpt_v10_int8_convrot.safetensors` *(RedGPT + Lustify merge)*\n\n**Raw Base Model (24 Steps, CFG 3.5, Euler / Beta):**\n- `snofsSexNudesAndOther_krea2RawV14_int8_convrot.safetensors` *(Use workflows 15 & 16 for Krea 2 Raw with full Negative Prompt conditioning!)*"
+   ],
+   "color": "#223",
+   "bgcolor": "#335"
+  },
+  {
+   "id": 14,
+   "type": "Booru Tagger",
+   "pos": [
+    420,
+    1050
+   ],
+   "size": [
+    350,
+    340
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "tagger_model",
+     "type": "TAGGER_MODEL",
+     "link": 19
+    },
+    {
+     "name": "tagger_info",
+     "type": "TAGGER_INFO",
+     "link": 20
+    },
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 16
+    },
+    {
+     "name": "threshold",
+     "type": "FLOAT",
+     "link": 26
+    },
+    {
+     "name": "character_threshold",
+     "type": "FLOAT",
+     "link": 27
+    }
+   ],
+   "outputs": [
+    {
+     "name": "tags",
+     "type": "STRING",
+     "slot_index": 0,
+     "links": null
+    },
+    {
+     "name": "general_tags",
+     "type": "STRING",
+     "slot_index": 1,
+     "links": [
+      28
+     ]
+    },
+    {
+     "name": "rating",
+     "type": "STRING",
+     "slot_index": 2,
+     "links": null
+    },
+    {
+     "name": "character_tags",
+     "type": "STRING",
+     "slot_index": 3,
+     "links": [
+      17
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "Booru Tagger"
+   },
+   "widgets_values": [
+    0.15,
+    0.24,
+    true,
+    false,
+    false,
+    "",
+    0,
+    true
+   ],
+   "title": "Booru Tagger (PixAI v1.0)"
+  },
+  {
+   "id": 15,
+   "type": "MarkdownNote",
+   "pos": [
+    -620,
+    -500
+   ],
+   "size": [
+    490,
+    230
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "# ComfyUI Studio — compatibility/optimization notes\nWD14 tagging is supplementary and does not modify the Qwen captions or generated output. For character detection, inspect the WD14 tags. High-confidence matches can be applied manually, or integrated programmatically into ComfyUI Studio later. This graph intentionally retains original model files, sampler settings, and FreeOllamaVRAM hooks. Qwen captioner still requires separate debugging for the earlier HTTP 400 error; localhost URL is already set correctly."
+   ],
+   "title": "Optimized pack — read first"
+  },
+  {
+   "id": 16,
+   "type": "MarkdownNote",
+   "pos": [
+    -630.0,
+    -920.0
+   ],
+   "size": [
+    730,
+    380
+   ],
+   "flags": {},
+   "order": 15,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {},
+   "widgets_values": [
+    "# MODEL FAMILY: KREA 2\n\n**Compatible model examples / model location:**\nTurbo: finepornV5TurboNSFW_v5_int8_convrot.safetensors | RAW: snofsSexNudesAndOther_krea2RawV14_int8_convrot.safetensors\n\n**Important:** Select a Krea 2 diffusion/DiT file in UNETLoader, qwen3vl_4b_fp8_scaled.safetensors in CLIPLoader with type krea2, and qwen_image_vae.safetensors in VAELoader. The Qwen3-VL name here is the required Krea text encoder, NOT a Qwen Image diffusion checkpoint.\n\n**Ollama caption model vs image model:** In `Qwen3VLAbliteratedPromptPair`, `huihui_ai/qwen3-vl-abliterated:8b-instruct` is an **Ollama image-analysis model**, not your generation checkpoint.\n\n**ComfyUI limitation:** Standard dropdowns still list all matching file types from shared folders; this note and labeled loader indicate what is appropriate, but do not restrict dropdown contents."
+   ],
+   "color": "#222",
+   "bgcolor": "#161616",
+   "title": "MODEL GUIDE — KREA 2 — READ BEFORE SELECTING"
+  },
+  {
+   "id": 17,
+   "type": "Load Booru Tagger",
+   "pos": [
+    420,
+    920
+   ],
+   "size": [
+    350,
+    90
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "tagger_model",
+     "type": "TAGGER_MODEL",
+     "slot_index": 0,
+     "links": [
+      19
+     ]
+    },
+    {
+     "name": "tagger_info",
+     "type": "TAGGER_INFO",
+     "slot_index": 1,
+     "links": [
+      20
+     ]
+    },
+    {
+     "name": "threshold",
+     "type": "FLOAT",
+     "slot_index": 2,
+     "links": [
+      26
+     ]
+    },
+    {
+     "name": "character_threshold",
+     "type": "FLOAT",
+     "slot_index": 3,
+     "links": [
+      27
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "Load Booru Tagger"
+   },
+   "widgets_values": [
+    "pixai-tagger-v1.0-fp16"
+   ],
+   "title": "Load Booru Tagger (PixAI v1.0)"
+  },
+  {
+   "id": 18,
+   "type": "LoraLoaderModelOnly",
+   "pos": [
+    1180,
+    100
+   ],
+   "size": [
+    315,
+    82
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 4,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 14
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "slot_index": 0,
+     "links": [
+      21
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoraLoaderModelOnly"
+   },
+   "widgets_values": [
+    "None",
+    0.0
+   ]
+  },
+  {
+   "id": 19,
+   "type": "ImageScaleToTotalPixels",
+   "pos": [
+    40,
+    520
+   ],
+   "size": [
+    315,
+    82
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 22
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      23
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ImageScaleToTotalPixels"
+   },
+   "widgets_values": [
+    "lanczos",
+    1.0,
+    64
+   ],
+   "title": "Match source aspect (size)"
+  },
+  {
+   "id": 20,
+   "type": "GetImageSize",
+   "pos": [
+    40,
+    670
+   ],
+   "size": [
+    220,
+    90
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 23
+    }
+   ],
+   "outputs": [
+    {
+     "name": "width",
+     "type": "INT",
+     "links": [
+      24
+     ]
+    },
+    {
+     "name": "height",
+     "type": "INT",
+     "links": [
+      25
+     ]
+    },
+    {
+     "name": "batch_size",
+     "type": "INT",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "GetImageSize"
+   },
+   "widgets_values": []
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   2,
+   0,
+   "IMAGE"
+  ],
+  [
+   2,
+   2,
+   0,
+   6,
+   1,
+   "STRING"
+  ],
+  [
+   6,
+   4,
+   0,
+   6,
+   0,
+   "CLIP"
+  ],
+  [
+   7,
+   5,
+   0,
+   10,
+   1,
+   "VAE"
+  ],
+  [
+   8,
+   6,
+   0,
+   7,
+   0,
+   "CONDITIONING"
+  ],
+  [
+   9,
+   6,
+   0,
+   9,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   10,
+   7,
+   0,
+   9,
+   2,
+   "CONDITIONING"
+  ],
+  [
+   11,
+   8,
+   0,
+   9,
+   3,
+   "LATENT"
+  ],
+  [
+   12,
+   9,
+   0,
+   10,
+   0,
+   "LATENT"
+  ],
+  [
+   13,
+   10,
+   0,
+   11,
+   0,
+   "IMAGE"
+  ],
+  [
+   14,
+   3,
+   0,
+   18,
+   0,
+   "MODEL"
+  ],
+  [
+   15,
+   12,
+   0,
+   9,
+   0,
+   "MODEL"
+  ],
+  [
+   16,
+   1,
+   0,
+   14,
+   2,
+   "IMAGE"
+  ],
+  [
+   17,
+   14,
+   3,
+   2,
+   1,
+   "STRING"
+  ],
+  [
+   18,
+   2,
+   0,
+   12,
+   1,
+   "*"
+  ],
+  [
+   19,
+   17,
+   0,
+   14,
+   0,
+   "TAGGER_MODEL"
+  ],
+  [
+   20,
+   17,
+   1,
+   14,
+   1,
+   "TAGGER_INFO"
+  ],
+  [
+   21,
+   18,
+   0,
+   12,
+   0,
+   "MODEL"
+  ],
+  [
+   22,
+   1,
+   0,
+   19,
+   0,
+   "IMAGE"
+  ],
+  [
+   23,
+   19,
+   0,
+   20,
+   0,
+   "IMAGE"
+  ],
+  [
+   24,
+   20,
+   0,
+   8,
+   0,
+   "INT"
+  ],
+  [
+   25,
+   20,
+   1,
+   8,
+   1,
+   "INT"
+  ],
+  [
+   26,
+   17,
+   2,
+   14,
+   3,
+   "FLOAT"
+  ],
+  [
+   27,
+   17,
+   3,
+   14,
+   4,
+   "FLOAT"
+  ],
+  [
+   28,
+   14,
+   1,
+   2,
+   2,
+   "STRING"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "Step 1: Input Image & JoyCaption Analysis",
+   "bounding": [
+    20,
+    40,
+    810,
+    860
+   ],
+   "color": "#3f789e",
+   "font_size": 24,
+   "flags": {}
+  },
+  {
+   "id": 2,
+   "title": "Step 2: Krea 2 Models (FinePorn V5 Turbo / DesireX3 / LustGPT)",
+   "bounding": [
+    840,
+    40,
+    410,
+    530
+   ],
+   "color": "#3f789e",
+   "font_size": 24,
+   "flags": {}
+  },
+  {
+   "id": 3,
+   "title": "Step 3: Conditioning & Auto-Aspect Latent",
+   "bounding": [
+    1260,
+    40,
+    450,
+    530
+   ],
+   "color": "#3f789e",
+   "font_size": 24,
+   "flags": {}
+  },
+  {
+   "id": 4,
+   "title": "Step 4: Krea 2 Sampling & Export",
+   "bounding": [
+    1720,
+    40,
+    1090,
+    600
+   ],
+   "color": "#3f789e",
+   "font_size": 24,
+   "flags": {}
+  }
+ ],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.55,
+   "offset": [
+    100,
+    120
+   ]
+  }
+ },
+ "version": 0.4
+}
