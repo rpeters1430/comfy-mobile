@@ -16,6 +16,9 @@
 body { margin: 0; background: var(--bg); }
 main { max-width: 680px; margin: auto; padding: 16px 16px calc(96px + env(safe-area-inset-bottom)); }
 header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+header > div { min-width: 0; }
+#status { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#refresh { white-space: nowrap; flex: none; }
 h1 { font-size: 22px; margin: 0; }
 h2 { font-size: 17px; margin: 0 0 10px; }
 p, small, .muted { color: var(--muted); }
@@ -207,6 +210,8 @@ async function api(path, opts = {}) {
   if (!r.ok) throw Error(errorText(data?.detail) || String(r.status));
   return data;
 }
+
+function deviceName(name) { return String(name || '').replace(/^cuda:\d+\s*/, '').replace(/\s*:\s*\w+$/, ''); }
 
 function setStatus(text, cls = '') { $('status').textContent = text; $('status').className = cls; }
 
@@ -446,14 +451,16 @@ $('clear-gallery').onclick = () => { store(GALLERY_KEY, null); renderGallery(); 
 async function refresh() {
   if (!token) { setStatus('Not connected'); return; }
   setStatus('Loading…');
+  if (!catalog) $('workflows').replaceChildren(el('p', { class: 'status' }, 'Loading workflows…'));
   try {
     const [health, cat] = await Promise.all([api('/health'), api('/catalog')]);
-    catalog = cat;
+    const synced = new Set(cat.workflows.filter(w => w.id.startsWith('synced/')).map(w => w.name));
+    catalog = { ...cat, workflows: cat.workflows.filter(w => w.id.startsWith('synced/') || !synced.has(w.name)) };
     if (selected) selected = catalog.workflows.find(w => w.id === selected.id && w.runnable) || null;
     if (!selected) $('form').classList.add('hide');
     const device = health.devices?.[0];
-    setStatus('● ComfyUI online' + (device ? ' · ' + device.name.replace(/^cuda:\d+\s*/, '').split(':')[0] : ''), 'ok');
-    $('system').textContent = (health.devices || []).map(d => `${d.name} · ${Math.round((d.vram_free || 0) / 2 ** 30)} / ${Math.round((d.vram_total || 0) / 2 ** 30)} GB VRAM free`).join('\n') || 'Online';
+    setStatus('● ComfyUI online' + (device ? ' · ' + deviceName(device.name) : ''), 'ok');
+    $('system').textContent = (health.devices || []).map(d => `${deviceName(d.name)} · ${Math.round((d.vram_free || 0) / 2 ** 30)} / ${Math.round((d.vram_total || 0) / 2 ** 30)} GB VRAM free`).join('\n') || 'Online';
     const m = catalog.models;
     $('models').textContent = `${m.checkpoints.length} checkpoints · ${m.loras.length} LoRAs · ${catalog.workflows.filter(w => w.runnable).length}/${catalog.workflows.length} workflows runnable`;
     renderWorkflows();
