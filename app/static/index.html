@@ -214,6 +214,7 @@ const STORAGE_KEY = 'image-studio-mobile:token:v1';
 const GALLERY_KEY = 'image-studio-mobile:jobs:v1';
 const PROMPTS_KEY = 'image-studio-mobile:prompts:v1';
 const CONTROLS_KEY = 'image-studio-mobile:controls:v1';
+const CAPTION_KEY = 'image-studio-mobile:caption:v1';  // shared by every auto-caption workflow
 const SHARED_CACHE = 'shared-images';
 const MAX_SIDE = 2048;
 
@@ -453,12 +454,12 @@ async function loadControls(wf) {
   try {
     found = (await api('/workflows/' + encodeURIComponent(wf.id).replace(/%2F/g, '/') + '/validate')).controls;
   } catch (e) { return; }
-  if (selected !== wf || !found || (!found.models.length && !found.loras.length && !found.samplers.length && !found.size)) return;
+  if (selected !== wf || !found || (!found.models.length && !found.loras.length && !found.samplers.length && !found.size && !found.captions.length)) return;
   controls = found;
   // Restore the last choices, keeping only files ComfyUI still has.
   const saved = savedControls()[wf.id] || {};
   const loraOk = name => controls.lora_options.includes(name);
-  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '' };
+  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', caption: {} };
   for (const m of controls.models) choices.models[m.node] = m.options.includes(saved.models?.[m.node]) ? saved.models[m.node] : m.value;
   for (const l of controls.loras) {
     const s = saved.loras?.[l.node];
@@ -474,6 +475,17 @@ async function loadControls(wf) {
     choices.sampling[smp.node] = values;
   }
   if (controls.size && ASPECTS.includes(saved.aspect)) choices.aspect = saved.aspect;
+  // Caption settings follow you between workflows; the caption style stays per workflow
+  // (video and natural-language models need their own).
+  const shared = savedCaption();
+  for (const cap of controls.captions) {
+    const values = { ...cap.values };
+    const pick = { ...shared, caption_type: saved.caption?.[cap.node]?.caption_type };
+    for (const [field, value] of Object.entries(pick))
+      if (field in values && (cap.options[field] ? cap.options[field].includes(value) : typeof value === 'boolean'))
+        values[field] = value;
+    choices.caption[cap.node] = values;
+  }
   $('controls-box').classList.remove('hide');
   renderControls();
 }
@@ -533,8 +545,13 @@ function renderControls() {
   const bases = controls.samplers.filter(c => c.role === 'base').length;
   controls.samplers.forEach((smp, i) => rows.push(samplerSection(smp,
     smp.role === 'refine' ? 'Hi-res / refine pass' : bases > 1 ? `Sampler ${i + 1}` : 'Sampler', changed)));
+  controls.captions.forEach(cap => rows.push(captionSection(cap, changed)));
   const reset = el('button', { class: 'ghost', type: 'button', style: 'margin-top:12px' }, 'Reset to workflow');
-  reset.onclick = () => { const all = savedControls(); delete all[selected.id]; store(CONTROLS_KEY, JSON.stringify(all)); loadControls(selected); };
+  reset.onclick = () => {
+    const all = savedControls(); delete all[selected.id]; store(CONTROLS_KEY, JSON.stringify(all));
+    if (controls.captions.length) store(CAPTION_KEY, '{}');
+    loadControls(selected);
+  };
   rows.push(reset);
   $('controls').replaceChildren(...rows);
   renderSummary();
@@ -594,6 +611,36 @@ function samplerSection(smp, title, changed) {
   return el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, title), el('div', { class: 'settings-grid' }, fields));
 }
 
+function savedCaption() { try { return JSON.parse(load(CAPTION_KEY) || '{}'); } catch (e) { return {}; } }
+
+const CAPTION_LABELS = { model: 'Caption model', caption_type: 'Caption style', length: 'Length', content_mode: 'Content',
+  vulgar_slang: 'Vulgar slang', lighting: 'Lighting', camera_angle: 'Camera angle', shot_type: 'Shot type',
+  composition: 'Composition', depth_of_field: 'Depth of field', camera_settings: 'Camera settings',
+  aesthetic_quality: 'Aesthetic quality', mention_mood: 'Mood' };
+
+function captionSection(cap, changed) {
+  const values = choices.caption[cap.node];
+  const update = (field, value) => {
+    values[field] = value;
+    if (field !== 'caption_type') { const shared = savedCaption(); shared[field] = value; store(CAPTION_KEY, JSON.stringify(shared)); }
+    changed();
+  };
+  const selects = Object.keys(cap.options).map(field => {
+    const select = el('select', { 'aria-label': CAPTION_LABELS[field] }, cap.options[field].map(o => new Option(o, o)));
+    select.value = values[field];
+    select.onchange = () => update(field, select.value);
+    return el('div', { style: field === 'model' || field === 'caption_type' ? 'grid-column:1/-1' : null }, el('label', {}, CAPTION_LABELS[field]), select);
+  });
+  const toggles = Object.keys(values).filter(f => typeof values[f] === 'boolean').map(field => {
+    const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(values[field]) }, CAPTION_LABELS[field] || field);
+    chip.onclick = () => { chip.setAttribute('aria-pressed', String(!values[field])); update(field, !values[field]); };
+    return chip;
+  });
+  return el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, 'Auto caption'),
+    el('small', { class: 'status' }, 'Shared by all auto-caption workflows, except the style.'),
+    el('div', { class: 'settings-grid' }, selects), toggles.length ? el('div', { class: 'aspects' }, toggles) : null);
+}
+
 function controlsText(c) {
   if (!c) return '';
   const parts = Object.values(c.models || {}).map(fileLabel);
@@ -604,6 +651,8 @@ function controlsText(c) {
   const base = controls?.samplers.find(smp => smp.role === 'base');
   const v = base && c.sampling?.[base.node];
   if (v && 'steps' in v) parts.push(`${v.steps} steps` + ('cfg' in v ? ` · CFG ${v.cfg}` : ''));
+  const cap = controls?.captions[0] && c.caption?.[controls.captions[0].node];
+  if (cap?.caption_type) parts.push(cap.caption_type);
   return parts.join(' · ');
 }
 function renderSummary() { $('controls-summary').textContent = controlsText(choices); }
@@ -622,8 +671,13 @@ function controlsPayload(c) {
     const changes = Object.fromEntries(Object.entries(c.sampling?.[smp.node] || {}).filter(([f, v]) => v !== smp.values[f]));
     if (Object.keys(changes).length) sampling[smp.node] = changes;
   }
+  const caption = {};
+  for (const cap of controls.captions) {
+    const changes = Object.fromEntries(Object.entries(c.caption?.[cap.node] || {}).filter(([f, v]) => v !== cap.values[f]));
+    if (Object.keys(changes).length) caption[cap.node] = changes;
+  }
   const size = c.aspect ? chosenSize(c) : null;
-  return { models, loras, extra_loras: c.extra.map(x => ({ name: x.name, strength: x.strength })), sampling,
+  return { models, loras, extra_loras: c.extra.map(x => ({ name: x.name, strength: x.strength })), sampling, caption,
     ...(size && (size.width !== controls.size.width || size.height !== controls.size.height) ? { size } : {}) };
 }
 

@@ -9,6 +9,10 @@ INFO = {
     "LoraLoader": {"input": {"required": {"lora_name": [LORAS]}}},
     "LoraLoaderModelOnly": {"input": {"required": {"lora_name": [LORAS]}}},
     "KSampler": {"input": {"required": {"sampler_name": [["euler", "dpmpp_2m"]], "scheduler": [["simple", "karras"]]}}},
+    "Qwen3VLAbliteratedPromptPair": {"input": {
+        "required": {"model": [["qwen3-vl:8b", "joycaption:q4"]], "caption_type": [["Stable Diffusion Prompt", "Descriptive Caption"]],
+                     "length": [["short", "long"]]},
+        "optional": {"content_mode": [["Auto", "SFW only"]], "lighting": ["BOOLEAN", {}], "vulgar_slang": ["BOOLEAN", {}]}}},
 }
 
 
@@ -132,6 +136,28 @@ class ControlTests(unittest.TestCase):
         self.assertIsNone(find_controls(graph, INFO)["size"])
         with self.assertRaises(ControlError):
             apply_controls(graph, INFO, {}, {}, [], None, {"width": 1024, "height": 1024})
+
+    def captioned(self):
+        return {"2": {"class_type": "Qwen3VLAbliteratedPromptPair", "inputs": {
+            "image": ["1", 0], "character_name": ["15", 3], "model": "qwen3-vl:8b", "caption_type": "Descriptive Caption",
+            "length": "short", "content_mode": "Auto", "lighting": True, "vulgar_slang": False, "watermark": False}}}
+
+    def test_finds_caption_settings(self):
+        [cap] = find_controls(self.captioned(), INFO)["captions"]
+        self.assertEqual({"model": "qwen3-vl:8b", "caption_type": "Descriptive Caption", "length": "short",
+                          "content_mode": "Auto", "lighting": True, "vulgar_slang": False}, cap["values"])
+        self.assertEqual(["Auto", "SFW only"], cap["options"]["content_mode"])
+
+    def test_applies_caption_settings(self):
+        graph = self.captioned()
+        apply_controls(graph, INFO, {}, {}, [], caption={"2": {"model": "joycaption:q4", "length": "long", "vulgar_slang": True}})
+        self.assertEqual(("joycaption:q4", "long", True), tuple(graph["2"]["inputs"][k] for k in ("model", "length", "vulgar_slang")))
+
+    def test_rejects_bad_caption_settings(self):
+        for caption in ({"2": {"model": "other:7b"}}, {"2": {"lighting": "yes"}}, {"2": {"watermark": True}},
+                        {"2": {"character_name": "x"}}, {"3": {"lighting": False}}):
+            with self.subTest(caption=caption), self.assertRaises(ControlError):
+                apply_controls(self.captioned(), INFO, {}, {}, [], caption=caption)
 
 
 if __name__ == "__main__":
