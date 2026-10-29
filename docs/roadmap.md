@@ -12,7 +12,7 @@ Status as of 2026-10-28. Companion to `workflow-sync-plan.md`, which covers sync
 | Prompt binding | Done: one prompt field found automatically; auto-caption workflows take none |
 | Image inputs | Done (backend): `POST /api/uploads` and `images` on jobs |
 | Viewing results | Done (backend): `/api/jobs/{id}/outputs` with signed, Range-capable view URLs |
-| Phone UI | **Not started**: still the old single-page UI, which knows nothing about images or outputs |
+| Phone UI | Done (first version): filtered workflow cards, image slots with on-device resize, live job card, results with video and captions, gallery |
 | Broken bundled files | 03/04/06 (active LoRA set to `None`), 11–13 (orphaned guider `model` link). Re-save from ComfyUI or use the synced copies |
 
 ### Workflow groups
