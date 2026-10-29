@@ -1,6 +1,6 @@
 services:
   image-studio-mobile:
-    image: ghcr.io/rpeters1430/comfy-mobile:latest@sha256:95ecfaf16c50f640aa58ae40508a9d4de1fc4665bf678a0d4504db4a66905fa4
+    image: ghcr.io/rpeters1430/comfy-mobile:latest
     pull_policy: always
     container_name: image-studio-mobile
     restart: unless-stopped
@@ -10,8 +10,10 @@ services:
       COMFYUI_URL: ${COMFYUI_URL:?Set your ComfyUI URL}
       STUDIO_TOKEN: ${STUDIO_TOKEN:?Set a strong access token}
       WORKFLOW_DIR: /workflows
+      WORKFLOW_SYNC_DIR: /workflow-sync
     volumes:
       - ./workflows:/workflows:ro
+      - ./workflow-sync:/workflow-sync
     mem_limit: 256m
     security_opt:
       - no-new-privileges:true

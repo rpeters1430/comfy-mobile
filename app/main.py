@@ -6,10 +6,13 @@ from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from workflow_validation import inspect_workflow, load_workflow
+from workflow_sync import WorkflowSync
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
 WF_DIR = Path(os.getenv('WORKFLOW_DIR','/workflows'))
+SYNC_DIR = Path(os.getenv('WORKFLOW_SYNC_DIR','/workflow-sync'))
+workflow_sync = WorkflowSync(COMFY, SYNC_DIR)
 app = FastAPI(title='Image Studio Mobile', version='0.4.0-dev')
 
 async def request(method, path, **kwargs):
@@ -52,10 +55,13 @@ async def catalog(authorization: str | None = Header(default=None)):
         inp = info.get(cls,{}).get('input',{}).get('required',{}).get(field,[])
         out[key] = inp[0] if inp and isinstance(inp[0],list) else []
     workflows=[]
-    if WF_DIR.exists():
-        for path in sorted(WF_DIR.rglob('*.json')):
+    for source_dir in (SYNC_DIR, WF_DIR):
+      if source_dir.exists():
+        for path in sorted(source_dir.rglob('*.json')):
             if path.is_symlink() or len(workflows)>=200: continue
-            rel=path.relative_to(WF_DIR).as_posix()
+            rel=path.relative_to(source_dir).as_posix()
+            if source_dir == SYNC_DIR:
+                rel='synced/' + rel
             try:
                 data=json.loads(path.read_text(encoding='utf-8'))
                 if isinstance(data,dict) and isinstance(data.get('nodes'),list):
@@ -73,7 +79,8 @@ async def catalog(authorization: str | None = Header(default=None)):
 async def validate_workflow(workflow_id: str, authorization: str | None = Header(default=None)):
     auth(authorization)
     try:
-        graph = load_workflow(WF_DIR, workflow_id)
+        root, name = (SYNC_DIR, workflow_id[7:]) if workflow_id.startswith('synced/') else (WF_DIR, workflow_id)
+        graph = load_workflow(root, name)
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         raise HTTPException(400, str(exc)) from exc
     info = await request('GET', '/object_info')
@@ -106,6 +113,16 @@ async def comfy_workflow_discovery(authorization: str | None = Header(default=No
             workflow_names.append(name)
     return {'available': True, 'workflows': workflow_names, 'count': len(workflow_names),
             'note': 'Read-only discovery; synchronization is not enabled yet'}
+
+@app.post('/api/comfy/workflows/sync')
+async def sync_comfy_workflows(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return await workflow_sync.sync()
+
+@app.get('/api/comfy/workflows/sync/status')
+async def sync_comfy_workflows_status(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return {'running': workflow_sync.lock.locked(), 'last_result': workflow_sync.last_result}
 
 @app.get('/api/queue')
 async def queue(authorization: str | None = Header(default=None)):
