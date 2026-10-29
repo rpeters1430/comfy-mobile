@@ -37,7 +37,7 @@ def convert_ui(data, object_info):
         if isinstance(widget_values, dict):
             widget_map = widget_values
         elif isinstance(widget_values, list):
-            widget_fields = [k for k, v in fields.items() if isinstance(v, list) and len(v) > 1 and isinstance(v[1], dict) and "defaultInput" not in v[1]]
+            widget_fields = [k for k, v in fields.items() if isinstance(v, list) and v and (v[0] in ("STRING", "INT", "FLOAT", "BOOLEAN") or isinstance(v[0], list)) and not any(i.get("name") == k and i.get("link") is not None for i in node.get("inputs", []))]
             widget_map = dict(zip(widget_fields, widget_values))
         else:
             widget_map = {}
@@ -52,7 +52,9 @@ def convert_ui(data, object_info):
         for field in fields:
             if field not in inputs and field in widget_map:
                 inputs[field] = widget_map[field]
-        for field in spec.get("required", {}):
+        for field, definition in spec.get("required", {}).items():
+            if field not in inputs and isinstance(definition, list) and len(definition) > 1 and isinstance(definition[1], dict) and "default" in definition[1]:
+                inputs[field] = definition[1]["default"]
             if field not in inputs:
                 raise ConversionError(f"Missing required value for {kind}.{field}")
         result[str(node["id"])] = {"class_type": kind, "inputs": inputs}

@@ -20,6 +20,19 @@ class ConversionTests(unittest.TestCase):
         with self.assertRaises(ConversionError):
             convert_ui(graph, self.schema)
 
+    def test_saveimage_widget_not_mapped_to_image_link(self):
+        schema = {"SaveImage": {"input": {"required": {
+            "images": ["IMAGE", {}], "filename_prefix": ["STRING", {"default": "ComfyUI"}]}}}}
+        graph = {"nodes": [
+            {"id": 1, "type": "SaveImage", "inputs": [{"name": "images", "link": 4}],
+             "widgets_values": ["MyImage"]},
+            {"id": 2, "type": "SaveImage", "inputs": [{"name": "images", "link": 5}],
+             "widgets_values": []},
+        ], "links": [[4, 3, 0, 1, 0, "IMAGE"], [5, 3, 0, 2, 0, "IMAGE"]]}
+        # Missing upstream producer is intentionally rejected, after widget conversion.
+        with self.assertRaisesRegex(ConversionError, "Link references"):
+            convert_ui(graph, schema)
+
     def test_unknown_subgraph_rejected(self):
         with self.assertRaisesRegex(ConversionError, "unexpanded subgraph"):
             convert_ui({"nodes": [{"id": 1, "type": "abc-uuid"}]}, self.schema)
