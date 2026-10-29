@@ -1,13 +1,15 @@
 import json, os, re, secrets, time
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 import httpx
-from fastapi import FastAPI, HTTPException, Header
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 from workflow_validation import inspect_workflow, load_workflow
 from workflow_sync import WorkflowSync
 from workflow_conversion import convert_ui, ConversionError
+from workflow_jobs import JobError, MAX_UPLOAD, apply_job, check_view, find_output, job_outputs, upload_name, view_query
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
@@ -82,18 +84,21 @@ async def catalog(authorization: str | None = Header(default=None)):
                 data=json.loads(path.read_text(encoding='utf-8'))
                 if isinstance(data,dict) and isinstance(data.get('nodes'),list):
                     fmt='ui'; node_types=sorted({n.get('type','') for n in data['nodes'] if isinstance(n,dict)})
+                    needs={}
                     try:
-                        converted=convert_ui(data,info)
-                        runnable=inspect_workflow(converted,info)['runnable']
+                        check=inspect_workflow(convert_ui(data,info),info)
+                        runnable=check['runnable']; needs={'takes_prompt':check['takes_prompt'],'image_inputs':check['image_inputs']}
                     except (ConversionError,ValueError,TypeError,KeyError):
                         runnable=False
                 elif isinstance(data,dict) and data and all(isinstance(v,dict) and 'class_type' in v and isinstance(v.get('inputs'),dict) for v in data.values()):
-                    fmt='api'; node_types=sorted({v['class_type'] for v in data.values()}); runnable=True
+                    fmt='api'; node_types=sorted({v['class_type'] for v in data.values()})
+                    check=inspect_workflow(data,info); runnable=check['runnable']
+                    needs={'takes_prompt':check.get('takes_prompt',False),'image_inputs':check.get('image_inputs',0)}
                 else: continue
-                workflows.append({'id':rel,'name':path.stem,'format':fmt,'runnable':runnable,'node_types':node_types})
+                workflows.append({'id':rel,'name':path.stem,'format':fmt,'runnable':runnable,'node_types':node_types,**needs})
             except (OSError,ValueError,TypeError):
                 continue
-    return {'models':out,'workflows':workflows,'updated_at':int(time.time()),'note':'Supported UI-format workflows are converted on submission; unsupported subgraphs require expansion'}
+    return {'models':out,'workflows':workflows,'updated_at':int(time.time()),'note':'UI-format workflows are converted on submission'}
 
 @app.get('/api/workflows/{workflow_id:path}/validate')
 async def validate_workflow(workflow_id: str, authorization: str | None = Header(default=None)):
@@ -162,7 +167,8 @@ async def history(authorization: str | None = Header(default=None)):
 
 class Job(BaseModel):
     workflow_id: str = Field(max_length=240)
-    prompt: str = Field(max_length=10000)
+    prompt: str = Field(default='',max_length=10000)
+    images: list[str] = Field(default_factory=list,max_length=8)
     seed: int | None = Field(default=None,ge=0,le=18446744073709551615)
 
 @app.post('/api/jobs')
@@ -182,17 +188,32 @@ async def jobs(job: Job, authorization: str | None = Header(default=None)):
     validation = inspect_workflow(graph, info)
     if not validation['runnable']:
         raise HTTPException(400, {'message': 'Workflow cannot run', 'errors': validation['errors'], 'warnings': validation['warnings']})
-    # Explicit {{prompt}} placeholders avoid accidentally rewriting negative prompts or instructions.
-    replacements=0
-    for node in graph.values():
-        for field,value in node['inputs'].items():
-            if isinstance(value,str) and '{{prompt}}' in value:
-                node['inputs'][field]=value.replace('{{prompt}}',job.prompt);replacements+=1
-            if field in ('seed','noise_seed') and job.seed is not None and isinstance(value,int):
-                node['inputs'][field]=job.seed
-    if not replacements: raise HTTPException(400,'Workflow requires a {{prompt}} placeholder')
+    # Only the {{prompt}} placeholder is replaced, so negative prompts and instructions are never rewritten.
+    try:
+        applied=apply_job(graph,job.prompt,job.images,job.seed)
+    except JobError as exc:
+        raise HTTPException(400,str(exc)) from exc
     result=await request('POST','/prompt',json={'prompt':graph,'client_id':'image-studio-mobile'})
-    return {'prompt_id':result.get('prompt_id'),'node_errors':result.get('node_errors',{})}
+    return {'prompt_id':result.get('prompt_id'),'node_errors':result.get('node_errors',{}),**applied}
+
+@app.post('/api/uploads')
+async def upload(req: Request, authorization: str | None = Header(default=None)):
+    '''Raw image body (PNG/JPEG/WebP) -> ComfyUI input folder under a server-chosen name.'''
+    auth(authorization)
+    if int(req.headers.get('content-length') or 0) > MAX_UPLOAD:
+        raise HTTPException(413,'Image too large')
+    body=bytearray()
+    async for chunk in req.stream():
+        body+=chunk
+        if len(body)>MAX_UPLOAD: raise HTTPException(413,'Image too large')
+    try:
+        name=upload_name(bytes(body))
+    except JobError as exc:
+        raise HTTPException(400,str(exc)) from exc
+    result=await request('POST','/upload/image',files={'image':(name,bytes(body))},data={'type':'input','overwrite':'false'})
+    if result.get('name')!=name or result.get('subfolder'):
+        raise HTTPException(502,'ComfyUI stored the upload under an unexpected name')
+    return {'name':name}
 
 @app.get('/api/jobs/{prompt_id}')
 async def job_status(prompt_id: str, authorization: str | None = Header(default=None)):
@@ -200,3 +221,42 @@ async def job_status(prompt_id: str, authorization: str | None = Header(default=
     if not re.fullmatch(r'[0-9a-fA-F-]{36}',prompt_id): raise HTTPException(400,'Invalid job id')
     data=await request('GET',f'/history/{prompt_id}')
     return data.get(prompt_id,{'status':'pending'})
+
+@app.get('/api/jobs/{prompt_id}/outputs')
+async def job_output_list(prompt_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    if not re.fullmatch(r'[0-9a-fA-F-]{36}',prompt_id): raise HTTPException(400,'Invalid job id')
+    data=await request('GET',f'/history/{prompt_id}')
+    entry=data.get(prompt_id)
+    if entry is None: return {'status':'pending','completed':False,'outputs':[],'errors':[]}
+    status=entry.get('status',{})
+    outputs=[]
+    for item in job_outputs(entry):
+        if item['kind']!='text':
+            item={**item,'url':f'/api/jobs/{prompt_id}/view?'+urlencode(view_query(TOKEN,prompt_id,item))}
+        outputs.append(item)
+    errors=[m[1] for m in status.get('messages',[]) if isinstance(m,list) and len(m)==2 and m[0]=='execution_error']
+    return {'status':status.get('status_str','unknown'),'completed':status.get('completed',False),'outputs':outputs,
+            'errors':[{k:e.get(k) for k in ('node_id','node_type','exception_message')} for e in errors if isinstance(e,dict)]}
+
+@app.get('/api/jobs/{prompt_id}/view')
+async def job_view(prompt_id: str, filename: str, expires: int, sig: str, subfolder: str = '', type: str = 'output',
+                   range: str | None = Header(default=None)):
+    '''Stream one output file. Authorized by the signed URL from /outputs, so <img> and <video> work.'''
+    if not re.fullmatch(r'[0-9a-fA-F-]{36}',prompt_id): raise HTTPException(400,'Invalid job id')
+    if not check_view(TOKEN,prompt_id,filename,subfolder,type,expires,sig): raise HTTPException(401,'Link expired or invalid')
+    data=await request('GET',f'/history/{prompt_id}')
+    if not find_output(data.get(prompt_id,{}),filename,subfolder,type): raise HTTPException(404,'Not an output of this job')
+    client=httpx.AsyncClient(timeout=httpx.Timeout(60.0,connect=4.0))
+    try:
+        upstream=await client.send(client.build_request('GET',f'{COMFY}/view',params={'filename':filename,'subfolder':subfolder,'type':type},
+                                                        headers={'Range':range} if range else {}),stream=True)
+    except httpx.HTTPError as exc:
+        await client.aclose(); raise HTTPException(502,'ComfyUI could not serve the file') from exc
+    async def close():
+        await upstream.aclose(); await client.aclose()
+    if upstream.status_code not in (200,206):
+        await close(); raise HTTPException(502,'ComfyUI could not serve the file')
+    headers={k:upstream.headers[k] for k in ('content-type','content-length','content-range','accept-ranges') if k in upstream.headers}
+    headers['cache-control']='private, max-age=3600'
+    return StreamingResponse(upstream.aiter_bytes(),status_code=upstream.status_code,headers=headers,background=BackgroundTask(close))
