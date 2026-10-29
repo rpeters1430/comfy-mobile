@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from workflow_validation import inspect_workflow, load_workflow
 from workflow_sync import WorkflowSync
+from workflow_conversion import convert_ui, ConversionError
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
@@ -66,14 +67,18 @@ async def catalog(authorization: str | None = Header(default=None)):
                 data=json.loads(path.read_text(encoding='utf-8'))
                 if isinstance(data,dict) and isinstance(data.get('nodes'),list):
                     fmt='ui'; node_types=sorted({n.get('type','') for n in data['nodes'] if isinstance(n,dict)})
-                    runnable=False
+                    try:
+                        converted=convert_ui(data,info)
+                        runnable=inspect_workflow(converted,info)['runnable']
+                    except (ConversionError,ValueError,TypeError,KeyError):
+                        runnable=False
                 elif isinstance(data,dict) and data and all(isinstance(v,dict) and 'class_type' in v and isinstance(v.get('inputs'),dict) for v in data.values()):
                     fmt='api'; node_types=sorted({v['class_type'] for v in data.values()}); runnable=True
                 else: continue
                 workflows.append({'id':rel,'name':path.stem,'format':fmt,'runnable':runnable,'node_types':node_types})
             except (OSError,ValueError,TypeError):
                 continue
-    return {'models':out,'workflows':workflows,'updated_at':int(time.time()),'note':'UI-format workflows are discoverable but must be exported in API format before execution'}
+    return {'models':out,'workflows':workflows,'updated_at':int(time.time()),'note':'Supported UI-format workflows are converted on submission; unsupported subgraphs require expansion'}
 
 @app.get('/api/workflows/{workflow_id:path}/validate')
 async def validate_workflow(workflow_id: str, authorization: str | None = Header(default=None)):
@@ -84,6 +89,11 @@ async def validate_workflow(workflow_id: str, authorization: str | None = Header
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         raise HTTPException(400, str(exc)) from exc
     info = await request('GET', '/object_info')
+    if isinstance(graph.get('nodes'), list):
+        try:
+            graph = convert_ui(graph, info)
+        except ConversionError as exc:
+            return {'format': 'ui', 'runnable': False, 'errors': [str(exc)], 'warnings': []}
     return inspect_workflow(graph, info)
 
 
@@ -144,10 +154,16 @@ class Job(BaseModel):
 async def jobs(job: Job, authorization: str | None = Header(default=None)):
     auth(authorization)
     try:
-        graph = load_workflow(WF_DIR, job.workflow_id)
+        root, name = (SYNC_DIR, job.workflow_id[7:]) if job.workflow_id.startswith('synced/') else (WF_DIR, job.workflow_id)
+        graph = load_workflow(root, name)
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         raise HTTPException(400, str(exc)) from exc
     info = await request('GET', '/object_info')
+    if isinstance(graph.get('nodes'), list):
+        try:
+            graph = convert_ui(graph, info)
+        except ConversionError as exc:
+            raise HTTPException(400, {'message': 'Conversion unsupported', 'errors': [str(exc)]}) from exc
     validation = inspect_workflow(graph, info)
     if not validation['runnable']:
         raise HTTPException(400, {'message': 'Workflow cannot run', 'errors': validation['errors'], 'warnings': validation['warnings']})
