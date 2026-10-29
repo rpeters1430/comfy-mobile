@@ -79,6 +79,34 @@ async def validate_workflow(workflow_id: str, authorization: str | None = Header
     info = await request('GET', '/object_info')
     return inspect_workflow(graph, info)
 
+
+@app.get('/api/comfy/workflows/discovery')
+async def comfy_workflow_discovery(authorization: str | None = Header(default=None)):
+    """Probe ComfyUI's user-data workflow listing without modifying either side."""
+    auth(authorization)
+    async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=4.0)) as client:
+        try:
+            response = await client.get(f'{COMFY}/userdata', params={'dir': 'workflows'})
+        except httpx.HTTPError:
+            return {'available': False, 'reason': 'ComfyUI user-data endpoint unreachable'}
+    if response.status_code != 200:
+        return {'available': False, 'status_code': response.status_code,
+                'reason': 'ComfyUI user-data workflow listing unavailable'}
+    try:
+        entries = response.json()
+    except ValueError:
+        return {'available': False, 'reason': 'Unexpected non-JSON user-data response'}
+    if not isinstance(entries, list):
+        return {'available': False, 'reason': 'Unexpected user-data response shape'}
+    # Avoid leaking unrelated ComfyUI user-data filenames.
+    workflow_names = []
+    for item in entries[:1000]:
+        name = item if isinstance(item, str) else item.get('name') if isinstance(item, dict) else None
+        if isinstance(name, str) and name.lower().endswith('.json') and '..' not in name and not name.startswith('/'):
+            workflow_names.append(name)
+    return {'available': True, 'workflows': workflow_names, 'count': len(workflow_names),
+            'note': 'Read-only discovery; synchronization is not enabled yet'}
+
 @app.get('/api/queue')
 async def queue(authorization: str | None = Header(default=None)):
     auth(authorization)
