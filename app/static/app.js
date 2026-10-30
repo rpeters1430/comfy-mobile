@@ -1021,19 +1021,27 @@ function reopenUnfinished() {
 async function renderGallery() {
   const jobs = galleryJobs();
   if (!jobs.length) return $('gallery').replaceChildren(el('p', { class: 'status' }, 'No jobs yet.'));
+  const thumbs = new Map();
   $('gallery').replaceChildren(...jobs.map(job => {
     const thumb = el('div', { class: 'thumb' }, '…');
     const card = el('button', { class: 'card', type: 'button' }, thumb,
       el('div', { class: 'meta' }, job.workflow, el('span', {}, new Date(job.created).toLocaleString())));
     card.onclick = () => openJob(job, true);
-    if (token) {
-      api(`/jobs/${job.id}/outputs`).then(r => {
-        const cover = r.outputs.find(o => o.kind !== 'text' && !o.preview) || r.outputs.find(o => o.kind !== 'text');
-        thumb.replaceChildren(cover ? mediaFor(cover, true) : (r.completed ? 'No image' : 'In progress'));
-      }).catch(() => thumb.replaceChildren('Unavailable'));
-    }
+    thumbs.set(job.id, thumb);
     return card;
   }));
+  if (!token) return;
+  try {
+    const all = await api('/jobs/outputs', { method: 'POST', json: { ids: [...thumbs.keys()] } });
+    for (const [id, thumb] of thumbs) {
+      const r = all[id];
+      if (!r) { thumb.replaceChildren('Unavailable'); continue; }
+      const cover = r.outputs.find(o => o.kind !== 'text' && !o.preview) || r.outputs.find(o => o.kind !== 'text');
+      thumb.replaceChildren(cover ? mediaFor(cover, true) : (r.completed ? 'No image' : 'In progress'));
+    }
+  } catch (e) {
+    thumbs.forEach(thumb => thumb.replaceChildren('Unavailable'));
+  }
 }
 $('clear-gallery').onclick = () => { store(GALLERY_KEY, null); renderGallery(); showToast('Gallery cleared'); };
 

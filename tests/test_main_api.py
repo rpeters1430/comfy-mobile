@@ -80,6 +80,27 @@ class ApiTests(unittest.TestCase):
                 r = self.client.get(f"/api/jobs/{job}/view", params={**{k: v[0] for k, v in query.items()}, "sig": "0" * 64, "thumb": 1})
                 self.assertEqual(401, r.status_code)
 
+    def test_batch_outputs(self):
+        from fastapi import HTTPException
+        from unittest.mock import patch
+        done, pending, offline = ("0f8d2a4c-1111-4222-8333-94445555666" + c for c in "678")
+
+        async def fake(method, path, **kw):
+            if path.endswith(offline):
+                raise HTTPException(502, "down")
+            if path.endswith(done):
+                return {done: {"status": {"status_str": "success", "completed": True}, "outputs": {}}}
+            return {}
+
+        with patch.object(main, "request", side_effect=fake):
+            r = self.client.post("/api/jobs/outputs", json={"ids": [done, pending, offline, "../x", done]},
+                                 headers={"Authorization": "Bearer secret123"})
+        self.assertEqual(200, r.status_code)
+        body = r.json()
+        self.assertEqual([done, pending, offline], list(body))
+        self.assertEqual(("success", "pending", None), (body[done]["status"], body[pending]["status"], body[offline]))
+        self.assertEqual(401, self.client.post("/api/jobs/outputs", json={"ids": []}).status_code)
+
     def test_push_endpoints_need_auth(self):
         for method, path in (("get", "/api/push/key"), ("post", "/api/push/subscribe"), ("post", "/api/push/test")):
             self.assertEqual(401, getattr(self.client, method)(path).status_code if method == "get"

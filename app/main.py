@@ -415,10 +415,7 @@ async def free_memory(authorization: str | None = Header(default=None)):
     await request('POST','/free',expect_json=False,json={'unload_models':True,'free_memory':True})
     return {'requested':True}
 
-@app.get('/api/jobs/{prompt_id}/outputs')
-async def job_output_list(prompt_id: str, authorization: str | None = Header(default=None)):
-    auth(authorization)
-    if not re.fullmatch(r'[0-9a-fA-F-]{36}',prompt_id): raise HTTPException(400,'Invalid job id')
+async def outputs_for(prompt_id: str) -> dict:
     # A finished job is answered from the NAS record, so the gallery still works after ComfyUI restarts.
     stored=job_store.get(prompt_id)
     if stored and stored['summary']: return signed(prompt_id,stored['summary'])
@@ -426,6 +423,29 @@ async def job_output_list(prompt_id: str, authorization: str | None = Header(def
     entry=data.get(prompt_id)
     if entry is None: return {'status':'pending','completed':False,'outputs':[],'errors':[]}
     return signed(prompt_id,job_summary(entry))
+
+@app.get('/api/jobs/{prompt_id}/outputs')
+async def job_output_list(prompt_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    if not re.fullmatch(r'[0-9a-fA-F-]{36}',prompt_id): raise HTTPException(400,'Invalid job id')
+    return await outputs_for(prompt_id)
+
+class JobIds(BaseModel):
+    ids: list[str] = Field(max_length=60)
+
+@app.post('/api/jobs/outputs')
+async def job_outputs_batch(body: JobIds, authorization: str | None = Header(default=None)):
+    '''The gallery's covers in one call; a job ComfyUI can't answer for comes back as null.'''
+    auth(authorization)
+    ids=[i for i in dict.fromkeys(body.ids) if re.fullmatch(r'[0-9a-fA-F-]{36}',i)]
+    limit=asyncio.Semaphore(6)
+    async def one(prompt_id):
+        async with limit:
+            try:
+                return await outputs_for(prompt_id)
+            except HTTPException:
+                return None
+    return dict(zip(ids,await asyncio.gather(*map(one,ids))))
 
 @app.get('/api/jobs/{prompt_id}/view')
 async def job_view(prompt_id: str, filename: str, expires: int, sig: str, subfolder: str = '', type: str = 'output',
