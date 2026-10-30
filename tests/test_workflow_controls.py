@@ -113,6 +113,13 @@ class ControlTests(unittest.TestCase):
         self.assertIsInstance(graph["7"]["inputs"]["steps"], int)
         self.assertEqual(0.3, graph["9"]["inputs"]["denoise"])
         self.assertEqual((832, 1216), (graph["6"]["inputs"]["width"], graph["6"]["inputs"]["height"]))
+        # Test phone wallpaper dimensions (Pixel & iPhone presets)
+        apply_controls(graph, INFO, {}, {}, [], None, {"width": 1080, "height": 2400})
+        self.assertEqual((1080, 2400), (graph["6"]["inputs"]["width"], graph["6"]["inputs"]["height"]))
+        apply_controls(graph, INFO, {}, {}, [], None, {"width": 1176, "height": 2552})
+        self.assertEqual((1176, 2552), (graph["6"]["inputs"]["width"], graph["6"]["inputs"]["height"]))
+        apply_controls(graph, INFO, {}, {}, [], None, {"width": 704, "height": 1536})
+        self.assertEqual((704, 1536), (graph["6"]["inputs"]["width"], graph["6"]["inputs"]["height"]))
 
     def test_rejects_bad_sampling_and_size(self):
         cases = [({"7": {"denoise": 0.5}}, None),           # a full pass keeps denoise 1

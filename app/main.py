@@ -1,4 +1,5 @@
 import json, os, re, secrets, time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
 import httpx
@@ -6,44 +7,87 @@ from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
-from workflow_validation import inspect_workflow, load_workflow
-from workflow_sync import WorkflowSync
-from workflow_conversion import convert_ui, ConversionError
-from workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls
-from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, job_outputs, upload_name, view_query
+
+try:
+    from workflow_validation import inspect_workflow, load_workflow
+    from workflow_sync import WorkflowSync
+    from workflow_conversion import convert_ui, ConversionError
+    from workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls
+    from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, job_outputs, upload_name, view_query
+except ImportError:
+    from app.workflow_validation import inspect_workflow, load_workflow
+    from app.workflow_sync import WorkflowSync
+    from app.workflow_conversion import convert_ui, ConversionError
+    from app.workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls
+    from app.workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, job_outputs, upload_name, view_query
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
 WF_DIR = Path(os.getenv('WORKFLOW_DIR','/workflows'))
-STATIC = Path(os.getenv('STATIC_DIR','/app/static'))
+_LOCAL_STATIC = Path(__file__).resolve().parent / 'static'
+STATIC = Path(os.getenv('STATIC_DIR', str(_LOCAL_STATIC) if _LOCAL_STATIC.is_dir() else '/app/static'))
 SYNC_DIR = Path(os.getenv('WORKFLOW_SYNC_DIR','/workflow-sync'))
 workflow_sync = WorkflowSync(COMFY, SYNC_DIR)
-app = FastAPI(title='Image Studio Mobile', version='0.4.0-dev')
+_http_client: httpx.AsyncClient | None = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _http_client
+    _http_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(20.0, connect=4.0),
+        limits=httpx.Limits(max_keepalive_connections=20, max_connections=50)
+    )
+    yield
+    if _http_client is not None:
+        await _http_client.aclose()
+        _http_client = None
+
+app = FastAPI(title='Image Studio Mobile', version='0.4.0-dev', lifespan=lifespan)
 
 async def request(method, path, expect_json=True, **kwargs):
-    async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=4.0)) as client:
+    client = _http_client
+    close_client = False
+    if client is None:
+        client = httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=4.0))
+        close_client = True
+    try:
+        r = await client.request(method, f'{COMFY}{path}', **kwargs)
+        r.raise_for_status()
+        # /interrupt, /queue and /free answer with an empty body.
+        return r.json() if expect_json else {}
+    except httpx.HTTPStatusError as e:
+        # Preserve ComfyUI's validation message, but never echo arbitrary HTML.
+        response = e.response
         try:
-            r = await client.request(method, f'{COMFY}{path}', **kwargs)
-            r.raise_for_status()
-            # /interrupt, /queue and /free answer with an empty body.
-            return r.json() if expect_json else {}
-        except httpx.HTTPStatusError as e:
-            # Preserve ComfyUI's validation message, but never echo arbitrary HTML.
-            response = e.response
-            try:
-                payload = response.json()
-            except ValueError:
-                payload = None
-            detail = {'message': 'ComfyUI rejected the request', 'status_code': response.status_code}
-            if isinstance(payload, dict):
-                for field in ('error', 'node_errors'):
-                    if field in payload:
-                        detail[field] = payload[field]
-            elif response.status_code >= 500:
-                detail['reason'] = 'ComfyUI server error'
-            raise HTTPException(502, detail) from e
-        except (httpx.RequestError, ValueError) as e:
-            raise HTTPException(502, f'ComfyUI request failed: {type(e).__name__}') from e
+            payload = response.json()
+        except ValueError:
+            payload = None
+        detail = {'message': 'ComfyUI rejected the request', 'status_code': response.status_code}
+        if isinstance(payload, dict):
+            for field in ('error', 'node_errors'):
+                if field in payload:
+                    detail[field] = payload[field]
+        elif response.status_code >= 500:
+            detail['reason'] = 'ComfyUI server error'
+        raise HTTPException(502, detail) from e
+    except (httpx.RequestError, ValueError) as e:
+        raise HTTPException(502, f'ComfyUI request failed: {type(e).__name__}') from e
+    finally:
+        if close_client:
+            await client.aclose()
+
+_object_info_cache: dict = {"data": None, "expires_at": 0.0}
+
+async def get_object_info(force_refresh: bool = False) -> dict:
+    now = time.time()
+    if not force_refresh and _object_info_cache["data"] is not None and now < _object_info_cache["expires_at"]:
+        return _object_info_cache["data"]
+    data = await request('GET', '/object_info')
+    _object_info_cache["data"] = data
+    _object_info_cache["expires_at"] = now + 60.0
+    return data
+
+_catalog_inspect_cache: dict = {}
 
 def auth(authorization: str | None):
     if not TOKEN or not authorization or not secrets.compare_digest(authorization, f'Bearer {TOKEN}'):
@@ -51,6 +95,12 @@ def auth(authorization: str | None):
 
 @app.get('/')
 def home(): return FileResponse(STATIC/'index.html')
+
+@app.get('/style.css')
+def style(): return FileResponse(STATIC/'style.css', media_type='text/css', headers={'Cache-Control':'no-cache'})
+
+@app.get('/app.js')
+def app_js(): return FileResponse(STATIC/'app.js', media_type='text/javascript', headers={'Cache-Control':'no-cache'})
 
 @app.get('/manifest.webmanifest')
 def manifest(): return FileResponse(STATIC/'manifest.webmanifest',media_type='application/manifest+json')
@@ -82,7 +132,7 @@ async def health(authorization: str | None = Header(default=None)):
 @app.get('/api/catalog')
 async def catalog(authorization: str | None = Header(default=None)):
     auth(authorization)
-    info = await request('GET','/object_info')
+    info = await get_object_info()
     names = {'checkpoints':('CheckpointLoaderSimple','ckpt_name'), 'loras':('LoraLoader','lora_name'), 'upscalers':('UpscaleModelLoader','model_name')}
     out = {}
     for key,(cls,field) in names.items():
@@ -97,6 +147,12 @@ async def catalog(authorization: str | None = Header(default=None)):
             if source_dir == SYNC_DIR:
                 rel='synced/' + rel
             try:
+                st = path.stat()
+                cache_key = (rel, st.st_mtime_ns, st.st_size)
+                cached = _catalog_inspect_cache.get(cache_key)
+                if cached is not None:
+                    workflows.append(cached)
+                    continue
                 data=json.loads(path.read_text(encoding='utf-8'))
                 if isinstance(data,dict) and isinstance(data.get('nodes'),list):
                     fmt='ui'; node_types=sorted({n.get('type','') for n in data['nodes'] if isinstance(n,dict)})
@@ -111,7 +167,9 @@ async def catalog(authorization: str | None = Header(default=None)):
                     check=inspect_workflow(data,info); runnable=check['runnable']
                     needs={'takes_prompt':check.get('takes_prompt',False),'image_inputs':check.get('image_inputs',0)}
                 else: continue
-                workflows.append({'id':rel,'name':path.stem,'format':fmt,'runnable':runnable,'node_types':node_types,**needs})
+                entry = {'id':rel,'name':path.stem,'format':fmt,'runnable':runnable,'node_types':node_types,**needs}
+                _catalog_inspect_cache[cache_key] = entry
+                workflows.append(entry)
             except (OSError,ValueError,TypeError):
                 continue
     return {'models':out,'workflows':workflows,'updated_at':int(time.time()),'note':'UI-format workflows are converted on submission'}
@@ -124,7 +182,7 @@ async def validate_workflow(workflow_id: str, authorization: str | None = Header
         graph = load_workflow(root, name)
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         raise HTTPException(400, str(exc)) from exc
-    info = await request('GET', '/object_info')
+    info = await get_object_info()
     if isinstance(graph.get('nodes'), list):
         try:
             graph = convert_ui(graph, info)
@@ -163,7 +221,10 @@ async def comfy_workflow_discovery(authorization: str | None = Header(default=No
 @app.post('/api/comfy/workflows/sync')
 async def sync_comfy_workflows(authorization: str | None = Header(default=None)):
     auth(authorization)
-    return await workflow_sync.sync()
+    result = await workflow_sync.sync()
+    _catalog_inspect_cache.clear()
+    _object_info_cache["expires_at"] = 0.0
+    return result
 
 @app.get('/api/comfy/workflows/sync/status')
 async def sync_comfy_workflows_status(authorization: str | None = Header(default=None)):
@@ -205,7 +266,7 @@ async def jobs(job: Job, authorization: str | None = Header(default=None)):
         graph = load_workflow(root, name)
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         raise HTTPException(400, str(exc)) from exc
-    info = await request('GET', '/object_info')
+    info = await get_object_info()
     if isinstance(graph.get('nodes'), list):
         try:
             graph = convert_ui(graph, info)

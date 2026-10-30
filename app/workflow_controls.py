@@ -25,7 +25,7 @@ CAPTION_CLASSES = ("Qwen3VLAbliteratedPromptPair", "Qwen3VLAbliteratedCaption", 
 CAPTION_CHOICES = ("model", "caption_type", "length", "content_mode")
 CAPTION_TOGGLES = ("vulgar_slang", "lighting", "camera_angle", "shot_type", "composition", "depth_of_field",
                    "camera_settings", "aesthetic_quality", "mention_mood")
-MAX_SIDE, MAX_PIXELS = 2048, 2048 * 2048
+MAX_SIDE, MAX_PIXELS = 2880, 2048 * 2048
 
 
 class ControlError(ValueError):

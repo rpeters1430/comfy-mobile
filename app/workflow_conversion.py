@@ -201,7 +201,17 @@ def convert_ui(data, object_info):
         # same-index input if its type matches, else the first input of that type.
         for _ in range(len(nodes) + 1):
             source = by_id.get(origin)
-            if source is None or source.get("mode", 0) == 0:
+            if source is None:
+                return origin, slot
+            if source.get("type") == "Reroute":
+                inputs = source.get("inputs", [])
+                if inputs and inputs[0].get("link") is not None:
+                    entry = links.get(inputs[0]["link"])
+                    if entry:
+                        origin, slot = entry[0], entry[1]
+                        continue
+                raise ConversionError(f"Reroute node {origin} is unconnected")
+            if source.get("mode", 0) == 0:
                 return origin, slot
             if source.get("mode") == 2:
                 return None  # ComfyUI drops inputs fed by muted nodes; required ones then fail below
@@ -227,8 +237,8 @@ def convert_ui(data, object_info):
             continue
         if kind in skipped:
             # Notes must not be used as active graph dependencies.
-            if any(str(node.get("id")) == origin for origin, _, _, _ in links.values()):
-                raise ConversionError("Connected note/reroute node requires manual conversion")
+            if kind != "Reroute" and any(str(node.get("id")) == origin for origin, _, _, _ in links.values()):
+                raise ConversionError("Connected note node requires manual conversion")
             continue
         if kind not in object_info:
             raise ConversionError(f"Unsupported node or unexpanded subgraph: {kind}")
@@ -346,6 +356,24 @@ def _prompt_targets(data):
                 names = {str(sgi.get("name", "")).lower(), str(sgi.get("label", "")).lower()}
                 if sgi.get("type") == "STRING" and sgi.get("name") not in linked and names & {"prompt", "positive_prompt"}:
                     targets.append((node, index))
+    if len(targets) > 1:
+        links_raw = _parse_links(data.get("links"))
+        nodes_by_id = {str(n.get("id")): n for n in data["nodes"]}
+        positive_targets = []
+        for cand_node, index in targets:
+            nid = str(cand_node.get("id"))
+            target_socket_names = set()
+            for origin_id, origin_slot, target_id, target_slot in links_raw.values():
+                if origin_id == nid:
+                    downstream_node = nodes_by_id.get(target_id)
+                    if downstream_node:
+                        inputs = downstream_node.get("inputs") or []
+                        if target_slot < len(inputs):
+                            target_socket_names.add(str(inputs[target_slot].get("name", "")).lower())
+            if "positive" in target_socket_names and "negative" not in target_socket_names:
+                positive_targets.append((cand_node, index))
+        if len(positive_targets) == 1:
+            return positive_targets
     return targets
 
 

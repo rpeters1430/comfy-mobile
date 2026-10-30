@@ -3,101 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#10131b">
+<meta name="theme-color" content="#0c1017">
 <link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/style.css">
 <title>Image Studio Mobile</title>
-<style>
-:root {
-  --bg: #10131b; --panel: #1c2232; --panel-2: #242b3c; --line: #3b455b; --text: #f4f5fa; --muted: #a5afc3;
-  --accent: #6c5ce7; --accent-2: #9c91ff; --ok: #9de3b0; --err: #ff9e9e; --warn: #ffd58a;
-  font-family: system-ui, sans-serif; color: var(--text); background: var(--bg); color-scheme: dark;
-}
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); }
-main { max-width: 680px; margin: auto; padding: 16px 16px calc(96px + env(safe-area-inset-bottom)); }
-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-header > div { min-width: 0; }
-#status { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#refresh { white-space: nowrap; flex: none; }
-h1 { font-size: 22px; margin: 0; }
-h2 { font-size: 17px; margin: 0 0 10px; }
-p, small, .muted { color: var(--muted); }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-top: 14px; }
-.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.between { justify-content: space-between; }
-button, select, input, textarea { font: inherit; }
-input, textarea, select { background: #111827; color: var(--text); border: 1px solid #566078; border-radius: 10px; padding: 12px; width: 100%; margin: 6px 0; }
-textarea { min-height: 110px; resize: vertical; }
-label { display: block; margin-top: 10px; font-size: 14px; color: var(--muted); }
-button { cursor: pointer; }
-button:disabled { opacity: .55; cursor: default; }
-:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
-.primary { background: var(--accent); color: white; border: 0; border-radius: 12px; padding: 14px; width: 100%; font-weight: 700; margin-top: 14px; }
-.secondary { background: #394258; color: white; border: 0; border-radius: 10px; padding: 9px 12px; }
-.ghost { background: none; border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 8px 12px; }
-.status { font-size: 14px; color: var(--muted); }
-.error { color: var(--err); }
-.ok { color: var(--ok); }
-.hide { display: none !important; }
-
-.chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; }
-.chip { flex: none; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; }
-.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
-
-.wf-list { display: grid; gap: 8px; margin-top: 8px; }
-.wf { text-align: left; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 12px; width: 100%; }
-.wf[aria-pressed="true"] { border-color: var(--accent-2); box-shadow: inset 0 0 0 1px var(--accent-2); }
-.wf strong { display: block; font-weight: 600; overflow-wrap: anywhere; }
-.badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-.badge { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
-.badge.video { color: var(--warn); border-color: #6b5a36; }
-details.unavailable { margin-top: 10px; }
-details.unavailable summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
-.wf.off { opacity: .6; }
-details.controls { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px 10px; }
-details.controls summary { cursor: pointer; padding: 8px 0; }
-details.controls summary small { display: block; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lora { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
-.lora .row { align-items: center; }
-.lora input[type=range] { flex: 1; padding: 0; margin: 0; border: 0; background: none; }
-.lora output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
-.lora.off select, .lora.off input[type=range], .lora.off output { opacity: .45; }
-.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
-.settings-grid label { margin-top: 6px; }
-.aspects { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-.aspects .chip { padding: 8px 12px; }
-
-.slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 6px; }
-.slot { position: relative; aspect-ratio: 1; border: 1px dashed #566078; border-radius: 12px; display: grid; place-items: center; overflow: hidden; background: #111827; color: var(--muted); text-align: center; font-size: 14px; padding: 8px; }
-.slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.slot input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
-.slot .state { position: absolute; left: 6px; bottom: 6px; background: #000a; color: white; border-radius: 6px; padding: 2px 6px; font-size: 12px; }
-
-.job { border-left: 3px solid var(--accent); }
-.results { display: grid; gap: 10px; margin-top: 10px; }
-.results img, .results video { width: 100%; border-radius: 12px; background: #000; display: block; }
-.caption { white-space: pre-wrap; background: #111827; border-radius: 10px; padding: 10px; font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
-
-.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-.card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; text-align: left; color: var(--text); padding: 0; }
-.card .thumb { aspect-ratio: 1; background: #111827; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
-.card .thumb img, .card .thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.card div.meta { padding: 8px; font-size: 13px; }
-.card div.meta span { display: block; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #171c29; display: flex; justify-content: space-around; padding: 10px 4px max(10px, env(safe-area-inset-bottom)); border-top: 1px solid #364057; }
-nav button { border: 0; background: none; color: #c8cce2; padding: 6px 14px; border-radius: 10px; min-width: 64px; }
-nav button[aria-current="page"] { color: white; background: #2a3247; }
-</style>
 </head>
 <body>
+<div id="toast" class="hide" role="status"></div>
+
 <main>
   <header>
-    <div><h1>✦ Image Studio</h1><small id="status" role="status">Not connected</small></div>
+    <div>
+      <h1>✦ Image Studio <span class="header-badge">Mobile</span></h1>
+      <small id="status" role="status">Not connected</small>
+    </div>
     <button class="secondary" id="refresh" type="button">↻ Refresh</button>
   </header>
 
-  <!-- Create -->
+  <!-- Tab: Create -->
   <section id="tab-create">
     <div class="panel hide" id="shared-banner" role="status">
       <div class="row between">
@@ -105,15 +28,20 @@ nav button[aria-current="page"] { color: white; background: #2a3247; }
         <button class="ghost" id="shared-dismiss" type="button" aria-label="Discard shared photos">✕</button>
       </div>
       <div class="slots" id="shared-previews" style="grid-template-columns:repeat(auto-fill,minmax(70px,1fr))"></div>
-      <p class="status" id="shared-hint">Pick a workflow below and the photos fill its image slots in order.</p>
+      <p class="status" id="shared-hint" style="margin-top:8px">Pick a workflow below and the photos fill its image slots in order.</p>
     </div>
+
     <div class="panel">
+      <div class="wf-search-wrap">
+        <span class="wf-search-icon">🔍</span>
+        <input type="search" id="wf-search" placeholder="Search workflows or nodes…" autocomplete="off">
+      </div>
       <div class="chips" role="group" aria-label="Filter workflows">
-        <button class="chip" data-kind="all" aria-pressed="true">All</button>
-        <button class="chip" data-kind="text">Text → Image</button>
-        <button class="chip" data-kind="image">Image → Image</button>
-        <button class="chip" data-kind="edit">Edit</button>
-        <button class="chip" data-kind="video">Video</button>
+        <button class="chip" data-kind="all" aria-pressed="true" type="button">All</button>
+        <button class="chip" data-kind="text" type="button">Text → Image</button>
+        <button class="chip" data-kind="image" type="button">Image → Image</button>
+        <button class="chip" data-kind="edit" type="button">Edit</button>
+        <button class="chip" data-kind="video" type="button">Video</button>
       </div>
       <div class="wf-list" id="workflows"><p class="status">Connect in Settings to load workflows.</p></div>
       <details class="unavailable hide" id="unavailable-box">
@@ -130,8 +58,8 @@ nav button[aria-current="page"] { color: white; background: #2a3247; }
       </div>
       <div id="prompt-box">
         <label for="prompt">Prompt</label>
-        <textarea id="prompt" placeholder="Describe what you want to create…"></textarea>
-        <div class="row">
+        <textarea id="prompt" placeholder="Describe what you want to create…" spellcheck="false"></textarea>
+        <div class="row" style="margin-top:6px">
           <select id="saved-prompts" aria-label="Saved prompts" style="flex:1"><option value="">Saved prompts…</option></select>
           <button class="ghost" id="save-prompt" type="button">★ Save</button>
           <button class="ghost" id="delete-prompt" type="button" aria-label="Delete selected saved prompt">🗑</button>
@@ -142,7 +70,7 @@ nav button[aria-current="page"] { color: white; background: #2a3247; }
         <summary>Models &amp; settings<small id="controls-summary"></small></summary>
         <div id="controls"></div>
       </details>
-      <div class="row" style="align-items:flex-end">
+      <div class="row" style="align-items:flex-end;margin-top:6px">
         <div style="flex:2">
           <label for="seed">Seed</label>
           <input id="seed" type="number" min="0" inputmode="numeric" placeholder="Random each run">
@@ -152,840 +80,62 @@ nav button[aria-current="page"] { color: white; background: #2a3247; }
           <select id="runs"><option>1</option><option>2</option><option>4</option><option>8</option></select>
         </div>
       </div>
-      <p class="status" style="margin:2px 0 0">Leave the seed empty for a new image every run. With a seed, runs use seed, seed+1, …</p>
-      <button class="primary" id="generate" type="submit">Generate</button>
-      <p id="form-error" class="status error" role="alert"></p>
+      <p class="status" style="margin:4px 0 0">Leave seed empty for a random seed each run. With a fixed seed, runs use seed, seed+1, …</p>
+      <button class="primary" id="generate" type="submit">✨ Generate</button>
+      <p id="form-error" class="status error" role="alert" style="margin-top:8px"></p>
     </form>
 
     <div id="jobs"></div>
   </section>
 
-  <!-- Gallery -->
+  <!-- Tab: Gallery -->
   <section id="tab-gallery" class="hide">
     <div class="panel">
       <div class="row between"><h2>Gallery</h2><button class="ghost" id="clear-gallery" type="button">Clear list</button></div>
-      <p class="status">Jobs started from this device. Tap one to open it.</p>
+      <p class="status">Jobs started from this device. Tap one to view details or run again.</p>
       <div class="gallery" id="gallery"></div>
     </div>
   </section>
 
-  <!-- Settings -->
+  <!-- Tab: Settings -->
   <section id="tab-settings" class="hide">
     <div class="panel">
       <h2>Connection</h2>
       <label for="token">Studio access token</label>
       <input id="token" type="password" placeholder="STUDIO_TOKEN from Docker .env" autocomplete="off">
-      <div class="row">
+      <div class="row" style="margin-top:6px">
         <button class="secondary" id="connect" type="button">Connect</button>
         <button class="ghost" id="forget" type="button">Forget saved token</button>
       </div>
-      <p class="status">Saved on this device only. Use HTTPS or Tailscale for transport security.</p>
+      <p class="status" style="margin-top:8px">Saved on this device only. Keep behind a trusted LAN or Tailscale.</p>
     </div>
     <div class="panel">
       <div class="row between"><h2>Workflow sync</h2><button class="secondary" id="sync-now" type="button">↻ Sync now</button></div>
       <p id="sync-status" class="status">Pull saved workflows from ComfyUI.</p>
     </div>
     <div class="panel">
-      <div class="row between"><h2>ComfyUI</h2><button class="secondary" id="free-vram" type="button">Free VRAM</button></div>
+      <div class="row between"><h2>ComfyUI PC Status</h2><button class="secondary" id="free-vram" type="button">Free VRAM</button></div>
       <p id="system" class="status">Connect to see status.</p>
       <p id="models" class="status"></p>
       <p id="free-status" class="status"></p>
     </div>
     <div class="panel">
       <div class="row between"><h2>Notifications</h2><button class="secondary" id="notify" type="button">Enable</button></div>
-      <p id="notify-status" class="status">Get a notification when a job finishes while the app is in the background.</p>
+      <p id="notify-status" class="status">Get a notification when a job finishes while the app is backgrounded.</p>
     </div>
     <div class="panel">
       <h2>Share photos into the app</h2>
-      <p class="status">Install the app (browser menu → <em>Add to Home screen</em> / <em>Install app</em>). Then share a photo from your gallery and choose <strong>Image Studio</strong>.</p>
+      <p class="status">Install this app (browser menu → <em>Add to Home screen</em> / <em>Install app</em>). Then share any photo from your mobile gallery directly to <strong>Image Studio</strong>.</p>
     </div>
   </section>
 </main>
 
 <nav aria-label="Sections">
-  <button data-tab="create" aria-current="page">✨ Create</button>
-  <button data-tab="gallery">▦ Gallery</button>
-  <button data-tab="settings">⚙ Settings</button>
+  <button data-tab="create" aria-current="page" type="button">✨ Create</button>
+  <button data-tab="gallery" type="button">▦ Gallery</button>
+  <button data-tab="settings" type="button">⚙ Settings</button>
 </nav>
 
-<script>
-const $ = id => document.getElementById(id);
-const STORAGE_KEY = 'image-studio-mobile:token:v1';
-const GALLERY_KEY = 'image-studio-mobile:jobs:v1';
-const PROMPTS_KEY = 'image-studio-mobile:prompts:v1';
-const CONTROLS_KEY = 'image-studio-mobile:controls:v1';
-const CAPTION_KEY = 'image-studio-mobile:caption:v1';  // shared by every auto-caption workflow
-const SHARED_CACHE = 'shared-images';
-const MAX_SIDE = 2048;
-
-let token = '';
-let catalog = null;
-let filter = 'all';
-let selected = null;   // catalog workflow entry
-let slots = [];        // per image input: {name, uploading}
-let sharedFiles = [];  // photos shared into the app, waiting for a workflow
-let swReg = null;
-let controls = null;   // models and LoRAs the selected workflow exposes (from /validate)
-let choices = null;    // {models: {node: name}, loras: {node: {name, strength, on}}, extra: [{name, strength}]}
-
-function store(key, value) { try { value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch (e) {} }
-function load(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
-
-function el(tag, attrs = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === 'class') node.className = v;
-    else if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
-    else if (v !== false && v != null) node.setAttribute(k, v === true ? '' : v);
-  }
-  for (const child of children.flat()) if (child != null) node.append(child);
-  return node;
-}
-
-function errorText(detail) {
-  if (!detail) return 'Request failed';
-  if (typeof detail === 'string') return detail;
-  if (Array.isArray(detail)) return detail.map(d => d.msg || JSON.stringify(d)).join('; ');
-  const parts = [detail.message || detail.error?.message || 'Request failed'];
-  if (detail.errors) parts.push(...detail.errors);
-  for (const [node, info] of Object.entries(detail.node_errors || {}))
-    for (const e of info.errors || []) parts.push(`${info.class_type} (${node}): ${e.message}${e.details ? ' – ' + e.details : ''}`);
-  return parts.join('\n');
-}
-
-async function api(path, opts = {}) {
-  const headers = { Authorization: 'Bearer ' + token, ...(opts.headers || {}) };
-  if (opts.json !== undefined) { headers['Content-Type'] = 'application/json'; opts = { ...opts, body: JSON.stringify(opts.json) }; }
-  const r = await fetch('/api' + path, { ...opts, headers });
-  let data = null;
-  try { data = await r.json(); } catch (e) {}
-  if (!r.ok) throw Error(errorText(data?.detail) || String(r.status));
-  return data;
-}
-
-function deviceName(name) { return String(name || '').replace(/^cuda:\d+\s*/, '').replace(/\s*:\s*\w+$/, ''); }
-
-function setStatus(text, cls = '') { $('status').textContent = text; $('status').className = cls; }
-
-/* ---------- tabs ---------- */
-function showTab(name) {
-  for (const t of ['create', 'gallery', 'settings']) $('tab-' + t).classList.toggle('hide', t !== name);
-  document.querySelectorAll('nav button').forEach(b => b.dataset.tab === name ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'));
-  if (name === 'gallery') renderGallery();
-}
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
-
-/* ---------- workflows ---------- */
-function prettyName(name) { return name.replace(/^\d+_/, '').replace(/_/g, ' '); }
-function kindOf(wf) {
-  if ((wf.node_types || []).some(t => /SaveVideo|VHS_VideoCombine|SaveAnimated/.test(t)) || /video|i2v|t2v/i.test(wf.name)) return 'video';
-  if (/edit/i.test(wf.name)) return 'edit';
-  if (wf.image_inputs > 0) return 'image';
-  return 'text';
-}
-
-function workflowButton(wf) {
-  const kind = kindOf(wf);
-  const badges = [];
-  if (wf.id.startsWith('synced/')) badges.push(el('span', { class: 'badge' }, 'synced'));
-  if (kind === 'video') badges.push(el('span', { class: 'badge video' }, 'video'));
-  if (wf.image_inputs) badges.push(el('span', { class: 'badge' }, wf.image_inputs === 1 ? '1 image' : `${wf.image_inputs} images`));
-  if (wf.runnable) badges.push(el('span', { class: 'badge' }, wf.takes_prompt ? 'prompt' : 'auto caption'));
-  const button = el('button', { class: 'wf' + (wf.runnable ? '' : ' off'), type: 'button', 'aria-pressed': String(selected?.id === wf.id) },
-    el('strong', {}, prettyName(wf.name)), el('div', { class: 'badges' }, badges));
-  button.onclick = () => wf.runnable ? selectWorkflow(wf) : explain(wf, button);
-  return button;
-}
-
-async function explain(wf, button) {
-  const note = button.querySelector('.reason') || button.appendChild(el('small', { class: 'reason', style: 'display:block;margin-top:6px;white-space:pre-wrap' }));
-  note.textContent = 'Checking…';
-  try {
-    const r = await api('/workflows/' + encodeURIComponent(wf.id).replace(/%2F/g, '/') + '/validate');
-    note.textContent = [...(r.errors || []), ...(r.warnings || [])].join('\n') || 'No details available.';
-  } catch (e) { note.textContent = e.message; }
-}
-
-function renderWorkflows() {
-  if (!catalog) return;
-  const matches = catalog.workflows.filter(w => filter === 'all' || kindOf(w) === filter);
-  const ready = matches.filter(w => w.runnable), off = matches.filter(w => !w.runnable);
-  $('workflows').replaceChildren(...(ready.length ? ready.map(workflowButton) : [el('p', { class: 'status' }, 'No runnable workflows in this category.')]));
-  $('unavailable-box').classList.toggle('hide', !off.length);
-  $('unavailable-summary').textContent = `Unavailable (${off.length}) – tap one for the reason`;
-  $('unavailable').replaceChildren(...off.map(workflowButton));
-}
-
-document.querySelectorAll('.chip[data-kind]').forEach(c => c.onclick = () => {
-  filter = c.dataset.kind;
-  document.querySelectorAll('.chip[data-kind]').forEach(x => x.setAttribute('aria-pressed', String(x === c)));
-  renderWorkflows();
-});
-
-function selectWorkflow(wf) {
-  selected = wf;
-  slots = Array.from({ length: wf.image_inputs || 0 }, () => ({ name: null, uploading: false }));
-  $('form').classList.remove('hide');
-  $('form-title').textContent = prettyName(wf.name);
-  $('prompt-box').classList.toggle('hide', !wf.takes_prompt);
-  $('no-prompt').classList.toggle('hide', wf.takes_prompt || !wf.image_inputs);
-  $('images-box').classList.toggle('hide', !wf.image_inputs);
-  $('images-label').textContent = wf.image_inputs > 1 ? `Input images (${wf.image_inputs}, in order)` : 'Input image';
-  $('form-error').textContent = '';
-  renderSlots();
-  renderSavedPrompts();
-  renderWorkflows();
-  loadControls(wf);
-  if (sharedFiles.length && slots.length) {
-    sharedFiles.slice(0, slots.length).forEach((file, i) => pickImage(i, file));
-    clearShared();
-  }
-  $('form').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-/* ---------- image slots ---------- */
-function renderSlots() {
-  $('slots').replaceChildren(...slots.map((slot, i) => {
-    const input = el('input', { type: 'file', accept: 'image/*', 'aria-label': `Choose image ${i + 1}` });
-    input.onchange = () => input.files[0] && pickImage(i, input.files[0]);
-    const box = el('div', { class: 'slot' }, slot.preview ? el('img', { src: slot.preview, alt: '' }) : `Tap to add image ${slots.length > 1 ? i + 1 : ''}`, input);
-    if (slot.uploading || slot.error) box.append(el('span', { class: 'state' }, slot.error ? 'Upload failed' : 'Uploading…'));
-    else if (slot.name) box.append(el('span', { class: 'state' }, '✓ Ready'));
-    return box;
-  }));
-}
-
-// Re-encode on the phone: respects EXIF orientation, converts HEIC where the browser can decode it,
-// and keeps uploads well under the server's 20 MB limit.
-async function prepareImage(file) {
-  try {
-    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-    const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-    return await new Promise((ok, fail) => canvas.toBlob(b => b ? ok(b) : fail(Error('Could not encode image')), type, 0.92));
-  } catch (e) {
-    if (['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) return file;
-    throw Error('This image format is not supported by your browser');
-  }
-}
-
-async function pickImage(i, file) {
-  const slot = slots[i];
-  if (slot.preview) URL.revokeObjectURL(slot.preview);
-  Object.assign(slot, { name: null, error: null, uploading: true, preview: URL.createObjectURL(file) });
-  renderSlots();
-  try {
-    const body = await prepareImage(file);
-    const r = await api('/uploads', { method: 'POST', body, headers: { 'Content-Type': body.type || 'application/octet-stream' } });
-    if (slots[i] === slot) slot.name = r.name;
-  } catch (e) {
-    slot.error = e.message;
-    $('form-error').textContent = e.message;
-  } finally {
-    slot.uploading = false;
-    renderSlots();
-  }
-}
-
-/* ---------- saved prompts (per workflow, this device) ---------- */
-function savedPrompts() { try { return JSON.parse(load(PROMPTS_KEY) || '{}'); } catch (e) { return {}; } }
-function promptKey() { return selected ? prettyName(selected.name) : ''; }
-function renderSavedPrompts() {
-  const list = savedPrompts()[promptKey()] || [];
-  $('saved-prompts').replaceChildren(new Option(list.length ? `Saved prompts (${list.length})…` : 'No saved prompts yet', ''),
-    ...list.map((text, i) => new Option(text.length > 60 ? text.slice(0, 57) + '…' : text, String(i))));
-}
-$('saved-prompts').onchange = () => {
-  const list = savedPrompts()[promptKey()] || [];
-  if ($('saved-prompts').value !== '') $('prompt').value = list[Number($('saved-prompts').value)] || '';
-};
-$('save-prompt').onclick = () => {
-  const text = $('prompt').value.trim();
-  if (!text || !selected) return;
-  const all = savedPrompts();
-  all[promptKey()] = [text, ...(all[promptKey()] || []).filter(t => t !== text)].slice(0, 30);
-  store(PROMPTS_KEY, JSON.stringify(all));
-  renderSavedPrompts();
-};
-$('delete-prompt').onclick = () => {
-  const index = $('saved-prompts').value;
-  if (index === '') return;
-  const all = savedPrompts();
-  all[promptKey()] = (all[promptKey()] || []).filter((_, i) => i !== Number(index));
-  store(PROMPTS_KEY, JSON.stringify(all));
-  renderSavedPrompts();
-};
-
-/* ---------- models & LoRAs (per workflow, remembered on this device) ---------- */
-const MAX_EXTRA_LORAS = 4;
-function fileLabel(path) { return String(path).split(/[\\/]/).pop().replace(/\.(safetensors|ckpt|pt|gguf)$/i, ''); }
-function folderOf(path) { const parts = String(path).split(/[\\/]/); return parts.length > 1 ? parts[0] : ''; }
-
-// One group per folder. The workflow's own folders (SDXL, Flux, ...) come first so compatible files are easy to find.
-function modelSelect(options, value, families, label) {
-  const select = el('select', { 'aria-label': label });
-  const groups = new Map();
-  for (const o of options) groups.has(folderOf(o)) ? groups.get(folderOf(o)).push(o) : groups.set(folderOf(o), [o]);
-  if (groups.size < 2) select.append(...options.map(o => new Option(fileLabel(o), o)));
-  else {
-    const rank = f => families.includes(f) ? families.indexOf(f) : families.length + (f === '' ? 1 : 0);
-    const order = [...groups.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, undefined, { sensitivity: 'base' }));
-    select.append(...order.map(f => el('optgroup', { label: f || 'Top level' }, groups.get(f).map(o => new Option(fileLabel(o), o)))));
-  }
-  select.value = value;
-  return select;
-}
-
-function savedControls() { try { return JSON.parse(load(CONTROLS_KEY) || '{}'); } catch (e) { return {}; } }
-function saveControls() {
-  if (!selected || !choices) return;
-  const all = savedControls();
-  all[selected.id] = choices;
-  store(CONTROLS_KEY, JSON.stringify(all));
-}
-
-async function loadControls(wf) {
-  controls = choices = null;
-  $('controls-box').classList.add('hide');
-  let found;
-  try {
-    found = (await api('/workflows/' + encodeURIComponent(wf.id).replace(/%2F/g, '/') + '/validate')).controls;
-  } catch (e) { return; }
-  if (selected !== wf || !found || (!found.models.length && !found.loras.length && !found.samplers.length && !found.size && !found.captions.length)) return;
-  controls = found;
-  // Restore the last choices, keeping only files ComfyUI still has.
-  const saved = savedControls()[wf.id] || {};
-  const loraOk = name => controls.lora_options.includes(name);
-  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', caption: {} };
-  for (const m of controls.models) choices.models[m.node] = m.options.includes(saved.models?.[m.node]) ? saved.models[m.node] : m.value;
-  for (const l of controls.loras) {
-    const s = saved.loras?.[l.node];
-    choices.loras[l.node] = s && loraOk(s.name) ? s : { name: l.value, strength: l.strength, on: true };
-  }
-  if (controls.can_add_lora) choices.extra = (saved.extra || []).filter(x => loraOk(x.name)).slice(0, MAX_EXTRA_LORAS);
-  for (const smp of controls.samplers) {
-    const values = { ...smp.values };
-    for (const [field, value] of Object.entries(saved.sampling?.[smp.node] || {}))
-      if (field in values && typeof value === typeof values[field] &&
-          (field === 'sampler_name' ? controls.sampler_options.includes(value) : field === 'scheduler' ? controls.scheduler_options.includes(value) : true))
-        values[field] = value;
-    choices.sampling[smp.node] = values;
-  }
-  if (controls.size && ASPECTS.includes(saved.aspect)) choices.aspect = saved.aspect;
-  // Caption settings follow you between workflows; the caption style stays per workflow
-  // (video and natural-language models need their own).
-  const shared = savedCaption();
-  for (const cap of controls.captions) {
-    const values = { ...cap.values };
-    const pick = { ...shared, caption_type: saved.caption?.[cap.node]?.caption_type };
-    for (const [field, value] of Object.entries(pick))
-      if (field in values && (cap.options[field] ? cap.options[field].includes(value) : typeof value === 'boolean'))
-        values[field] = value;
-    choices.caption[cap.node] = values;
-  }
-  $('controls-box').classList.remove('hide');
-  renderControls();
-}
-
-function strengthRow(choice, onChange) {
-  const out = el('output', {}, Number(choice.strength).toFixed(2));
-  const range = el('input', { type: 'range', min: 0, max: 2, step: 0.05, 'aria-label': 'Strength' });
-  range.value = choice.strength;
-  range.oninput = () => { choice.strength = Number(range.value); out.textContent = choice.strength.toFixed(2); onChange(); };
-  return [range, out];
-}
-
-function renderControls() {
-  if (!controls || !choices) return;
-  // A top-level checkpoint says nothing about its family, so the LoRA folders hint at it too (and vice versa).
-  const modelFolders = controls.models.map(m => folderOf(m.value)).filter(Boolean);
-  const loraFolders = controls.loras.map(l => folderOf(l.value)).filter(Boolean);
-  const families = [...new Set([...modelFolders, ...loraFolders])];
-  const loraFamilies = [...new Set([...loraFolders, ...modelFolders])];
-  const changed = () => { saveControls(); renderSummary(); };
-  const rows = [];
-  controls.models.forEach((m, i) => {
-    const select = modelSelect(m.options, choices.models[m.node], [...new Set([folderOf(m.value) || families[0], ...families, folderOf(m.value)])].filter(f => f !== undefined), 'Model');
-    select.onchange = () => { choices.models[m.node] = select.value; changed(); };
-    rows.push(el('label', {}, controls.models.length > 1 ? `Model ${i + 1}` : 'Model'), select);
-  });
-  controls.loras.forEach((l, i) => {
-    const choice = choices.loras[l.node];
-    const select = modelSelect(controls.lora_options, choice.name, loraFamilies, 'LoRA');
-    const box = el('div', { class: 'lora' + (choice.on ? '' : ' off') });
-    select.onchange = () => { choice.name = select.value; changed(); };
-    const toggle = el('input', { type: 'checkbox', style: 'width:auto;margin:0 8px 0 0', 'aria-label': 'Use this LoRA' });
-    toggle.checked = choice.on;
-    toggle.onchange = () => { choice.on = toggle.checked; box.classList.toggle('off', !choice.on); changed(); };
-    box.append(el('label', { style: 'margin:0;display:flex;align-items:center' }, toggle, `LoRA ${i + 1} (from workflow)`),
-      select, el('div', { class: 'row' }, ...strengthRow(choice, changed)));
-    rows.push(box);
-  });
-  choices.extra.forEach((x, i) => {
-    const select = modelSelect(controls.lora_options, x.name, loraFamilies, 'Added LoRA');
-    select.onchange = () => { x.name = select.value; changed(); };
-    const remove = el('button', { class: 'ghost', type: 'button', 'aria-label': 'Remove LoRA' }, '✕');
-    remove.onclick = () => { choices.extra.splice(i, 1); changed(); renderControls(); };
-    rows.push(el('div', { class: 'lora' }, el('div', { class: 'row between' }, el('label', { style: 'margin:0' }, 'Added LoRA'), remove),
-      select, el('div', { class: 'row' }, ...strengthRow(x, changed))));
-  });
-  if (controls.can_add_lora && choices.extra.length < MAX_EXTRA_LORAS && controls.lora_options.length) {
-    const add = el('button', { class: 'ghost', type: 'button', style: 'margin-top:10px' }, '+ Add LoRA');
-    add.onclick = () => {
-      const pick = controls.lora_options.find(o => folderOf(o) === loraFamilies[0]) || controls.lora_options[0];
-      choices.extra.push({ name: pick, strength: 1 });
-      changed(); renderControls();
-    };
-    rows.push(add);
-  }
-  if (controls.size) rows.push(sizeSection(changed));
-  const bases = controls.samplers.filter(c => c.role === 'base').length;
-  controls.samplers.forEach((smp, i) => rows.push(samplerSection(smp,
-    smp.role === 'refine' ? 'Hi-res / refine pass' : bases > 1 ? `Sampler ${i + 1}` : 'Sampler', changed)));
-  controls.captions.forEach(cap => rows.push(captionSection(cap, changed)));
-  const reset = el('button', { class: 'ghost', type: 'button', style: 'margin-top:12px' }, 'Reset to workflow');
-  reset.onclick = () => {
-    const all = savedControls(); delete all[selected.id]; store(CONTROLS_KEY, JSON.stringify(all));
-    if (controls.captions.length) store(CAPTION_KEY, '{}');
-    loadControls(selected);
-  };
-  rows.push(reset);
-  $('controls').replaceChildren(...rows);
-  renderSummary();
-}
-
-const ASPECTS = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9'];
-
-// Same pixel count as the workflow's own size (what the model was tuned for), in multiples of 64.
-function aspectSize(aspect, base) {
-  const [a, b] = aspect.split(':').map(Number), area = base.width * base.height;
-  const width = Math.max(256, Math.round(Math.sqrt(area * a / b) / 64) * 64);
-  return { width, height: Math.max(256, Math.round(width * b / a / 64) * 64) };
-}
-function chosenSize(c) { return controls?.size && c?.aspect ? aspectSize(c.aspect, controls.size) : controls?.size || null; }
-
-function sizeSection(changed) {
-  const note = el('small', { class: 'status' });
-  const chips = ['', ...ASPECTS].map(aspect => {
-    const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(choices.aspect === aspect) }, aspect || 'Original');
-    chip.onclick = () => {
-      choices.aspect = aspect;
-      chips.forEach(c => c.setAttribute('aria-pressed', String(c === chip)));
-      show(); changed();
-    };
-    return chip;
-  });
-  const show = () => { const size = chosenSize(choices); note.textContent = `${size.width} × ${size.height}`; };
-  show();
-  return el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, 'Shape'), el('div', { class: 'aspects' }, chips), note);
-}
-
-function samplerSection(smp, title, changed) {
-  const values = choices.sampling[smp.node], fields = [];
-  const number = (field, label, step, min, max) => {
-    const input = el('input', { type: 'number', inputmode: 'decimal', step, min, max, 'aria-label': label });
-    input.value = values[field];
-    input.onchange = () => {
-      const v = Number(input.value);
-      if (input.value === '' || !Number.isFinite(v) || v < min || v > max) { input.value = values[field]; return; }
-      values[field] = field === 'steps' ? Math.round(v) : v;
-      input.value = values[field];
-      changed();
-    };
-    return el('div', {}, el('label', {}, label), input);
-  };
-  const pick = (field, label, options) => {
-    const select = el('select', { 'aria-label': label }, options.map(o => new Option(o, o)));
-    select.value = values[field];
-    select.onchange = () => { values[field] = select.value; changed(); };
-    return el('div', {}, el('label', {}, label), select);
-  };
-  if ('steps' in values) fields.push(number('steps', 'Steps', 1, 1, 150));
-  if ('cfg' in values) fields.push(number('cfg', 'CFG', 'any', 0, 30));
-  if ('sampler_name' in values && controls.sampler_options.length) fields.push(pick('sampler_name', 'Sampler', controls.sampler_options));
-  if ('scheduler' in values && controls.scheduler_options.length) fields.push(pick('scheduler', 'Scheduler', controls.scheduler_options));
-  if ('denoise' in values) fields.push(number('denoise', 'Denoise', 'any', 0.01, 1));
-  return el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, title), el('div', { class: 'settings-grid' }, fields));
-}
-
-function savedCaption() { try { return JSON.parse(load(CAPTION_KEY) || '{}'); } catch (e) { return {}; } }
-
-const CAPTION_LABELS = { model: 'Caption model', caption_type: 'Caption style', length: 'Length', content_mode: 'Content',
-  vulgar_slang: 'Vulgar slang', lighting: 'Lighting', camera_angle: 'Camera angle', shot_type: 'Shot type',
-  composition: 'Composition', depth_of_field: 'Depth of field', camera_settings: 'Camera settings',
-  aesthetic_quality: 'Aesthetic quality', mention_mood: 'Mood' };
-
-function captionSection(cap, changed) {
-  const values = choices.caption[cap.node];
-  const update = (field, value) => {
-    values[field] = value;
-    if (field !== 'caption_type') { const shared = savedCaption(); shared[field] = value; store(CAPTION_KEY, JSON.stringify(shared)); }
-    changed();
-  };
-  const selects = Object.keys(cap.options).map(field => {
-    const select = el('select', { 'aria-label': CAPTION_LABELS[field] }, cap.options[field].map(o => new Option(o, o)));
-    select.value = values[field];
-    select.onchange = () => update(field, select.value);
-    return el('div', { style: field === 'model' || field === 'caption_type' ? 'grid-column:1/-1' : null }, el('label', {}, CAPTION_LABELS[field]), select);
-  });
-  const toggles = Object.keys(values).filter(f => typeof values[f] === 'boolean').map(field => {
-    const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(values[field]) }, CAPTION_LABELS[field] || field);
-    chip.onclick = () => { chip.setAttribute('aria-pressed', String(!values[field])); update(field, !values[field]); };
-    return chip;
-  });
-  return el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, 'Auto caption'),
-    el('small', { class: 'status' }, 'Shared by all auto-caption workflows, except the style.'),
-    el('div', { class: 'settings-grid' }, selects), toggles.length ? el('div', { class: 'aspects' }, toggles) : null);
-}
-
-function controlsText(c) {
-  if (!c) return '';
-  const parts = Object.values(c.models || {}).map(fileLabel);
-  const loras = [...Object.values(c.loras || {}).filter(l => l.on), ...(c.extra || [])];
-  if (loras.length) parts.push(loras.map(l => `${fileLabel(l.name)} ${Number(l.strength).toFixed(2)}`).join(', '));
-  const size = chosenSize(c);
-  if (size && c.aspect) parts.push(`${size.width}×${size.height}`);
-  const base = controls?.samplers.find(smp => smp.role === 'base');
-  const v = base && c.sampling?.[base.node];
-  if (v && 'steps' in v) parts.push(`${v.steps} steps` + ('cfg' in v ? ` · CFG ${v.cfg}` : ''));
-  const cap = controls?.captions[0] && c.caption?.[controls.captions[0].node];
-  if (cap?.caption_type) parts.push(cap.caption_type);
-  return parts.join(' · ');
-}
-function renderSummary() { $('controls-summary').textContent = controlsText(choices); }
-
-// Only what differs from the workflow is sent, so an unchanged workflow runs exactly as saved.
-function controlsPayload(c) {
-  if (!c || !controls) return {};
-  const models = {}, loras = {};
-  for (const m of controls.models) if (c.models[m.node] !== m.value) models[m.node] = c.models[m.node];
-  for (const l of controls.loras) {
-    const x = c.loras[l.node], strength = x.on ? x.strength : 0;
-    if (x.name !== l.value || strength !== l.strength) loras[l.node] = { name: x.name, strength };
-  }
-  const sampling = {};
-  for (const smp of controls.samplers) {
-    const changes = Object.fromEntries(Object.entries(c.sampling?.[smp.node] || {}).filter(([f, v]) => v !== smp.values[f]));
-    if (Object.keys(changes).length) sampling[smp.node] = changes;
-  }
-  const caption = {};
-  for (const cap of controls.captions) {
-    const changes = Object.fromEntries(Object.entries(c.caption?.[cap.node] || {}).filter(([f, v]) => v !== cap.values[f]));
-    if (Object.keys(changes).length) caption[cap.node] = changes;
-  }
-  const size = c.aspect ? chosenSize(c) : null;
-  return { models, loras, extra_loras: c.extra.map(x => ({ name: x.name, strength: x.strength })), sampling, caption,
-    ...(size && (size.width !== controls.size.width || size.height !== controls.size.height) ? { size } : {}) };
-}
-
-function randomSeed() { return Math.floor(Math.random() * 2 ** 48); }
-
-/* ---------- jobs ---------- */
-function galleryJobs() { try { return JSON.parse(load(GALLERY_KEY) || '[]'); } catch (e) { return []; } }
-function rememberJob(job) { store(GALLERY_KEY, JSON.stringify([job, ...galleryJobs().filter(j => j.id !== job.id)].slice(0, 60))); }
-
-$('form').onsubmit = async event => {
-  event.preventDefault();
-  if (!selected) return;
-  $('form-error').textContent = '';
-  if (slots.some(s => s.uploading)) return void ($('form-error').textContent = 'Wait for the image upload to finish.');
-  if (slots.some(s => !s.name)) return void ($('form-error').textContent = slots.length > 1 ? `Add all ${slots.length} images first.` : 'Add an image first.');
-  const prompt = $('prompt').value.trim();
-  if (selected.takes_prompt && !prompt) return void ($('form-error').textContent = 'Enter a prompt.');
-  const base = $('seed').value === '' ? null : Number($('seed').value);
-  const runs = Number($('runs').value) || 1;
-  $('generate').disabled = true;
-  try {
-    for (let i = 0; i < runs; i++) {
-      await submitJob({ workflowId: selected.id, workflow: prettyName(selected.name), takesPrompt: selected.takes_prompt,
-        prompt: selected.takes_prompt ? prompt : '', images: slots.map(s => s.name), seed: base === null ? randomSeed() : base + i,
-        controls: controlsPayload(choices), controlsText: controlsText(choices) }, i === 0);
-    }
-  } catch (e) {
-    $('form-error').textContent = e.message;
-  } finally {
-    $('generate').disabled = false;
-  }
-};
-
-async function submitJob(params, focus) {
-  const r = await api('/jobs', { method: 'POST', json: { workflow_id: params.workflowId, prompt: params.prompt, images: params.images, seed: params.seed, ...(params.controls || {}) } });
-  const job = { ...params, id: r.prompt_id, created: Date.now() };
-  rememberJob(job);
-  openJob(job, focus);
-  return job;
-}
-
-const openJobs = new Map();
-
-function openJob(job, focus) {
-  if (openJobs.has(job.id)) { openJobs.get(job.id).card.scrollIntoView({ behavior: 'smooth' }); return; }
-  const state = el('p', { class: 'status', 'aria-live': 'polite' }, 'Queued…');
-  const results = el('div', { class: 'results' });
-  const close = el('button', { class: 'ghost', type: 'button', 'aria-label': 'Close' }, '✕');
-  const cancel = el('button', { class: 'ghost', type: 'button' }, '■ Cancel');
-  const actions = el('div', { class: 'row' }, cancel);
-  const card = el('div', { class: 'panel job' },
-    el('div', { class: 'row between' }, el('strong', {}, job.workflow), close),
-    job.prompt ? el('small', { style: 'display:block;margin-top:4px;overflow-wrap:anywhere' }, job.prompt) : null,
-    job.controlsText ? el('small', { style: 'display:block;overflow-wrap:anywhere' }, job.controlsText) : null,
-    job.seed != null ? el('small', { style: 'display:block' }, `seed ${job.seed}`) : null,
-    state, results, actions);
-  $('jobs').prepend(card);
-  const entry = { card, state, results, actions, stopped: false };
-  openJobs.set(job.id, entry);
-  close.onclick = () => { entry.stopped = true; openJobs.delete(job.id); card.remove(); };
-  cancel.onclick = async () => {
-    cancel.disabled = true;
-    try {
-      const r = await api(`/jobs/${job.id}/cancel`, { method: 'POST' });
-      if (r.cancelled === 'pending') { entry.stopped = true; showActions(job, entry); entry.state.textContent = 'Cancelled'; }
-      else if (r.cancelled === 'running') { entry.stopping = true; entry.state.textContent = 'Stopping…'; }
-      else cancel.disabled = false;
-    } catch (e) { entry.state.textContent = 'Cancel failed: ' + e.message; cancel.disabled = false; }
-  };
-  showTab('create');
-  if (focus) card.scrollIntoView({ behavior: 'smooth' });
-  poll(job, entry);
-}
-
-// Android freezes the app in the background and requests in flight at that moment never answer.
-// On return, drop them and wake every poller at once instead of waiting for them to time out.
-let resumed = new AbortController();
-const wakers = new Set();
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) return;
-  resumed.abort();
-  resumed = new AbortController();
-  for (const wake of [...wakers]) wake();
-});
-function nap(ms) {
-  return new Promise(ok => {
-    const wake = () => { clearTimeout(timer); wakers.delete(wake); ok(); };
-    const timer = setTimeout(wake, ms);
-    wakers.add(wake);
-  });
-}
-const pollSignal = () => AbortSignal.any([resumed.signal, AbortSignal.timeout(10000)]);
-
-async function queuePosition(id) {
-  try {
-    const q = await api('/queue', { signal: pollSignal() });
-    if ((q.queue_running || []).some(item => item[1] === id)) return 0;
-    const pending = (q.queue_pending || []).map(item => item[1]);
-    return pending.includes(id) ? pending.indexOf(id) + 1 : null;
-  } catch (e) { return null; }
-}
-
-async function poll(job, entry) {
-  const started = Date.now();
-  let failures = 0;
-  while (!entry.stopped) {
-    const round = resumed.signal;
-    try {
-      const r = await api(`/jobs/${job.id}/outputs`, { signal: pollSignal() });
-      failures = 0;
-      if (r.completed || (r.status !== 'pending' && r.status !== 'unknown')) return showResults(job, entry, r);
-      const pos = await queuePosition(job.id);
-      const secs = Math.round((Date.now() - started) / 1000);
-      entry.state.textContent = entry.stopping ? 'Stopping…' : pos === 0 ? `Generating… ${secs}s` : pos ? `Waiting in queue (#${pos}) · ${secs}s` : `Working… ${secs}s`;
-    } catch (e) {
-      if (round.aborted) continue;
-      if (++failures >= 5) { entry.state.textContent = 'Lost contact: ' + e.message; entry.state.className = 'status error'; return; }
-    }
-    await nap(2500);
-  }
-}
-
-function mediaFor(item, thumb) {
-  if (item.kind === 'video') return el('video', { src: item.url, controls: !thumb, playsinline: true, preload: 'metadata', muted: thumb, loop: true });
-  // Cards show a WebP copy; tapping opens the original file.
-  return el('img', { src: item.url + '&thumb=1', alt: item.filename, loading: 'lazy', decoding: 'async' });
-}
-
-function showActions(job, entry) {
-  const buttons = [];
-  if (job.workflowId) {
-    buttons.push(el('button', { class: 'secondary', type: 'button', onclick: () => runAgain(job, randomSeed()) }, '↻ Run again'));
-    if (job.seed != null) buttons.push(el('button', { class: 'ghost', type: 'button', onclick: () => runAgain(job, job.seed) }, 'Same seed'));
-  }
-  entry.actions.replaceChildren(...buttons);
-}
-
-async function runAgain(job, seed) {
-  try { await submitJob({ ...job, id: undefined, seed }, true); }
-  catch (e) { const entry = openJobs.get(job.id); if (entry) entry.state.textContent = 'Could not start: ' + e.message; }
-}
-
-function notifyDone(job, ok) {
-  if (!document.hidden || !swReg || !('Notification' in window) || Notification.permission !== 'granted') return;
-  swReg.showNotification(ok ? `${job.workflow} is ready` : `${job.workflow} failed`, {
-    body: job.prompt || 'Tap to open', icon: '/icon-192.png', tag: job.id, data: { url: '/?job=' + job.id } });
-}
-
-function showResults(job, entry, r) {
-  const ok = r.status === 'success';
-  showActions(job, entry);
-  notifyDone(job, ok);
-  entry.state.className = 'status ' + (ok ? 'ok' : r.interrupted ? '' : 'error');
-  entry.state.textContent = ok ? 'Done' : r.interrupted ? 'Cancelled' : 'Failed: ' + (r.errors.map(e => `${e.node_type}: ${e.exception_message}`).join('\n') || r.status);
-  const finals = r.outputs.filter(o => o.kind !== 'text' && !o.preview);
-  const previews = r.outputs.filter(o => o.kind !== 'text' && o.preview);
-  const texts = r.outputs.filter(o => o.kind === 'text');
-  const nodes = finals.map(item => el('a', { href: item.url, target: '_blank', rel: 'noopener' }, mediaFor(item)));
-  if (texts.length) nodes.push(el('details', {}, el('summary', { class: 'status' }, 'Text output (captions)'),
-    ...texts.map(t => el('div', { class: 'caption' }, t.text))));
-  if (previews.length) nodes.push(el('details', {}, el('summary', { class: 'status' }, `Previews (${previews.length})`),
-    el('div', { class: 'results' }, previews.map(item => mediaFor(item)))));
-  entry.results.replaceChildren(...nodes);
-  const cover = finals[0] || previews[0];
-  if (cover) rememberJob({ ...job, kind: cover.kind, done: ok });
-}
-
-/* ---------- gallery ---------- */
-async function renderGallery() {
-  const jobs = galleryJobs();
-  if (!jobs.length) return $('gallery').replaceChildren(el('p', { class: 'status' }, 'Nothing yet.'));
-  $('gallery').replaceChildren(...jobs.map(job => {
-    const thumb = el('div', { class: 'thumb' }, '…');
-    const card = el('button', { class: 'card', type: 'button' }, thumb,
-      el('div', { class: 'meta' }, job.workflow, el('span', {}, new Date(job.created).toLocaleString())));
-    card.onclick = () => openJob(job, true);
-    if (token) api(`/jobs/${job.id}/outputs`).then(r => {
-      const cover = r.outputs.find(o => o.kind !== 'text' && !o.preview) || r.outputs.find(o => o.kind !== 'text');
-      thumb.replaceChildren(cover ? mediaFor(cover, true) : (r.completed ? 'No image' : 'In progress'));
-    }).catch(() => thumb.replaceChildren('Unavailable'));
-    return card;
-  }));
-}
-$('clear-gallery').onclick = () => { store(GALLERY_KEY, null); renderGallery(); };
-
-/* ---------- connection, catalog, sync ---------- */
-async function refresh() {
-  if (!token) { setStatus('Not connected'); return; }
-  setStatus('Loading…');
-  if (!catalog) $('workflows').replaceChildren(el('p', { class: 'status' }, 'Loading workflows…'));
-  try {
-    const [health, cat] = await Promise.all([api('/health'), api('/catalog')]);
-    const synced = new Set(cat.workflows.filter(w => w.id.startsWith('synced/')).map(w => w.name));
-    catalog = { ...cat, workflows: cat.workflows.filter(w => w.id.startsWith('synced/') || !synced.has(w.name)) };
-    if (selected) selected = catalog.workflows.find(w => w.id === selected.id && w.runnable) || null;
-    if (!selected) $('form').classList.add('hide');
-    const device = health.devices?.[0];
-    setStatus('● ComfyUI online' + (device ? ' · ' + deviceName(device.name) : ''), 'ok');
-    $('system').textContent = (health.devices || []).map(d => `${deviceName(d.name)} · ${Math.round((d.vram_free || 0) / 2 ** 30)} / ${Math.round((d.vram_total || 0) / 2 ** 30)} GB VRAM free`).join('\n') || 'Online';
-    const m = catalog.models;
-    $('models').textContent = `${m.checkpoints.length} checkpoints · ${m.loras.length} LoRAs · ${catalog.workflows.filter(w => w.runnable).length}/${catalog.workflows.length} workflows runnable`;
-    renderWorkflows();
-  } catch (e) {
-    setStatus('Connection issue: ' + e.message, 'error');
-  }
-}
-
-async function connect(candidate) {
-  const r = await fetch('/api/auth/check', { headers: { Authorization: 'Bearer ' + candidate } });
-  if (!r.ok) throw Error('Token rejected');
-  token = candidate;
-  store(STORAGE_KEY, token);
-}
-
-$('connect').onclick = async () => {
-  const candidate = $('token').value.trim();
-  if (!candidate) return;
-  try { await connect(candidate); showTab('create'); refresh(); }
-  catch (e) { setStatus(e.message, 'error'); }
-};
-$('forget').onclick = () => {
-  store(STORAGE_KEY, null); token = ''; catalog = null; selected = null; $('token').value = '';
-  $('workflows').replaceChildren(el('p', { class: 'status' }, 'Connect in Settings to load workflows.'));
-  $('form').classList.add('hide'); $('unavailable-box').classList.add('hide');
-  setStatus('Saved token cleared');
-};
-$('refresh').onclick = refresh;
-$('free-vram').onclick = async () => {
-  $('free-vram').disabled = true;
-  try {
-    await api('/comfy/free', { method: 'POST' });
-    $('free-status').textContent = 'Requested. ComfyUI unloads models once its queue is idle.';
-    setTimeout(refresh, 3000);
-  } catch (e) { $('free-status').textContent = 'Failed: ' + e.message; }
-  finally { $('free-vram').disabled = false; }
-};
-function renderNotify() {
-  const supported = 'Notification' in window && 'serviceWorker' in navigator;
-  const state = supported ? Notification.permission : 'unsupported';
-  $('notify').classList.toggle('hide', state !== 'default');
-  if (state === 'granted') $('notify-status').textContent = 'On. You get a notification when a job finishes while the app is in the background.';
-  if (state === 'denied') $('notify-status').textContent = 'Blocked. Allow notifications for this site in your browser settings.';
-  if (state === 'unsupported') $('notify-status').textContent = 'Not supported in this browser.';
-}
-$('notify').onclick = async () => { await Notification.requestPermission(); renderNotify(); };
-$('sync-now').onclick = async () => {
-  const button = $('sync-now');
-  button.disabled = true; $('sync-status').textContent = 'Synchronizing…';
-  try {
-    const r = await api('/comfy/workflows/sync', { method: 'POST' });
-    $('sync-status').textContent = r.status === 'busy' ? 'A sync is already running'
-      : `${r.downloaded} downloaded · ${r.unchanged} unchanged · ${r.failed} failed (of ${r.remote_count} in ComfyUI)`;
-    await refresh();
-  } catch (e) { $('sync-status').textContent = 'Sync failed: ' + e.message; }
-  finally { button.disabled = false; }
-};
-
-/* ---------- photos shared from other apps ---------- */
-async function loadShared() {
-  if (!('caches' in window)) return;
-  const cache = await caches.open(SHARED_CACHE);
-  const keys = (await cache.keys()).sort((a, b) => a.url.localeCompare(b.url, undefined, { numeric: true }));
-  sharedFiles = [];
-  for (const key of keys) {
-    const r = await cache.match(key);
-    const blob = await r.blob();
-    sharedFiles.push(new File([blob], decodeURIComponent(r.headers.get('X-Name') || 'shared'), { type: blob.type }));
-  }
-  renderShared();
-}
-function renderShared() {
-  $('shared-banner').classList.toggle('hide', !sharedFiles.length);
-  if (!sharedFiles.length) return;
-  $('shared-title').textContent = sharedFiles.length === 1 ? 'Shared photo ready' : `${sharedFiles.length} shared photos ready`;
-  $('shared-hint').textContent = sharedFiles.length === 1 ? 'Pick a workflow below and the photo fills its image slot.' : 'Pick a workflow below and the photos fill its image slots in order.';
-  $('shared-previews').replaceChildren(...sharedFiles.map(f => el('div', { class: 'slot' }, el('img', { src: URL.createObjectURL(f), alt: '' }))));
-  if (filter === 'all' || filter === 'text') document.querySelector('.chip[data-kind="image"]').click();
-}
-function clearShared() {
-  sharedFiles = [];
-  if ('caches' in window) caches.delete(SHARED_CACHE);
-  renderShared();
-}
-$('shared-dismiss').onclick = clearShared;
-
-function openFromUrl(url) {
-  const params = new URL(url, location.href).searchParams;
-  const id = params.get('job');
-  if (id && /^[0-9a-fA-F-]{36}$/.test(id)) openJob(galleryJobs().find(j => j.id === id) || { id, workflow: 'Job' }, true);
-}
-
-(async function start() {
-  if ('serviceWorker' in navigator) {
-    try { swReg = await navigator.serviceWorker.register('/sw.js'); } catch (e) {}
-    navigator.serviceWorker.addEventListener('message', event => event.data?.type === 'open-job' && openFromUrl(event.data.url));
-  }
-  renderNotify();
-  const saved = load(STORAGE_KEY);
-  if (saved) { token = saved; $('token').value = saved; refresh(); }
-  else { showTab('settings'); setStatus('Enter your studio token to connect'); }
-  const params = new URLSearchParams(location.search);
-  if (params.has('shared')) {
-    await loadShared().catch(() => {});
-    if (!sharedFiles.length && params.get('shared') === '0') setStatus('Install the app first to share photos into it', 'error');
-  }
-  if (params.has('job') && saved) openFromUrl(location.href);
-  if (params.has('shared') || params.has('job')) history.replaceState(null, '', '/');
-})();
-</script>
+<script src="/app.js" defer></script>
 </body>
 </html>

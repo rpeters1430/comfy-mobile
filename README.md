@@ -1,10 +1,18 @@
-# Comfy Mobile — v0.3.0
+# Comfy Mobile — v0.4.0
 
 Mobile-first ComfyUI dashboard running on a NAS, connecting to ComfyUI on another machine.
 
 ## Docker image
 
-GitHub Actions builds and publishes `ghcr.io/rpeters1430/comfy-mobile:latest` on pushes to `main`. Version tags `v*` are also published. The initial 30 bundled workflows are UI-format and are **not yet runnable** from this app; API workflow conversion is a future milestone.
+GitHub Actions builds and publishes `ghcr.io/rpeters1430/comfy-mobile:latest` on pushes to `main`. Version tags `v*` are also published. Bundled and synced LiteGraph UI-format workflows are converted automatically to ComfyUI API format upon execution.
+
+## Features
+
+- **Mobile-first PWA**: Standalone installable app with responsive design, instant workflow search, and Web Share Target (share photos directly from your phone's gallery into workflows).
+- **Automated Workflow Conversion**: Inlines subgraphs, repairs links, maps dynamic combos/autogrow inputs, and resolves bypassed/reroute nodes without needing desktop API exports.
+- **Run-time Controls**: Swap checkpoints or UNets, adjust or turn off LoRAs, dynamically chain up to 4 extra LoRAs, tweak sampler settings (steps, CFG, sampler, scheduler, denoise), change output aspect ratios, and configure VLM auto-captioning parameters.
+- **Batch Runs & Progress**: Queue 1–8 runs with random or sequential seeds, track live progress with queue indicators, interrupt/cancel running jobs, and stream Range-enabled video and WebP previews.
+- **Workflow Sync**: Safe, one-way pull of workflows directly from ComfyUI's user-data directory to your NAS.
 
 ## UGREEN NAS
 

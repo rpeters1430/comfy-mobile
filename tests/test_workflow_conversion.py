@@ -305,6 +305,44 @@ class ConversionTests(unittest.TestCase):
         with self.assertRaisesRegex(ConversionError, "unique positive"):
             convert_ui(graph, schema)
 
+    def test_reroute_node_passes_through(self):
+        schema = {
+            "Loader": {"input": {"required": {}}},
+            "Reroute": {"input": {"required": {}}},
+            "Sampler": {"input": {"required": {"model": ["MODEL", {}]}}},
+            "CLIPTextEncode": {"input": {"required": {"text": ["STRING", {}]}}},
+        }
+        graph = {"nodes": [
+            {"id": 1, "type": "Loader", "inputs": []},
+            {"id": 2, "type": "Reroute", "inputs": [{"name": "*", "type": "MODEL", "link": 10}]},
+            {"id": 3, "type": "Sampler", "inputs": [{"name": "model", "type": "MODEL", "link": 11}]},
+            {"id": 4, "type": "CLIPTextEncode", "inputs": [], "widgets_values": ["test"]},
+        ], "links": [[10, 1, 0, 2, 0, "MODEL"], [11, 2, 0, 3, 0, "MODEL"]]}
+        result = convert_ui(graph, schema)
+        self.assertNotIn("2", result)
+        self.assertEqual(result["3"]["inputs"]["model"], ["1", 0])
+
+    def test_prompt_disambiguated_by_downstream_positive_socket(self):
+        schema = {
+            "CLIPTextEncode": {"input": {"required": {"text": ["STRING", {}]}}},
+            "KSampler": {"input": {"required": {
+                "positive": ["CONDITIONING", {}],
+                "negative": ["CONDITIONING", {}]}}},
+        }
+        graph = {"nodes": [
+            {"id": 1, "type": "CLIPTextEncode", "title": "CLIPTextEncode", "inputs": [], "widgets_values": ["good stuff"]},
+            {"id": 2, "type": "CLIPTextEncode", "title": "CLIPTextEncode", "inputs": [], "widgets_values": ["bad stuff"]},
+            {"id": 3, "type": "KSampler", "inputs": [
+                {"name": "positive", "type": "CONDITIONING", "link": 21},
+                {"name": "negative", "type": "CONDITIONING", "link": 22}]},
+        ], "links": [
+            [21, 1, 0, 3, 0, "CONDITIONING"],
+            [22, 2, 0, 3, 1, "CONDITIONING"],
+        ]}
+        result = convert_ui(graph, schema)
+        self.assertEqual(result["1"]["inputs"]["text"], "{{prompt}}")
+        self.assertEqual(result["2"]["inputs"]["text"], "bad stuff")
+
 
 if __name__ == "__main__":
     unittest.main()
