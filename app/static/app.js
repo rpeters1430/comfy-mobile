@@ -735,7 +735,7 @@ function openJob(job, focus) {
     state, bar, live, results, actions);
 
   $('jobs').prepend(card);
-  const entry = { job, card, state, statusText, pulse, bar, live, frame: 0, results, actions, started: Date.now(), stopped: false, stopping: false };
+  const entry = { job, card, state, statusText, pulse, bar, live, frame: 0, missing: 0, results, actions, started: Date.now(), stopped: false, stopping: false };
   openJobs.set(job.id, entry);
 
   close.onclick = () => {
@@ -806,6 +806,7 @@ async function ensurePollerRunning() {
       const isPending = queueIndex !== -1;
       const secs = Math.round((Date.now() - entry.started) / 1000);
 
+      if (isRunning || isPending) entry.missing = 0;
       if (entry.stopping) {
         entry.statusText.textContent = 'Stopping…';
       } else if (isRunning) {
@@ -826,6 +827,17 @@ async function ensurePollerRunning() {
             entry.pulse.remove();
             showResults(entry.job, entry, r);
             continue;
+          }
+          // In neither the queue nor the history: ComfyUI restarted or dropped it, and it will never finish.
+          // A few checks in a row, so a job finishing between the two requests isn't caught.
+          if (queueData && ++entry.missing >= 3) {
+            entry.stopped = true;
+            entry.pulse.remove();
+            endProgress(entry);
+            entry.state.className = 'status error';
+            entry.statusText.textContent = 'No longer in ComfyUI (it may have restarted)';
+            showActions(entry.job, entry);
+            rememberJob({ ...entry.job, finished: true });
           }
         } catch (e) {
           entry.statusText.textContent = 'Checking status… ' + secs + 's';
