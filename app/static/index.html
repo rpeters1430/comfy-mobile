@@ -52,6 +52,16 @@
 
     <form class="panel hide" id="form">
       <h2 id="form-title">Workflow</h2>
+      <details class="controls" id="named-presets">
+        <summary>Shared presets</summary>
+        <label for="preset-select">Saved on the NAS</label>
+        <select id="preset-select"><option value="">Choose a preset…</option></select>
+        <div class="row"><button id="preset-load" class="secondary" type="button">Load</button><button id="preset-delete" class="ghost" type="button">Delete</button></div>
+        <label for="preset-name">Preset name</label>
+        <input id="preset-name" maxlength="80" placeholder="Pixel portrait">
+        <button id="preset-save" class="secondary" type="button">Save current settings</button>
+        <p id="preset-status" class="status" role="status"></p>
+      </details>
       <div id="images-box" class="hide">
         <label id="images-label">Input image</label>
         <div class="slots" id="slots"></div>
@@ -73,6 +83,10 @@
         <summary>Models &amp; settings<small id="controls-summary"></small></summary>
         <div id="controls"></div>
       </details>
+      <div id="caption-review-box" class="hide">
+        <label><input type="checkbox" id="review-before"> Review caption before rendering</label>
+        <p id="caption-review-hint" class="status">Preview the caption, edit it, then generate.</p>
+      </div>
       <div class="row" style="align-items:flex-end;margin-top:6px">
         <div style="flex:2">
           <label for="seed">Seed</label>
@@ -94,9 +108,11 @@
   <!-- Tab: Gallery -->
   <section id="tab-gallery" class="hide">
     <div class="panel">
-      <div class="row between"><h2>Gallery</h2><div class="row"><button class="ghost hide" id="remove-gone" type="button"></button><button class="ghost" id="clear-gallery" type="button">Clear list</button></div></div>
-      <p class="status">Jobs started from this device. Tap one to view details or run again.</p>
+      <div class="row between"><h2>Gallery</h2><div class="row"><button class="ghost hide" id="remove-gone" type="button"></button><button class="ghost" id="clear-gallery" type="button">Clear device list</button></div></div>
+      <p class="status">NAS history and this device. Tap a job to view details or run again.</p>
+      <p id="gallery-status" class="status" role="status"></p>
       <div class="gallery" id="gallery"></div>
+      <button id="gallery-more" class="secondary hide" type="button">Load older jobs</button>
     </div>
   </section>
 
@@ -121,6 +137,8 @@
       <p id="system" class="status">Connect to see status.</p>
       <p id="models" class="status"></p>
       <p id="free-status" class="status"></p>
+      <button id="wake-pc" class="secondary" type="button" disabled>Wake PC</button>
+      <p id="wake-status" class="status" role="status">Connect to check PC wake configuration.</p>
     </div>
     <div class="panel">
       <div class="row between"><h2>Notifications</h2>
@@ -141,6 +159,15 @@
 </nav>
 
 <script src="/presets.js" defer></script>
+<dialog id="image-viewer" aria-labelledby="viewer-title">
+  <div class="row between"><h2 id="viewer-title">Image viewer</h2><button id="viewer-close" class="secondary" type="button">Close</button></div>
+  <p id="viewer-status" class="status" role="status"></p>
+  <div id="viewer-scroll"><div id="viewer-stage"><img id="viewer-before" alt="Input image"><div id="viewer-after-wrap"><img id="viewer-after" alt="Generated image"></div></div></div>
+  <label id="compare-label" for="compare-range">Before / after</label>
+  <input id="compare-range" type="range" min="0" max="100" value="50" aria-label="Reveal generated image">
+  <label for="viewer-zoom">Zoom</label><input id="viewer-zoom" type="range" min="1" max="3" step="0.25" value="1">
+</dialog>
+<script src="/mobile-tools.js" defer></script>
 <script src="/app.js" defer></script>
 </body>
 </html>

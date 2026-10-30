@@ -12,6 +12,8 @@ services:
       WORKFLOW_DIR: /workflows
       WORKFLOW_SYNC_DIR: /workflow-sync
       DATA_DIR: /data
+      WOL_MAC: ${WOL_MAC:-}
+      WOL_BROADCAST: ${WOL_BROADCAST:-}
     volumes:
       - ./workflows:/workflows:ro
       - ./workflow-sync:/workflow-sync

@@ -15,7 +15,7 @@ local regression tests; no requests were made to a live NAS or ComfyUI server.
 
 ## Five proposed features
 
-These are proposals, not implemented by the security patch.
+These were proposals in the security patch. All five are implemented in the v0.5.0 follow-up; usage and integration requirements are documented in README.md.
 
 | Priority | Feature | Implementation outline |
 | --- | --- | --- |

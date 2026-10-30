@@ -49,3 +49,12 @@ Configuration is env-only: `COMFYUI_URL`, `STUDIO_TOKEN` (required, or every end
 - The version string lives in `VERSION` in `main.py` (used by FastAPI and `/api/health`); the README title repeats it.
 - `.env` lives on the NAS and must never be committed. Pushes to `main` publish `ghcr.io/rpeters1430/comfy-mobile:latest` and `v*` tags are published too. Renovate manages pinned dependencies, the action SHAs and the base image digest.
 - `python tools/check_workflows.py` converts every workflow against `fixtures/object_info.local.json` (gitignored; refresh with `curl -o fixtures/object_info.local.json http://100.77.144.56:8188/object_info` over Tailscale). All 30 bundled workflows pass. A `LoraLoaderModelOnly` left on `None` is bypassed (mode 4) in the files rather than special-cased in the converter.
+
+
+## Mobile workflow tools (v0.5.0)
+
+- `preset_store.py`: SQLite preset CRUD with transaction-protected writes, maximum 100 presets / 64 KB each. `/api/presets` persists full settings snapshots without uploaded filenames. `/validate` checks live options before UI load.
+- `JobStore` now serializes mutation with an RLock (one uvicorn process), saves `params` on new records and exposes paginated `/api/library/jobs`. Legacy records may lack params. Job inputs are served by authenticated job/index lookup only; bounded WebP previews live in `/data/inputs`.
+- `caption_review.py`: identifies a single supported VLM node, builds ancestor-only graphs with PreviewAny sinks for positive/negative text, or replaces those text links for approved rendering and prunes unused dependencies. `/api/jobs` takes `stage: caption|render` and optional `review: {positive, negative}`. `/validate` exposes capability/reason. Fail closed on ambiguity/non-text consumers.
+- `wake.py`: administrator-configured `WOL_MAC` / `WOL_BROADCAST`, UDP port 9, 30-second cooldown. GET/POST `/api/comfy/wake` are authenticated. Never accept client-selected destinations.
+- `static/mobile-tools.js`: pure data helpers, loaded before app.js; Node tests cover NAS/local merge and presets. `tests/browser-mobile.cjs` is optional Playwright smoke coverage with API mocks (not part of the dependency-free Node test glob).
