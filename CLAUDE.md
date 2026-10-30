@@ -14,7 +14,7 @@ python -m unittest discover -s tests -v          # full suite (what CI runs, Pyt
 python -m unittest tests.test_workflow_conversion -v
 python -m unittest tests.test_workflow_conversion.ConversionTests.test_connected_graph_and_prompt
 python -m compileall -q app                      # CI also runs this as a syntax check
-node --test tests/                               # front-end helpers in static/presets.js
+node --test 'tests/*.test.js'                   # front-end helpers in static/presets.js
 docker build -t comfy-mobile .
 ```
 
