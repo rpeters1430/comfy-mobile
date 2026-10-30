@@ -308,3 +308,14 @@ def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, ex
         previous = node_id
     for node_id, field in downstream:
         graph[node_id]["inputs"][field] = [previous, 0]
+
+
+def run_details(graph, object_info):
+    """Small snapshot of effective settings; omit the potentially huge option catalogs."""
+    found = find_controls(graph, object_info)
+    return {
+        'models': [{key: model[key] for key in ('node', 'field', 'value')} for model in found['models']],
+        'loras': [{key: lora[key] for key in ('node', 'value', 'strength')} for lora in found['loras']],
+        'samplers': found['samplers'], 'size': found['size'],
+        'captions': [{'node': caption['node'], 'values': caption['values']} for caption in found['captions']],
+    }

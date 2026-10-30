@@ -13,7 +13,7 @@ try:
     from workflow_validation import inspect_workflow, load_workflow
     from workflow_sync import WorkflowSync, bounded_get
     from workflow_conversion import convert_ui, ConversionError
-    from workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls
+    from workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls, run_details
     from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, view_query
     from job_store import JobStore
     from preset_store import PresetStore
@@ -25,7 +25,7 @@ except ImportError:
     from app.workflow_validation import inspect_workflow, load_workflow
     from app.workflow_sync import WorkflowSync, bounded_get
     from app.workflow_conversion import convert_ui, ConversionError
-    from app.workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls
+    from app.workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls, run_details
     from app.workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, view_query
     from app.job_store import JobStore
     from app.preset_store import PresetStore
@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
         await _http_client.aclose()
         _http_client = None
 
-VERSION = '0.5.0'
+VERSION = '0.5.1'
 app = FastAPI(title='Image Studio Mobile', version=VERSION, lifespan=lifespan)
 
 async def request(method, path, expect_json=True, **kwargs):
@@ -382,14 +382,15 @@ async def jobs(job: Job, authorization: str | None = Header(default=None)):
         if not final_check['runnable']: raise JobError('; '.join(final_check['errors']))
     except (ControlError, JobError, CaptionError) as exc:
         raise HTTPException(400,str(exc)) from exc
+    details = run_details(graph, info)
     result=await request('POST','/prompt',json={'prompt':graph,'client_id':CLIENT_ID})
     if result.get('prompt_id'):
         progress.expect(result['prompt_id'], graph)
         try:
-            job_store.add(result['prompt_id'], name.rsplit('/',1)[-1].removesuffix('.json'), job.prompt, params=job.model_dump())
+            job_store.add(result['prompt_id'], name.rsplit('/',1)[-1].removesuffix('.json'), job.prompt, params=job.model_dump(), details=details)
         except OSError:
             log.exception('Could not record job')
-    return {'prompt_id':result.get('prompt_id'),'node_errors':result.get('node_errors',{}),**applied}
+    return {'prompt_id':result.get('prompt_id'),'node_errors':result.get('node_errors',{}),'details':details,**applied}
 
 @app.post('/api/uploads')
 async def upload(req: Request, authorization: str | None = Header(default=None)):
@@ -585,7 +586,7 @@ def library_job(job_id: str, authorization: str | None = Header(default=None)):
     auth(authorization)
     job = job_store.get(job_id)
     if not job: raise HTTPException(404, 'Job not found')
-    return {'id': job_id, **{k: job.get(k) for k in ('workflow', 'prompt', 'created', 'params')},
+    return {'id': job_id, **{k: job.get(k) for k in ('workflow', 'prompt', 'created', 'params', 'details')},
             'status': (job.get('summary') or {}).get('status', 'pending')}
 
 class PresetBody(BaseModel):

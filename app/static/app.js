@@ -120,6 +120,7 @@ function kindOf(wf) {
 function workflowButton(wf) {
   const kind = kindOf(wf);
   const badges = [];
+  if (wf.bundled_fallback) badges.push(el('span', { class: 'badge' }, 'bundled · synced copy needs repair'));
   if (wf.id.startsWith('synced/')) badges.push(el('span', { class: 'badge synced' }, 'synced'));
   if (kind === 'video') badges.push(el('span', { class: 'badge video' }, 'video'));
   if (wf.image_inputs) badges.push(el('span', { class: 'badge' }, wf.image_inputs === 1 ? '1 image' : `${wf.image_inputs} images`));
@@ -734,7 +735,7 @@ async function submitJob(params, focus) {
     json: { ...(params.controls || {}), workflow_id: params.workflowId, prompt: params.prompt, images: params.images, seed: params.seed, stage: params.stage || 'render', review: params.review || null }
   });
   if (!r.prompt_id) throw Error('ComfyUI did not return a job ID');
-  const job = { ...params, id: r.prompt_id, created: Date.now() };
+  const job = { ...params, details: r.details || null, id: r.prompt_id, created: Date.now() };
   rememberJob(job);
   openJob(job, focus);
   return job;
@@ -1052,7 +1053,7 @@ async function renderGallery(reset = true) {
     const thumb = el('div', { class: 'thumb' }, '…');
     const card = el('button', { class: 'card', type: 'button' }, thumb,
       el('div', { class: 'meta' }, job.workflow, el('span', {}, new Date(job.created).toLocaleString())));
-    card.onclick = () => openJob(job, true);
+    card.onclick = () => openGalleryPhoto(job);
     thumbs.set(job.id, thumb);
     return card;
   }));
@@ -1085,8 +1086,7 @@ async function refresh() {
   if (!catalog) $('workflows').replaceChildren(el('p', { class: 'status' }, 'Loading workflows…'));
   try {
     const [health, cat] = await Promise.all([api('/health'), api('/catalog')]);
-    const synced = new Set(cat.workflows.filter(w => w.id.startsWith('synced/')).map(w => w.name));
-    catalog = { ...cat, workflows: cat.workflows.filter(w => w.id.startsWith('synced/') || !synced.has(w.name)) };
+    catalog = { ...cat, workflows: MobileTools.preferredWorkflows(cat.workflows) };
     if (selected) {
       const fresh = catalog.workflows.find(w => w.id === selected.id && w.runnable);
       if (fresh) Object.assign(selected, fresh); // preserve an in-flight settings request's selection
@@ -1413,9 +1413,11 @@ $('wake-pc').onclick = async () => {
   finally { if (wakeController === controller && token) $('wake-pc').disabled = false; }
 };
 
-/* ---------- Image viewer, zoom and before/after ---------- */
+/* ---------- Full-screen gallery details, zoom and before/after ---------- */
 let viewerController = null;
 let viewerInputUrl = null;
+let viewerState = null;
+let viewerItemRevision = 0;
 const viewer = $('image-viewer');
 function updateComparison() {
   $('viewer-after-wrap').style.clipPath = $('compare-range').classList.contains('hide') ? 'none' : `inset(0 ${100 - Number($('compare-range').value)}% 0 0)`;
@@ -1424,41 +1426,159 @@ $('compare-range').oninput = updateComparison;
 $('viewer-zoom').oninput = () => {
   const zoom = Number($('viewer-zoom').value);
   $('viewer-stage').style.width = `${zoom * 100}%`;
-  $('viewer-stage').style.height = `${zoom * 60}vh`;
+  $('viewer-stage').style.height = `${zoom * 55}dvh`;
 };
-$('viewer-close').onclick = () => viewer.close();
-viewer.addEventListener('close', () => {
-  viewerController?.abort();
+function clearViewerMedia() {
+  viewerItemRevision++;
   if (viewerInputUrl) URL.revokeObjectURL(viewerInputUrl);
   viewerInputUrl = null;
-  $('viewer-before').removeAttribute('src'); $('viewer-after').removeAttribute('src');
-});
-async function viewImage(job, item) {
-  if (viewer.open) viewer.close();
+  $('viewer-after').onload = $('viewer-after').onerror = null;
+  $('viewer-after').removeAttribute('src');
+  $('viewer-before').removeAttribute('src');
+  $('viewer-video').pause();
+  $('viewer-video').removeAttribute('src');
+  $('viewer-video').load();
+}
+function drawPhotoDetails(resolution) {
+  if (!viewerState) return;
+  const { job, items, index } = viewerState;
+  $('photo-metadata').replaceChildren(...MobileTools.photoDetails(job, items[index], resolution)
+    .map(([label, value]) => el('div', { class: 'photo-meta-row' }, el('dt', {}, label), el('dd', {}, value))));
+}
+function beginViewer(job) {
   viewerController?.abort();
-  const controller = new AbortController(); viewerController = controller;
-  $('viewer-title').textContent = 'Image viewer';
-  $('viewer-status').textContent = job.images?.length ? 'Loading input preview for comparison…' : 'Generated image. Use zoom to inspect details.';
-  $('viewer-after').src = item.url;
+  clearViewerMedia();
+  viewerController = new AbortController();
+  viewerState = { job, items: [], index: 0, summary: null, controller: viewerController };
+  $('viewer-title').textContent = 'Photo details';
+  $('viewer-status').textContent = 'Loading full-size output…';
+  $('viewer-actions').replaceChildren(); $('photo-text').replaceChildren();
+  $('photo-details').open = false;
+  $('viewer-paging').classList.add('hide');
+  $('viewer-before').classList.add('hide');
+  $('viewer-after-wrap').classList.remove('hide'); $('viewer-video').classList.add('hide');
+  $('compare-label').classList.add('hide'); $('compare-range').classList.add('hide');
+  $('viewer-compare').classList.add('hide');
+  $('viewer-zoom').classList.remove('hide'); $('viewer-zoom-label').classList.remove('hide');
+  $('viewer-zoom').value = '1'; $('viewer-zoom').oninput(); updateComparison();
+  drawPhotoDetails();
+  if (!viewer.open) viewer.showModal();
+  return viewerState;
+}
+function showViewerItem(index) {
+  if (!viewerState || !viewerState.items[index]) return;
+  clearViewerMedia();
+  const state = viewerState, revision = viewerItemRevision;
+  state.index = index;
+  const item = state.items[index], video = item.kind === 'video';
+  $('viewer-title').textContent = video ? 'Video details' : 'Photo details';
+  $('viewer-status').textContent = video ? 'Full-size video. Use playback controls below.' : 'Full-size image. Zoom to inspect details.';
+  $('viewer-paging').classList.toggle('hide', state.items.length < 2);
+  $('viewer-count').textContent = `${index + 1} / ${state.items.length}`;
+  $('viewer-previous').disabled = index === 0;
+  $('viewer-next').disabled = index === state.items.length - 1;
   $('viewer-before').classList.add('hide');
   $('compare-label').classList.add('hide'); $('compare-range').classList.add('hide');
+  $('viewer-compare').classList.toggle('hide', video || !state.job.images?.length);
+  $('viewer-compare').textContent = 'Compare with input'; $('viewer-compare').disabled = false;
+  $('viewer-after-wrap').classList.toggle('hide', video); $('viewer-video').classList.toggle('hide', !video);
+  $('viewer-zoom').classList.toggle('hide', video); $('viewer-zoom-label').classList.toggle('hide', video);
   $('viewer-zoom').value = '1'; $('viewer-zoom').oninput(); updateComparison();
-  viewer.showModal();
-  if (!job.images?.length) return;
+  $('viewer-scroll').scrollTo(0, 0);
+  $('viewer-actions').replaceChildren(resultActions(item));
+  drawPhotoDetails(video ? 'See video playback' : undefined);
+  if (video) {
+    $('viewer-video').src = item.url;
+    $('viewer-video').onloadedmetadata = () => {
+      if (viewerState === state && viewerItemRevision === revision)
+        drawPhotoDetails(`${$('viewer-video').videoWidth} × ${$('viewer-video').videoHeight}`);
+    };
+    $('viewer-video').onerror = () => {
+      if (viewerState === state && viewerItemRevision === revision) $('viewer-status').textContent = 'Video unavailable. Check that ComfyUI is online and the output file still exists.';
+    };
+  } else {
+    let preview = false;
+    $('viewer-after').onload = () => {
+      if (viewerState === state && viewerItemRevision === revision)
+        drawPhotoDetails(`${$('viewer-after').naturalWidth} × ${$('viewer-after').naturalHeight}${preview ? ' (preview)' : ''}`);
+    };
+    $('viewer-after').onerror = () => {
+      if (viewerState !== state || viewerItemRevision !== revision) return;
+      if (!preview) {
+        preview = true;
+        $('viewer-status').textContent = 'Full-size file unavailable. Showing a preview if saved on the NAS; bring ComfyUI online for the original.';
+        $('viewer-after').src = item.url + '&thumb=1';
+      } else {
+        $('viewer-status').textContent = 'Image unavailable. Check that ComfyUI is online and the output file still exists. Recorded details are shown below.';
+        drawPhotoDetails('Unavailable');
+      }
+    };
+    $('viewer-after').src = item.url;
+  }
+}
+async function openGalleryPhoto(job) {
+  const state = beginViewer(job);
   try {
-    const r = await fetch(`/api/jobs/${job.id}/inputs/0`, { headers: { Authorization: 'Bearer ' + token }, signal: controller.signal });
+    const summary = await api(`/jobs/${job.id}/outputs`, { signal: state.controller.signal });
+    if (viewerState !== state || state.controller.signal.aborted || !viewer.open) return;
+    const media = summary.outputs.filter(o => o.kind !== 'text');
+    const finals = media.filter(o => !o.preview);
+    state.items = finals.length ? finals : media;
+    state.summary = summary;
+    $('photo-text').replaceChildren(...summary.outputs.filter(o => o.kind === 'text')
+      .map(o => el('div', { class: 'photo-captured-text' }, el('strong', {}, `Workflow text (${o.node})`), el('p', {}, o.text))));
+    if (state.items.length) showViewerItem(0);
+    else {
+      $('viewer-status').textContent = summary.status === 'pending' ? 'This job is still queued or running. Open job details to follow progress.' : 'This job has no image or video output. Open job details for captions or errors.';
+      drawPhotoDetails('No image output');
+      $('photo-details').open = true;
+    }
+  } catch (e) {
+    if (viewerState === state && !state.controller.signal.aborted) {
+      $('viewer-status').textContent = 'Could not load this photo: ' + e.message;
+      drawPhotoDetails('Unavailable'); $('photo-details').open = true;
+    }
+  }
+}
+function viewImage(job, item) {
+  const state = beginViewer(job);
+  state.items = [item];
+  showViewerItem(0);
+}
+$('viewer-previous').onclick = () => showViewerItem(viewerState.index - 1);
+$('viewer-next').onclick = () => showViewerItem(viewerState.index + 1);
+$('viewer-job').onclick = () => { const job = viewerState?.job; viewer.close(); if (job) openJob(job, true); };
+$('viewer-close').onclick = () => viewer.close();
+viewer.addEventListener('close', () => {
+  // A close event is queued by the browser; do not clear a newly reopened viewer.
+  if (viewer.open) return;
+  viewerController?.abort(); clearViewerMedia(); viewerState = null;
+});
+$('viewer-compare').onclick = async () => {
+  const state = viewerState, revision = viewerItemRevision;
+  if (!state) return;
+  if (!$('compare-range').classList.contains('hide')) {
+    $('viewer-before').classList.add('hide'); $('compare-range').classList.add('hide'); $('compare-label').classList.add('hide');
+    $('viewer-compare').textContent = 'Compare with input'; updateComparison(); return;
+  }
+  $('viewer-compare').disabled = true;
+  try {
+    const r = await fetch(`/api/jobs/${state.job.id}/inputs/0`, { headers: { Authorization: 'Bearer ' + token }, signal: state.controller.signal });
     if (!r.ok) throw Error(r.status === 404 ? 'This older job has no saved input preview.' : 'Input preview is unavailable. Try while ComfyUI is online.');
     const blob = await r.blob();
-    if (controller.signal.aborted || !viewer.open || viewerController !== controller) return;
+    if (viewerState !== state || state.controller.signal.aborted || !viewer.open || revision !== viewerItemRevision) return;
     if (viewerInputUrl) URL.revokeObjectURL(viewerInputUrl);
     viewerInputUrl = URL.createObjectURL(blob);
     $('viewer-before').src = viewerInputUrl;
     $('viewer-before').classList.remove('hide');
     $('compare-range').classList.remove('hide'); $('compare-label').classList.remove('hide');
     $('compare-range').value = '50'; updateComparison();
+    $('viewer-compare').textContent = 'Show output only';
     $('viewer-status').textContent = 'Input → generated. Drag the slider; zoom to inspect. For multi-image workflows, the first input is shown.';
-  } catch (e) { if (!controller.signal.aborted) $('viewer-status').textContent = e.message; }
-}
+  } catch (e) {
+    if (viewerState === state && revision === viewerItemRevision && !state.controller.signal.aborted) $('viewer-status').textContent = e.message;
+  } finally { if (viewerState === state && revision === viewerItemRevision) $('viewer-compare').disabled = false; }
+};
 
 
 /* ---------- Boot Init ---------- */

@@ -84,3 +84,5 @@ class CaptionApiTests(unittest.TestCase):
     self.assertEqual(200, response.status_code, response.text)
     self.assertEqual('my edit', submitted[-1]['4']['inputs']['text'])
     self.assertNotIn('2', submitted[-1])
+    self.assertEqual('model', store.get(response.json()['prompt_id'])['details']['models'][0]['value'])
+    self.assertEqual('model', response.json()['details']['models'][0]['value'])

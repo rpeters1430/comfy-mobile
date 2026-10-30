@@ -1,4 +1,4 @@
-# Comfy Mobile — v0.5.0
+# Comfy Mobile — v0.5.1
 
 Mobile-first ComfyUI dashboard running on a NAS, connecting to ComfyUI on another machine.
 
@@ -15,6 +15,14 @@ GitHub Actions builds and publishes `ghcr.io/rpeters1430/comfy-mobile:latest` on
 - **Phone wallpapers**: Pixel, iPhone and Galaxy presets, rendered near the model's native size and then upscaled and center-cropped to the exact screen. Wallpaper style chips and a Cinematic-ready mode for Pixel.
 - **Notifications and gallery**: The NAS watches each job and sends a push notification when it finishes, even with the app closed (needs HTTPS). Finished jobs and thumbnails are kept on the NAS, so the gallery survives ComfyUI restarts.
 - **Workflow Sync**: Safe, one-way pull of workflows directly from ComfyUI's user-data directory to your NAS.
+
+## New in v0.5.1
+
+Tap a Gallery photo to open its full-size image in a full-screen detail screen, keeping your Gallery position when you close it. Expand **Photo details** for workflow, creation time, seed, filename, resolution, prompt, recorded negative prompt, model/LoRA/sampler settings and job ID. Save/share are on this screen; jobs with multiple outputs have Previous/Next controls. Comparison with the first input is optional, so the viewer initially shows the generated image unobscured. Video outputs keep playback controls.
+
+New jobs record effective model and sampler values as a small metadata snapshot. Older jobs show the settings available in their saved request and mark missing information as **Not recorded**. Full originals still live on the ComfyUI PC. If an original is unavailable, the viewer tries the saved NAS preview and labels it as a preview.
+
+A broken synced workflow no longer hides a working bundled copy with the same name. The bundled copy is labelled as a fallback; the synced copy remains in Unavailable with its original error. This does not rewrite the ComfyUI workflow or silently guess missing links/models. Repair/re-save that workflow in ComfyUI and sync again when ready.
 
 ## New in v0.5.0
 

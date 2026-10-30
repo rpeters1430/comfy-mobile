@@ -58,3 +58,8 @@ Configuration is env-only: `COMFYUI_URL`, `STUDIO_TOKEN` (required, or every end
 - `caption_review.py`: identifies a single supported VLM node, builds ancestor-only graphs with PreviewAny sinks for positive/negative text, or replaces those text links for approved rendering and prunes unused dependencies. `/api/jobs` takes `stage: caption|render` and optional `review: {positive, negative}`. `/validate` exposes capability/reason. Fail closed on ambiguity/non-text consumers.
 - `wake.py`: administrator-configured `WOL_MAC` / `WOL_BROADCAST`, UDP port 9, 30-second cooldown. GET/POST `/api/comfy/wake` are authenticated. Never accept client-selected destinations.
 - `static/mobile-tools.js`: pure data helpers, loaded before app.js; Node tests cover NAS/local merge and presets. `tests/browser-mobile.cjs` is optional Playwright smoke coverage with API mocks (not part of the dependency-free Node test glob).
+
+
+## Gallery detail screen (v0.5.1)
+
+Gallery taps use `openGalleryPhoto` and fetch fresh signed output URLs; they do not switch to the Create tab. The full-viewport dialog supports metadata, paging through files, optional comparison, video playback, and a link to the existing job card. `run_details` records effective values only (never the option lists) in each new JobStore record; create/history APIs return this optional `details` field. Legacy records remain readable. `MobileTools.preferredWorkflows` hides bundled copies only when the synced copy is runnable, exposing a labelled bundled fallback when sync is broken.

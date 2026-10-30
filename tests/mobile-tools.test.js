@@ -46,3 +46,28 @@ test('legacy NAS metadata does not erase richer local rerun settings', () => {
  assert.equal(merged.prompt,'full local prompt');
  assert.deepEqual(merged.images,['input.png']);
 });
+
+test('photo details use recorded settings and approved prompt without guessing defaults', () => {
+ const { photoDetails } = require('../app/static/mobile-tools.js');
+ const rows = Object.fromEntries(photoDetails({id:'job',workflow:'Portrait',created:1000,seed:42,prompt:'old',
+  review:{positive:'approved portrait',negative:'blur'},details:{models:[{node:'3',value:'model.safetensors'}],samplers:[{node:'5',values:{steps:25,cfg:7}}]}},
+  {filename:'result.png'}, '1024 × 1536'));
+ assert.equal(rows.Prompt, 'approved portrait');
+ assert.equal(rows['Negative prompt'], 'blur');
+ assert.match(rows.Models,/model.safetensors/);
+ assert.match(rows.Sampling,/25/);
+ assert.equal(rows.Resolution, '1024 × 1536');
+ const legacy=Object.fromEntries(photoDetails({workflow:'Old'},{filename:'old.png'}));
+ assert.equal(legacy.Models,'Not recorded');
+});
+
+test('broken synced copy does not hide a working bundled workflow', () => {
+ const { preferredWorkflows } = require('../app/static/mobile-tools.js');
+ const workflows = [
+  {id:'synced/one.json',name:'one',runnable:false}, {id:'one.json',name:'one',runnable:true},
+  {id:'synced/two.json',name:'two',runnable:true}, {id:'two.json',name:'two',runnable:true}];
+ const selected = preferredWorkflows(workflows);
+ assert.deepEqual(selected.map(w=>w.id),['synced/one.json','one.json','synced/two.json']);
+ assert.equal(selected.find(w=>w.id==='one.json').bundled_fallback,true);
+ assert.equal(workflows[1].bundled_fallback,undefined);
+});

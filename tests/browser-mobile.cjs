@@ -13,7 +13,8 @@ const controls = {models:[{node:'3',field:'ckpt_name',value:'base',options:['bas
 const workflows = [{id:'edit.json',name:'Photo_Edit',runnable:true,image_inputs:1,takes_prompt:false,node_types:['LoadImage']}];
 const library = {id:jobId,workflow:'Photo Edit',prompt:'',created:1700000000,status:'success',
  params:{workflow_id:'edit.json',prompt:'',images:[imageName],seed:42,stage:'render'}};
-const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kind:'image',filename:'result.png',preview:false,url:'/image.png?sig=ok'}]};
+const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kind:'image',filename:'result.png',preview:false,url:'/image.png?sig=ok'},
+ {node:'9',kind:'image',filename:'second.png',preview:false,url:'/image.png?sig=second'}]};
 (async () => {
  const server = http.createServer((req,res) => {
   const name = new URL(req.url,'http://localhost').pathname;
@@ -32,8 +33,10 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
   const errors = [], submissions = [];
-  let presets = [], stage = 'render', stale = false, woke = false, delayValidation = false;
+  let presets = [], stage = 'render', stale = false, woke = false, delayValidation = false, fullUnavailable = false;
   page.on('pageerror', error => errors.push(error.message));
+  await context.route('**/image.png?*', route => fullUnavailable && !route.request().url().includes('thumb=1')
+    ? route.abort('failed') : route.fulfill({contentType:'image/png',body:png}));
   await context.route('**/api/**', async route => {
    const req=route.request(), url=new URL(req.url()), p=url.pathname, method=req.method();
    let data;
@@ -90,10 +93,23 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   assert.equal(submissions[1].review.positive,'edited portrait');assert.equal(submissions[1].stage,'render');
   await page.locator('nav [data-tab=gallery]').click();
   await page.locator('#gallery .card').first().click();
-  // Remove the caption mock card and reopen the persisted render job.
-  await page.locator('#jobs .job button[aria-label=Close]').first().click();
-  await page.locator('nav [data-tab=gallery]').click();await page.locator('#gallery .card').first().click();
-  await page.getByRole('button',{name:'Compare / full screen'}).first().click();
+  await page.locator('#image-viewer').waitFor({state:'visible'});
+  assert.equal(await page.locator('nav [data-tab=gallery]').getAttribute('aria-current'), 'page');
+  assert.equal(await page.locator('#viewer-after').getAttribute('src'), '/image.png?sig=ok');
+  await page.locator('#photo-details summary').click();
+  assert.match(await page.locator('#photo-metadata').textContent(), /Photo Edit/);
+  assert.match(await page.locator('#photo-metadata').textContent(), /42/);
+  assert.equal(await page.locator('#viewer-actions a[download]').getAttribute('download'), 'result.png');
+  const bounds = await page.locator('#image-viewer').boundingBox();
+  assert.equal(Math.round(bounds.width), 412);
+  assert.equal(Math.round(bounds.height), 915);
+  assert.equal(await page.locator('#viewer-previous').isDisabled(), true);
+  await page.locator('#viewer-next').click();
+  assert.match(await page.locator('#photo-metadata').textContent(), /second.png/);
+  assert.equal(await page.locator('#viewer-after').getAttribute('src'), '/image.png?sig=second');
+  await page.locator('#viewer-previous').click();
+  await page.locator('#photo-details summary').click();
+  await page.locator('#viewer-compare').click();
   await page.waitForFunction(()=>!document.querySelector('#compare-range').classList.contains('hide'));
   await page.locator('#compare-range').fill('25');await page.locator('#compare-range').dispatchEvent('input');
   assert.match(await page.locator('#viewer-after-wrap').getAttribute('style'),/75%/);
@@ -109,6 +125,13 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   const second = await context.newPage();await second.goto('http://127.0.0.1:'+server.address().port);
   await second.evaluate(()=>localStorage.removeItem('image-studio-mobile:jobs:v1'));await second.reload();
   await second.locator('nav [data-tab=gallery]').click();await second.locator('#gallery .card').first().waitFor();
+  fullUnavailable = true;
+  await second.locator('#gallery .card').first().click();
+  await second.waitForFunction(()=>document.querySelector('#viewer-status').textContent.includes('Full-size file unavailable'));
+  await second.waitForFunction(()=>document.querySelector('#viewer-after').getAttribute('src').includes('thumb=1'));
+  assert.match(await second.locator('#photo-metadata').textContent(), /Photo Edit/);
+  await second.locator('#viewer-close').click();
+  fullUnavailable = false;
   await page.locator('#forget').click();
   assert.equal(await page.locator('#jobs').textContent(),'');
   console.log('PASS mobile presets, stale preset, caption edit/render, NAS gallery, compare/zoom, wake, logout, layout');
