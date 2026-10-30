@@ -4033,7 +4033,7 @@
       ],
       "flags": {},
       "order": 5,
-      "mode": 0,
+      "mode": 4,
       "inputs": [
        {
         "name": "model",
@@ -4046,7 +4046,9 @@
         "name": "MODEL",
         "type": "MODEL",
         "slot_index": 0,
-        "links": []
+        "links": [
+         771
+        ]
        }
       ],
       "properties": {
@@ -4810,6 +4812,22 @@
       "origin_id": 411,
       "origin_slot": 0,
       "target_id": 560,
+      "target_slot": 0,
+      "type": "MODEL"
+     },
+     {
+      "id": 771,
+      "origin_id": 560,
+      "origin_slot": 0,
+      "target_id": 427,
+      "target_slot": 0,
+      "type": "MODEL"
+     },
+     {
+      "id": 772,
+      "origin_id": 411,
+      "origin_slot": 0,
+      "target_id": 445,
       "target_slot": 0,
       "type": "MODEL"
      }
