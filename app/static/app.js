@@ -785,7 +785,7 @@ function openJob(job, focus) {
     state, bar, live, results, actions);
 
   $('jobs').prepend(card);
-  const entry = { card, state, statusText, pulse, bar, live, frame: 0, results, actions, started: Date.now(), stopped: false, stopping: false };
+  const entry = { job, card, state, statusText, pulse, bar, live, frame: 0, results, actions, started: Date.now(), stopped: false, stopping: false };
   openJobs.set(job.id, entry);
 
   close.onclick = () => {
@@ -874,7 +874,7 @@ async function ensurePollerRunning() {
           if (r.completed || (r.status !== 'pending' && r.status !== 'unknown')) {
             entry.stopped = true;
             entry.pulse.remove();
-            showResults({ ...openJobs.get(id), id }, entry, r);
+            showResults(entry.job, entry, r);
             continue;
           }
         } catch (e) {
@@ -1007,7 +1007,14 @@ function showResults(job, entry, r) {
 
   entry.results.replaceChildren(...nodes);
   const cover = finals[0] || previews[0];
-  if (cover) rememberJob({ ...job, kind: cover.kind, done: ok });
+  rememberJob({ ...job, finished: true, ...(cover ? { kind: cover.kind, done: ok } : {}) });
+}
+
+// Jobs still running when the app was closed or reloaded come back as cards. Entries saved before
+// `finished` existed count as finished once they have a cover.
+function reopenUnfinished() {
+  const since = Date.now() - 24 * 3600 * 1000;
+  galleryJobs().filter(j => !j.finished && !j.kind && j.created > since).slice(0, 8).reverse().forEach(j => openJob(j, false));
 }
 
 /* ---------- Gallery ---------- */
@@ -1224,6 +1231,7 @@ $('shared-dismiss').onclick = clearShared;
     token = savedToken;
     $('token').value = savedToken;
     refresh();
+    reopenUnfinished();
     // Re-register with the NAS in case its data folder was reset since this phone subscribed.
     if (canPush() && Notification.permission === 'granted' && await swReg.pushManager.getSubscription()) subscribePush().catch(() => {});
   }
