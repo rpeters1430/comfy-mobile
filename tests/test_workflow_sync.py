@@ -1,6 +1,7 @@
 import asyncio
 import json
 import unittest
+import httpx
 from tempfile import TemporaryDirectory
 from pathlib import Path
 from unittest.mock import patch
@@ -22,24 +23,16 @@ class WorkflowSyncTests(unittest.TestCase):
 
     def run_sync_test(self, tmp_path):
         workflow = {"nodes": [{"id": 1, "type": "SaveImage"}]}
-        class Response:
-            def __init__(self, value):
-                self.value = value
-                self.content = json.dumps(value).encode()
-            def raise_for_status(self):
-                pass
-            def json(self):
-                return self.value
-        class Client:
-            async def __aenter__(self): return self
-            async def __aexit__(self, *args): pass
-            async def get(self, url, **kwargs):
-                if url.endswith("/userdata"):
-                    return Response(["one.json"])
-                assert "workflows%2Fone.json" in url
-                return Response(workflow)
+        factory = httpx.AsyncClient
+        def handler(request):
+            if request.url.path == '/userdata':
+                return httpx.Response(200, json=['one.json'])
+            assert 'workflows%2Fone.json' in str(request.url)
+            return httpx.Response(200, json=workflow)
+        def client(**kwargs):
+            return factory(transport=httpx.MockTransport(handler), **kwargs)
         sync = WorkflowSync("http://localhost:8188", tmp_path)
-        with patch("app.workflow_sync.httpx.AsyncClient", return_value=Client()):
+        with patch("app.workflow_sync.httpx.AsyncClient", client):
             first = asyncio.run(sync.sync())
             second = asyncio.run(sync.sync())
             assert first["downloaded"] == 1

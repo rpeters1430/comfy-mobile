@@ -13,7 +13,7 @@ try:
     from workflow_sync import WorkflowSync
     from workflow_conversion import convert_ui, ConversionError
     from workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls
-    from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, upload_name, view_query
+    from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, upload_name, view_query
     from job_store import JobStore
     from push import Push, PushError
     from progress import ProgressTracker, listen
@@ -22,7 +22,7 @@ except ImportError:
     from app.workflow_sync import WorkflowSync
     from app.workflow_conversion import convert_ui, ConversionError
     from app.workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls
-    from app.workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, upload_name, view_query
+    from app.workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, upload_name, view_query
     from app.job_store import JobStore
     from app.push import Push, PushError
     from app.progress import ProgressTracker, listen
@@ -109,7 +109,7 @@ _catalog_inspect_cache: dict = {}
 
 def signed(prompt_id: str, summary: dict) -> dict:
     return {**summary, 'outputs': [o if o['kind'] == 'text' else {**o, 'url': f'/api/jobs/{prompt_id}/view?' + urlencode(view_query(TOKEN, prompt_id, o))}
-                                   for o in summary['outputs']]}
+                                   for o in summary['outputs'] if o['kind'] == 'text' or safe_output(o.get('filename'), o.get('subfolder'), o.get('type'))]}
 
 async def finish_job(job_id: str, entry: dict) -> None:
     '''Record a finished job, keep a thumbnail of its cover image and tell the phones.'''
@@ -215,7 +215,7 @@ async def catalog(authorization: str | None = Header(default=None)):
                 if cached is not None:
                     workflows.append(cached)
                     continue
-                data=json.loads(path.read_text(encoding='utf-8'))
+                data=load_workflow(source_dir, path.relative_to(source_dir).as_posix())
                 if isinstance(data,dict) and isinstance(data.get('nodes'),list):
                     fmt='ui'; node_types=sorted({n.get('type','') for n in data['nodes'] if isinstance(n,dict)})
                     needs={}
@@ -487,9 +487,18 @@ async def job_view(prompt_id: str, filename: str, expires: int, sig: str, subfol
         await upstream.aclose(); await client.aclose()
     if upstream.status_code not in (200,206):
         await close(); raise HTTPException(502,'ComfyUI could not serve the file')
+    # A custom node may emit arbitrary files; never execute upstream HTML/SVG
+    # under the origin that holds the phone's studio token.
+    media_type = upstream.headers.get('content-type', '').split(';', 1)[0].strip().lower()
+    if media_type not in {'image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif',
+                          'video/mp4', 'video/webm', 'video/x-matroska', 'video/quicktime'}:
+        await close(); raise HTTPException(502,'ComfyUI returned an unsupported media type')
     headers={k:upstream.headers[k] for k in ('content-type','content-length','content-range','accept-ranges') if k in upstream.headers}
     # Output files never change and the URL is stable until it expires, so let the phone keep them.
     headers['cache-control']=f'private, max-age={max(0,expires-int(time.time()))}, immutable'
+    headers['x-content-type-options']='nosniff'
+    headers['content-security-policy']="sandbox; default-src 'none'"
+    headers['referrer-policy']='no-referrer'
     return StreamingResponse(upstream.aiter_bytes(),status_code=upstream.status_code,headers=headers,background=BackgroundTask(close))
 
 
