@@ -80,11 +80,41 @@ def _samplers(graph):
     return sorted(found, key=lambda c: (c["role"] != "base", c["node"]))
 
 
+def _plain(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _photo_size(graph, node):
+    """The GetImageSize node an empty latent copies its width and height from, or None.
+
+    Image-to-prompt-to-image workflows only caption the photo and size the new image after it; a phone shape can
+    replace those links with fixed numbers."""
+    width, height = node["inputs"].get("width"), node["inputs"].get("height")
+    if (isinstance(width, list) and isinstance(height, list) and width[0] == height[0] and (width[1], height[1]) == (0, 1)
+            and graph.get(width[0], {}).get("class_type") == "GetImageSize"):
+        return width[0]
+    return None
+
+
 def _latents(graph):
-    """Empty latent nodes with a plain size: the output size of text-to-image workflows."""
+    """Empty latent nodes whose size the phone may set: plain numbers, or copied from the input photo's size."""
     return [node_id for node_id, node in graph.items()
             if re.fullmatch(r"Empty\w*LatentImage", node["class_type"])
-            and all(isinstance(node["inputs"].get(f), int) and not isinstance(node["inputs"].get(f), bool) for f in ("width", "height"))]
+            and (all(_plain(node["inputs"].get(f)) for f in ("width", "height")) or _photo_size(graph, node))]
+
+
+def _base_size(graph, node_id):
+    """The size the phone's shapes keep the pixel count of. For a photo-sized latent that is the megapixels the
+    photo is scaled to (ImageScaleToTotalPixels), as a square."""
+    node = graph[node_id]
+    source = _photo_size(graph, node)
+    if source is None:
+        return {"width": node["inputs"]["width"], "height": node["inputs"]["height"]}, False
+    image = graph[source]["inputs"].get("image")
+    scaler = graph.get(image[0], {}) if isinstance(image, list) else {}
+    megapixels = scaler.get("inputs", {}).get("megapixels") if scaler.get("class_type") == "ImageScaleToTotalPixels" else None
+    side = round(math.sqrt(megapixels if isinstance(megapixels, (int, float)) and 0.25 <= megapixels <= 4 else 1) * 1024 / 64) * 64
+    return {"width": side, "height": side}, True
 
 
 def _saves(graph):
@@ -119,10 +149,10 @@ def find_controls(graph: dict, object_info: dict) -> dict:
             loras.append({"node": node_id, "value": node["inputs"]["lora_name"],
                           "strength": node["inputs"].get("strength_model", 1.0)})
     latents = _latents(graph)
-    size = {"width": graph[latents[0]]["inputs"]["width"], "height": graph[latents[0]]["inputs"]["height"]} if latents else None
+    size, from_photo = _base_size(graph, latents[0]) if latents else (None, False)
     return {"models": models, "loras": loras, "lora_options": _options(object_info, "LoraLoaderModelOnly", "lora_name"),
             "can_add_lora": _lora_anchor(graph, models) is not None,
-            "samplers": _samplers(graph), "size": size, "captions": _captions(graph, object_info),
+            "samplers": _samplers(graph), "size": size, "size_from_photo": from_photo, "captions": _captions(graph, object_info),
             "can_fit": bool(_saves(graph)) and "ImageScale" in object_info,
             "upscale_options": _options(object_info, "UpscaleModelLoader", "model_name"),
             "sampler_options": _options(object_info, "KSampler", "sampler_name"),

@@ -137,6 +137,26 @@ class ControlTests(unittest.TestCase):
             with self.subTest(sampling=sampling, size=size), self.assertRaises(ControlError):
                 apply_controls(sampled(), INFO, {}, {}, [], sampling, size)
 
+    def photo_sized(self):
+        graph = sampled()
+        graph.update({"1": {"class_type": "LoadImage", "inputs": {"image": "x.png"}},
+                      "19": {"class_type": "ImageScaleToTotalPixels", "inputs": {"image": ["1", 0], "upscale_method": "lanczos", "megapixels": 1.64}},
+                      "20": {"class_type": "GetImageSize", "inputs": {"image": ["19", 0]}}})
+        graph["6"]["inputs"].update(width=["20", 0], height=["20", 1])
+        return graph
+
+    def test_photo_sized_latent_can_take_a_phone_shape(self):
+        graph = self.photo_sized()
+        found = find_controls(graph, INFO)
+        self.assertEqual(({"width": 1280, "height": 1280}, True), (found["size"], found["size_from_photo"]))
+        apply_controls(graph, INFO, {}, {}, [], None, {"width": 896, "height": 1984})
+        self.assertEqual((896, 1984), (graph["6"]["inputs"]["width"], graph["6"]["inputs"]["height"]))
+
+    def test_photo_size_left_alone_without_a_size(self):
+        graph = self.photo_sized()
+        apply_controls(graph, INFO, {}, {}, [], {"7": {"steps": 20}})
+        self.assertEqual(["20", 0], graph["6"]["inputs"]["width"])
+
     def test_size_needs_an_empty_latent(self):
         graph = sampled()
         graph["6"]["inputs"]["width"] = ["12", 0]

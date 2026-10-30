@@ -463,7 +463,7 @@ function sizeSection(changed) {
 
   function updateDisplay() {
     const size = chosenSize(choices);
-    let desc = 'Workflow default size';
+    let desc = controls.size_from_photo ? 'Same shape as your photo' : 'Workflow default size';
     if (choices.preset) {
       const p = WALLPAPER_PRESETS.find(x => x.id === choices.preset);
       if (p) desc = p.desc;
@@ -502,7 +502,7 @@ function sizeSection(changed) {
       class: 'chip',
       type: 'button',
       'aria-pressed': String(isCurrent)
-    }, aspect || 'Original');
+    }, aspect || (controls.size_from_photo ? 'Match photo' : 'Original'));
 
     chip.onclick = () => {
       choices.preset = '';
@@ -812,8 +812,10 @@ async function ensurePollerRunning() {
       } else if (isRunning) {
         entry.card.classList.add('running');
         const p = await api(`/jobs/${id}/progress`, { signal: pollSignal() }).catch(() => null);
-        entry.statusText.textContent = p?.max ? `Generating… step ${p.value}/${p.max} · ${secs}s` : `Generating… ${secs}s`;
-        if (p?.max) { entry.bar.max = p.max; entry.bar.value = p.value; entry.bar.classList.remove('hide'); }
+        // Single-step nodes (auto-caption, VAE) report 1/1; only sampler steps are worth showing.
+        const steps = p?.max > 1;
+        entry.statusText.textContent = steps ? `Generating… step ${p.value}/${p.max} · ${secs}s` : `Generating… ${secs}s`;
+        if (steps) { entry.bar.max = p.max; entry.bar.value = p.value; entry.bar.classList.remove('hide'); }
         if (p?.frame && p.frame !== entry.frame) showLivePreview(id, entry, p.frame);
       } else if (isPending) {
         entry.card.classList.remove('running');
