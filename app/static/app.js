@@ -772,6 +772,8 @@ function openJob(job, focus) {
   const statusText = el('span', {}, 'Queued…');
   const state = el('p', { class: 'status', 'aria-live': 'polite' }, pulse, statusText);
   const results = el('div', { class: 'results' });
+  const bar = el('progress', { class: 'job-bar hide', max: 1, value: 0 });
+  const live = el('img', { class: 'live hide', alt: 'Live preview' });
   const close = el('button', { class: 'ghost', type: 'button', 'aria-label': 'Close' }, '✕');
   const cancel = el('button', { class: 'ghost', type: 'button' }, '■ Cancel');
   const actions = el('div', { class: 'row' }, cancel);
@@ -780,10 +782,10 @@ function openJob(job, focus) {
     job.prompt ? el('small', { style: 'display:block;margin-top:4px;overflow-wrap:anywhere' }, job.prompt) : null,
     job.controlsText ? el('small', { style: 'display:block;overflow-wrap:anywhere' }, job.controlsText) : null,
     job.seed != null ? el('small', { style: 'display:block' }, `seed ${job.seed}`) : null,
-    state, results, actions);
+    state, bar, live, results, actions);
 
   $('jobs').prepend(card);
-  const entry = { card, state, statusText, pulse, results, actions, started: Date.now(), stopped: false, stopping: false };
+  const entry = { card, state, statusText, pulse, bar, live, frame: 0, results, actions, started: Date.now(), stopped: false, stopping: false };
   openJobs.set(job.id, entry);
 
   close.onclick = () => {
@@ -799,6 +801,7 @@ function openJob(job, focus) {
       if (r.cancelled === 'pending') {
         entry.stopped = true;
         pulse.remove();
+        endProgress(entry);
         showActions(job, entry);
         entry.statusText.textContent = 'Cancelled';
       } else if (r.cancelled === 'running') {
@@ -857,7 +860,10 @@ async function ensurePollerRunning() {
         entry.statusText.textContent = 'Stopping…';
       } else if (isRunning) {
         entry.card.classList.add('running');
-        entry.statusText.textContent = `Generating… ${secs}s`;
+        const p = await api(`/jobs/${id}/progress`, { signal: pollSignal() }).catch(() => null);
+        entry.statusText.textContent = p?.max ? `Generating… step ${p.value}/${p.max} · ${secs}s` : `Generating… ${secs}s`;
+        if (p?.max) { entry.bar.max = p.max; entry.bar.value = p.value; entry.bar.classList.remove('hide'); }
+        if (p?.frame && p.frame !== entry.frame) showLivePreview(id, entry, p.frame);
       } else if (isPending) {
         entry.card.classList.remove('running');
         entry.statusText.textContent = `Waiting in queue (#${queueIndex + 1}) · ${secs}s`;
@@ -880,6 +886,23 @@ async function ensurePollerRunning() {
     await new Promise(ok => setTimeout(ok, 2000));
   }
   pollerActive = false;
+}
+
+async function showLivePreview(id, entry, frame) {
+  entry.frame = frame;
+  try {
+    const r = await fetch(`/api/jobs/${id}/preview`, { headers: { Authorization: 'Bearer ' + token }, signal: pollSignal() });
+    if (!r.ok || entry.stopped) return;
+    URL.revokeObjectURL(entry.live.src);
+    entry.live.src = URL.createObjectURL(await r.blob());
+    entry.live.classList.remove('hide');
+  } catch (e) {}
+}
+
+function endProgress(entry) {
+  entry.bar.remove();
+  URL.revokeObjectURL(entry.live.src);
+  entry.live.remove();
 }
 
 function mediaFor(item, thumb) {
@@ -914,8 +937,41 @@ function notifyDone(job, ok) {
   });
 }
 
+/* Share hands the full-size file to the phone's share sheet, where "Set as wallpaper" and Photos live. */
+function resultActions(item) {
+  let file = null;
+  const share = el('button', { class: 'secondary', type: 'button' }, '↗ Share');
+  const save = el('a', { class: 'button ghost', href: item.url, download: item.filename }, '⬇ Save');
+  share.onclick = async () => {
+    share.disabled = true;
+    try {
+      if (!file) {
+        share.textContent = 'Loading…';
+        const r = await fetch(item.url);
+        if (!r.ok) throw Error('Could not load the file');
+        const blob = await r.blob();
+        file = new File([blob], item.filename, { type: blob.type });
+      }
+      if (!navigator.canShare?.({ files: [file] })) {
+        save.click();
+        return;
+      }
+      await navigator.share({ files: [file] });
+    } catch (e) {
+      // A slow download can use up the tap that allowed sharing; the file is kept, so a second tap works.
+      if (e.name === 'NotAllowedError' && file) showToast('Ready. Tap Share again');
+      else if (e.name !== 'AbortError') showToast('Share failed: ' + e.message);
+    } finally {
+      share.textContent = '↗ Share';
+      share.disabled = false;
+    }
+  };
+  return el('div', { class: 'row result-actions' }, share, save);
+}
+
 function showResults(job, entry, r) {
   const ok = r.status === 'success';
+  endProgress(entry);
   showActions(job, entry);
   notifyDone(job, ok);
   entry.card.classList.remove('running');
@@ -925,7 +981,8 @@ function showResults(job, entry, r) {
   const finals = r.outputs.filter(o => o.kind !== 'text' && !o.preview);
   const previews = r.outputs.filter(o => o.kind !== 'text' && o.preview);
   const texts = r.outputs.filter(o => o.kind === 'text');
-  const nodes = finals.map(item => el('a', { href: item.url, target: '_blank', rel: 'noopener' }, mediaFor(item)));
+  const nodes = finals.map(item => el('figure', { class: 'result' },
+    el('a', { href: item.url, target: '_blank', rel: 'noopener' }, mediaFor(item)), resultActions(item)));
 
   if (texts.length) {
     nodes.push(el('details', { open: true },

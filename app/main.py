@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import urlencode, urlparse
 import httpx
 from fastapi import FastAPI, HTTPException, Header, Request
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
@@ -16,6 +16,7 @@ try:
     from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, upload_name, view_query
     from job_store import JobStore
     from push import Push, PushError
+    from progress import ProgressTracker, listen
 except ImportError:
     from app.workflow_validation import inspect_workflow, load_workflow
     from app.workflow_sync import WorkflowSync
@@ -24,6 +25,7 @@ except ImportError:
     from app.workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, upload_name, view_query
     from app.job_store import JobStore
     from app.push import Push, PushError
+    from app.progress import ProgressTracker, listen
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
@@ -37,6 +39,9 @@ DATA_DIR = Path(os.getenv('DATA_DIR','/data'))
 job_store = JobStore(DATA_DIR)
 push = Push(DATA_DIR, os.getenv('PUSH_CONTACT','mailto:image-studio@localhost'))
 log = logging.getLogger('image-studio')
+# Jobs are queued under this client id, and ComfyUI sends their progress only to it.
+CLIENT_ID = 'image-studio-mobile'
+progress = ProgressTracker()
 _http_client: httpx.AsyncClient | None = None
 
 @asynccontextmanager
@@ -46,9 +51,10 @@ async def lifespan(app: FastAPI):
         timeout=httpx.Timeout(20.0, connect=4.0),
         limits=httpx.Limits(max_keepalive_connections=20, max_connections=50)
     )
-    watcher = asyncio.create_task(watch_jobs())
+    tasks = [asyncio.create_task(watch_jobs()), asyncio.create_task(listen(COMFY, CLIENT_ID, progress))]
     yield
-    watcher.cancel()
+    for task in tasks:
+        task.cancel()
     if _http_client is not None:
         await _http_client.aclose()
         _http_client = None
@@ -340,7 +346,7 @@ async def jobs(job: Job, authorization: str | None = Header(default=None)):
         applied=apply_job(graph,job.prompt,job.images,job.seed)
     except (ControlError, JobError) as exc:
         raise HTTPException(400,str(exc)) from exc
-    result=await request('POST','/prompt',json={'prompt':graph,'client_id':'image-studio-mobile'})
+    result=await request('POST','/prompt',json={'prompt':graph,'client_id':CLIENT_ID})
     if result.get('prompt_id'):
         try:
             job_store.add(result['prompt_id'], name.rsplit('/',1)[-1].removesuffix('.json'), job.prompt)
@@ -373,6 +379,19 @@ async def job_status(prompt_id: str, authorization: str | None = Header(default=
     if not re.fullmatch(r'[0-9a-fA-F-]{36}',prompt_id): raise HTTPException(400,'Invalid job id')
     data=await request('GET',f'/history/{prompt_id}')
     return data.get(prompt_id,{'status':'pending'})
+
+@app.get('/api/jobs/{prompt_id}/progress')
+def job_progress(prompt_id: str, authorization: str | None = Header(default=None)):
+    '''Sampler steps of a running job and a counter that changes with each live preview frame.'''
+    auth(authorization)
+    return progress.status(prompt_id) or {'value':0,'max':0,'node':None,'frame':0}
+
+@app.get('/api/jobs/{prompt_id}/preview')
+def job_preview(prompt_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    job=progress.jobs.get(prompt_id)
+    if not job or not job['preview']: raise HTTPException(404,'No preview yet')
+    return Response(job['preview'],media_type=job['preview_type'],headers={'Cache-Control':'no-store'})
 
 @app.post('/api/jobs/{prompt_id}/cancel')
 async def cancel_job(prompt_id: str, authorization: str | None = Header(default=None)):
