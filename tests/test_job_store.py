@@ -86,8 +86,11 @@ class PushTests(unittest.TestCase):
     def test_only_browser_push_services(self):
         self.assertTrue(push_host_allowed("https://fcm.googleapis.com/fcm/send/abc"))
         self.assertTrue(push_host_allowed("https://web.push.apple.com/QG"))
+        self.assertTrue(push_host_allowed("https://jmt17.google.com/fcm/send/abc"))
+        self.assertTrue(push_host_allowed("https://updates.push.services.mozilla.com/wpush/v2/x"))
         for url in ("http://fcm.googleapis.com/x", "https://fcm.googleapis.com:8443/x", "https://evil.com/fcm.googleapis.com",
-                    "https://fcm.googleapis.com.evil.com/x", "https://192.168.1.10/x", "https://push.apple.com.evil/x"):
+                    "https://fcm.googleapis.com.evil.com/x", "https://192.168.1.10/x", "https://push.apple.com.evil/x",
+                    "https://google.com.evil.com/x", "https://evilgoogle.com/x"):
             self.assertFalse(push_host_allowed(url), url)
 
     def test_subscribe_validates_and_dedupes(self):

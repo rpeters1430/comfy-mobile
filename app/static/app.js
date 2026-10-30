@@ -999,8 +999,16 @@ async function renderGallery() {
       const r = all[id];
       if (!r) { thumb.replaceChildren('Unavailable'); continue; }
       const cover = r.outputs.find(o => o.kind !== 'text' && !o.preview) || r.outputs.find(o => o.kind !== 'text');
-      thumb.replaceChildren(cover ? mediaFor(cover, true) : (r.completed ? 'No image' : 'In progress'));
+      thumb.replaceChildren(cover ? mediaFor(cover, true) : r.status === 'missing' ? 'Gone from ComfyUI' : (r.completed ? 'No image' : 'In progress'));
     }
+    const gone = [...thumbs.keys()].filter(id => all[id]?.status === 'missing');
+    $('remove-gone').classList.toggle('hide', !gone.length);
+    $('remove-gone').textContent = `Remove ${gone.length} gone`;
+    $('remove-gone').onclick = () => {
+      store(GALLERY_KEY, JSON.stringify(galleryJobs().filter(j => !gone.includes(j.id))));
+      renderGallery();
+      showToast(`Removed ${gone.length} jobs`);
+    };
   } catch (e) {
     thumbs.forEach(thumb => thumb.replaceChildren('Unavailable'));
   }

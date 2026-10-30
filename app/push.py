@@ -18,8 +18,9 @@ try:
 except ImportError:  # flat imports inside the Docker image
     from job_store import write_atomic
 
-# Chrome/Android, Firefox, Safari/iOS and Edge.
-PUSH_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.com", ".push.apple.com", ".notify.windows.com")
+# Chrome/Android (FCM, which also hands out *.google.com endpoints), Firefox, Safari/iOS and Edge. A leading dot
+# allows any subdomain; every host here belongs to a browser vendor's push service.
+PUSH_HOSTS = (".googleapis.com", ".google.com", ".push.services.mozilla.com", ".push.apple.com", ".notify.windows.com")
 MAX_SUBSCRIPTIONS = 20
 TTL = 24 * 3600
 
@@ -79,7 +80,7 @@ class Push:
 
     def subscribe(self, endpoint: str, p256dh: str, auth: str) -> None:
         if not push_host_allowed(endpoint):
-            raise PushError("Unsupported push service")
+            raise PushError(f"Unsupported push service: {urlparse(endpoint).hostname}")
         try:
             if len(_b64(p256dh)) != 65 or len(_b64(auth)) != 16:
                 raise ValueError

@@ -442,13 +442,22 @@ async def job_outputs_batch(body: JobIds, authorization: str | None = Header(def
     '''The gallery's covers in one call; a job ComfyUI can't answer for comes back as null.'''
     auth(authorization)
     ids=[i for i in dict.fromkeys(body.ids) if re.fullmatch(r'[0-9a-fA-F-]{36}',i)]
+    try:
+        q=await request('GET','/queue')
+        queued={item[1] for key in ('queue_running','queue_pending') for item in q.get(key,[]) if isinstance(item,list) and len(item)>1}
+    except HTTPException:
+        queued=None
     limit=asyncio.Semaphore(6)
     async def one(prompt_id):
         async with limit:
             try:
-                return await outputs_for(prompt_id)
+                r=await outputs_for(prompt_id)
             except HTTPException:
                 return None
+        # Neither queued nor in the history: ComfyUI restarted since, and it only keeps history in memory.
+        if r['status']=='pending' and queued is not None and prompt_id not in queued:
+            r={**r,'status':'missing'}
+        return r
     return dict(zip(ids,await asyncio.gather(*map(one,ids))))
 
 @app.get('/api/jobs/{prompt_id}/view')

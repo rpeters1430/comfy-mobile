@@ -86,9 +86,11 @@ class ApiTests(unittest.TestCase):
     def test_batch_outputs(self):
         from fastapi import HTTPException
         from unittest.mock import patch
-        done, pending, offline = ("0f8d2a4c-1111-4222-8333-94445555666" + c for c in "678")
+        done, pending, offline, gone = ("0f8d2a4c-1111-4222-8333-94445555666" + c for c in "6789")
 
         async def fake(method, path, **kw):
+            if path == "/queue":
+                return {"queue_running": [[0, pending]], "queue_pending": []}
             if path.endswith(offline):
                 raise HTTPException(502, "down")
             if path.endswith(done):
@@ -96,11 +98,12 @@ class ApiTests(unittest.TestCase):
             return {}
 
         with patch.object(main, "request", side_effect=fake):
-            r = self.client.post("/api/jobs/outputs", json={"ids": [done, pending, offline, "../x", done]},
+            r = self.client.post("/api/jobs/outputs", json={"ids": [done, pending, offline, "../x", done, gone]},
                                  headers={"Authorization": "Bearer secret123"})
         self.assertEqual(200, r.status_code)
         body = r.json()
-        self.assertEqual([done, pending, offline], list(body))
+        self.assertEqual([done, pending, offline, gone], list(body))
+        self.assertEqual("missing", body[gone]["status"])
         self.assertEqual(("success", "pending", None), (body[done]["status"], body[pending]["status"], body[offline]))
         self.assertEqual(401, self.client.post("/api/jobs/outputs", json={"ids": []}).status_code)
 
