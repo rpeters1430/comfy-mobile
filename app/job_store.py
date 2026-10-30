@@ -6,6 +6,7 @@ import json
 import os
 import re
 import time
+import tempfile
 from pathlib import Path
 
 JOB_ID = re.compile(r"[0-9a-fA-F-]{36}")
@@ -16,9 +17,16 @@ WATCH_FOR = 24 * 3600
 
 
 def write_atomic(path: Path, data: bytes) -> None:
-    partial = path.with_name(path.name + ".partial")
-    partial.write_bytes(data)
-    os.replace(partial, path)
+    # A unique, exclusively created file prevents symlink clobbering and concurrent
+    # writers sharing a temporary file. mkstemp creates it with mode 0600.
+    fd, name = tempfile.mkstemp(prefix=path.name + '.', suffix='.partial', dir=path.parent)
+    partial = Path(name)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(data)
+        os.replace(partial, path)
+    finally:
+        partial.unlink(missing_ok=True)
 
 
 class JobStore:

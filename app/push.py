@@ -5,22 +5,23 @@ only ever posts to the browser vendors' push services below, never to an arbitra
 import base64
 import json
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
 from cryptography.hazmat.primitives import serialization
 from py_vapid import Vapid
 from pywebpush import WebPushException, webpush
-from requests import RequestException
+from requests import RequestException, Session
 
 try:
     from app.job_store import write_atomic
 except ImportError:  # flat imports inside the Docker image
     from job_store import write_atomic
 
-# Chrome/Android (FCM, which also hands out *.google.com endpoints), Firefox, Safari/iOS and Edge. A leading dot
-# allows any subdomain; every host here belongs to a browser vendor's push service.
-PUSH_HOSTS = (".googleapis.com", ".google.com", ".push.services.mozilla.com", ".push.apple.com", ".notify.windows.com")
+# Chrome/Android FCM (including legacy jmtNN.google.com), Firefox, Safari/iOS and Edge.
+# A leading dot permits subdomains of that specific push service, not all vendor domains.
+PUSH_HOSTS = ('fcm.googleapis.com', '.push.services.mozilla.com', '.push.apple.com', '.notify.windows.com')
 MAX_SUBSCRIPTIONS = 20
 TTL = 24 * 3600
 
@@ -29,10 +30,25 @@ class PushError(ValueError):
     pass
 
 
+class PushSession(Session):
+    """A validated push host must not redirect the NAS to a different service."""
+    def request(self, method, url, **kwargs):
+        kwargs['allow_redirects'] = False
+        return super().request(method, url, **kwargs)
+
+
 def push_host_allowed(endpoint: str) -> bool:
-    url = urlparse(endpoint)
-    host = url.hostname or ""
-    return url.scheme == "https" and not url.port and any(host == h or (h.startswith(".") and host.endswith(h)) for h in PUSH_HOSTS)
+    if not isinstance(endpoint, str) or any(c.isspace() or ord(c) < 32 for c in endpoint):
+        return False
+    try:
+        url = urlparse(endpoint)
+        host = url.hostname or ''
+        return (url.scheme == 'https' and not url.port and not url.username and not url.password
+                and not url.fragment and bool(url.path)
+                and (bool(re.fullmatch(r'jmt\d+\.google\.com', host))
+                     or any(host == h or (h.startswith('.') and host.endswith(h)) for h in PUSH_HOSTS)))
+    except ValueError:
+        return False
 
 
 def _b64(value: str) -> bytes:
@@ -80,7 +96,7 @@ class Push:
 
     def subscribe(self, endpoint: str, p256dh: str, auth: str) -> None:
         if not push_host_allowed(endpoint):
-            raise PushError(f"Unsupported push service: {urlparse(endpoint).hostname}")
+            raise PushError('Invalid or unsupported push service')
         try:
             if len(_b64(p256dh)) != 65 or len(_b64(auth)) != 16:
                 raise ValueError
@@ -98,8 +114,9 @@ class Push:
         subs, gone, sent = self.subscriptions(), set(), 0
         for sub in subs:
             try:
-                webpush(sub, json.dumps(payload), vapid_private_key=self.vapid(), vapid_claims={"sub": self.contact},
-                        ttl=TTL, timeout=10)
+                with PushSession() as session:
+                    webpush(sub, json.dumps(payload), vapid_private_key=self.vapid(), vapid_claims={"sub": self.contact},
+                            ttl=TTL, timeout=10, requests_session=session)
                 sent += 1
             except WebPushException as exc:
                 if exc.response is not None and exc.response.status_code in (404, 410):

@@ -53,6 +53,17 @@ def apply_job(graph: dict, prompt: str, images: list[str], seed: int | None) -> 
 
 
 VIDEO_EXT = (".mp4", ".webm", ".mkv", ".mov")
+IMAGE_EXT = ('.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif')
+
+
+def safe_output(filename, subfolder, kind) -> bool:
+    if not isinstance(filename, str) or not isinstance(subfolder, str) or kind not in ('output', 'temp'):
+        return False
+    if not filename.lower().endswith(IMAGE_EXT + VIDEO_EXT) or '/' in filename or '\\' in filename:
+        return False
+    if subfolder.startswith('/') or '\\' in subfolder or ':' in subfolder or '..' in subfolder.split('/'):
+        return False
+    return not any(ord(c) < 32 or ord(c) == 127 for c in filename + subfolder)
 
 
 def job_outputs(entry: dict) -> list[dict]:
@@ -64,6 +75,8 @@ def job_outputs(entry: dict) -> list[dict]:
                 continue
             for item in items:
                 if isinstance(item, dict) and isinstance(item.get("filename"), str):
+                    if not safe_output(item['filename'], item.get('subfolder', ''), item.get('type', 'output')):
+                        continue
                     kind = "video" if key in ("videos", "gifs") or item["filename"].lower().endswith(VIDEO_EXT) else "image"
                     files.append({"node": node_id, "kind": kind, "filename": item["filename"],
                                   "subfolder": item.get("subfolder", ""), "type": item.get("type", "output"),
@@ -85,13 +98,17 @@ def view_signature(secret: str, prompt_id: str, filename: str, subfolder: str, k
 
 
 def view_query(secret: str, prompt_id: str, item: dict, now: float | None = None) -> dict:
+    if not safe_output(item['filename'], item['subfolder'], item['type']):
+        raise JobError('Unsupported output file')
     expires = -(-int((now or time.time()) + VIEW_TTL) // VIEW_STEP) * VIEW_STEP
     return {"filename": item["filename"], "subfolder": item["subfolder"], "type": item["type"], "expires": expires,
             "sig": view_signature(secret, prompt_id, item["filename"], item["subfolder"], item["type"], expires)}
 
 
 def check_view(secret: str, prompt_id: str, filename: str, subfolder: str, kind: str, expires: int, sig: str, now: float | None = None) -> bool:
-    if not secret or expires < (now or time.time()):
+    if not secret or expires < (now or time.time()) or not safe_output(filename, subfolder, kind):
+        return False
+    if not re.fullmatch(r'[0-9a-f]{64}', sig):
         return False
     return hmac.compare_digest(sig, view_signature(secret, prompt_id, filename, subfolder, kind, expires))
 
