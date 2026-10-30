@@ -59,6 +59,9 @@
       <div id="prompt-box">
         <label for="prompt">Prompt</label>
         <textarea id="prompt" placeholder="Describe what you want to create…" spellcheck="false"></textarea>
+        <label style="margin-top:8px">Wallpaper style</label>
+        <div class="aspects" id="styles" role="group" aria-label="Wallpaper style"></div>
+        <small class="status" id="style-hint" style="display:block;margin-top:4px"></small>
         <div class="row" style="margin-top:6px">
           <select id="saved-prompts" aria-label="Saved prompts" style="flex:1"><option value="">Saved prompts…</option></select>
           <button class="ghost" id="save-prompt" type="button">★ Save</button>
@@ -120,8 +123,9 @@
       <p id="free-status" class="status"></p>
     </div>
     <div class="panel">
-      <div class="row between"><h2>Notifications</h2><button class="secondary" id="notify" type="button">Enable</button></div>
-      <p id="notify-status" class="status">Get a notification when a job finishes while the app is backgrounded.</p>
+      <div class="row between"><h2>Notifications</h2>
+        <div class="row"><button class="ghost hide" id="notify-test" type="button">Test</button><button class="secondary" id="notify" type="button">Enable</button></div></div>
+      <p id="notify-status" class="status">Get a notification when a job finishes, even with the app closed.</p>
     </div>
     <div class="panel">
       <h2>Share photos into the app</h2>

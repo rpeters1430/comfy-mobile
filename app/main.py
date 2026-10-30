@@ -1,4 +1,4 @@
-import json, os, re, secrets, time
+import asyncio, json, logging, os, re, secrets, time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
@@ -13,13 +13,17 @@ try:
     from workflow_sync import WorkflowSync
     from workflow_conversion import convert_ui, ConversionError
     from workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls
-    from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, job_outputs, upload_name, view_query
+    from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, upload_name, view_query
+    from job_store import JobStore
+    from push import Push, PushError
 except ImportError:
     from app.workflow_validation import inspect_workflow, load_workflow
     from app.workflow_sync import WorkflowSync
     from app.workflow_conversion import convert_ui, ConversionError
     from app.workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls
-    from app.workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, job_outputs, upload_name, view_query
+    from app.workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, upload_name, view_query
+    from app.job_store import JobStore
+    from app.push import Push, PushError
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
@@ -28,6 +32,11 @@ _LOCAL_STATIC = Path(__file__).resolve().parent / 'static'
 STATIC = Path(os.getenv('STATIC_DIR', str(_LOCAL_STATIC) if _LOCAL_STATIC.is_dir() else '/app/static'))
 SYNC_DIR = Path(os.getenv('WORKFLOW_SYNC_DIR','/workflow-sync'))
 workflow_sync = WorkflowSync(COMFY, SYNC_DIR)
+# Writable NAS folder for job records, thumbnails and push keys. Without it those features are simply off.
+DATA_DIR = Path(os.getenv('DATA_DIR','/data'))
+job_store = JobStore(DATA_DIR)
+push = Push(DATA_DIR, os.getenv('PUSH_CONTACT','mailto:image-studio@localhost'))
+log = logging.getLogger('image-studio')
 _http_client: httpx.AsyncClient | None = None
 
 @asynccontextmanager
@@ -37,7 +46,9 @@ async def lifespan(app: FastAPI):
         timeout=httpx.Timeout(20.0, connect=4.0),
         limits=httpx.Limits(max_keepalive_connections=20, max_connections=50)
     )
+    watcher = asyncio.create_task(watch_jobs())
     yield
+    watcher.cancel()
     if _http_client is not None:
         await _http_client.aclose()
         _http_client = None
@@ -88,6 +99,47 @@ async def get_object_info(force_refresh: bool = False) -> dict:
     return data
 
 _catalog_inspect_cache: dict = {}
+
+def signed(prompt_id: str, summary: dict) -> dict:
+    return {**summary, 'outputs': [o if o['kind'] == 'text' else {**o, 'url': f'/api/jobs/{prompt_id}/view?' + urlencode(view_query(TOKEN, prompt_id, o))}
+                                   for o in summary['outputs']]}
+
+async def finish_job(job_id: str, entry: dict) -> None:
+    '''Record a finished job, keep a thumbnail of its cover image and tell the phones.'''
+    summary = job_summary(entry)
+    first = cover(summary['outputs'])
+    if first and first['kind'] == 'image':
+        try:
+            r = await _http_client.get(f'{COMFY}/view', params={'filename': first['filename'], 'subfolder': first['subfolder'],
+                                                               'type': first['type'], 'preview': 'webp;80'})
+            if r.status_code == 200:
+                job_store.save_thumb(job_id, r.content)
+        except (httpx.HTTPError, OSError):
+            pass
+    job = job_store.get(job_id)
+    job_store.finish(job_id, summary)
+    if not push.enabled:
+        return
+    ok = summary['status'] == 'success'
+    payload = {'title': f"{job['workflow']} is ready" if ok else f"{job['workflow']} failed", 'body': job['prompt'] or 'Tap to view result',
+               'tag': job_id, 'url': '/?job=' + job_id}
+    if first and first['kind'] == 'image':
+        payload['image'] = signed(job_id, {'outputs': [first]})['outputs'][0]['url'] + '&thumb=1'
+    await asyncio.to_thread(push.send, payload)
+
+async def watch_jobs():
+    '''Follow jobs started from the app until ComfyUI reports them done, even when no phone is polling.'''
+    while True:
+        await asyncio.sleep(3)
+        try:
+            for job_id in job_store.watching():
+                data = await request('GET', f'/history/{job_id}')
+                if job_id in data:
+                    await finish_job(job_id, data[job_id])
+        except HTTPException:
+            pass  # ComfyUI is offline; try again later
+        except Exception:
+            log.exception('Job watcher failed')
 
 def auth(authorization: str | None):
     if not TOKEN or not authorization or not secrets.compare_digest(authorization, f'Bearer {TOKEN}'):
@@ -246,6 +298,11 @@ class LoraChoice(BaseModel):
     name: str = Field(max_length=300)
     strength: float
 
+class FitChoice(BaseModel):
+    width: int
+    height: int
+    upscaler: str | None = Field(default=None,max_length=300)
+
 class Job(BaseModel):
     workflow_id: str = Field(max_length=240)
     prompt: str = Field(default='',max_length=10000)
@@ -257,6 +314,7 @@ class Job(BaseModel):
     sampling: dict[str,dict[str,str|float]] = Field(default_factory=dict,max_length=8)
     size: dict[str,int] | None = None
     caption: dict[str,dict[str,bool|str]] = Field(default_factory=dict,max_length=4)
+    fit: FitChoice | None = None
 
 @app.post('/api/jobs')
 async def jobs(job: Job, authorization: str | None = Header(default=None)):
@@ -277,11 +335,17 @@ async def jobs(job: Job, authorization: str | None = Header(default=None)):
         raise HTTPException(400, {'message': 'Workflow cannot run', 'errors': validation['errors'], 'warnings': validation['warnings']})
     # Only the {{prompt}} placeholder is replaced, so negative prompts and instructions are never rewritten.
     try:
-        apply_controls(graph,info,job.models,{k:v.model_dump() for k,v in job.loras.items()},[v.model_dump() for v in job.extra_loras],job.sampling,job.size,job.caption)
+        apply_controls(graph,info,job.models,{k:v.model_dump() for k,v in job.loras.items()},[v.model_dump() for v in job.extra_loras],job.sampling,job.size,job.caption,
+                       job.fit.model_dump() if job.fit else None)
         applied=apply_job(graph,job.prompt,job.images,job.seed)
     except (ControlError, JobError) as exc:
         raise HTTPException(400,str(exc)) from exc
     result=await request('POST','/prompt',json={'prompt':graph,'client_id':'image-studio-mobile'})
+    if result.get('prompt_id'):
+        try:
+            job_store.add(result['prompt_id'], name.rsplit('/',1)[-1].removesuffix('.json'), job.prompt)
+        except OSError:
+            log.exception('Could not record job')
     return {'prompt_id':result.get('prompt_id'),'node_errors':result.get('node_errors',{}),**applied}
 
 @app.post('/api/uploads')
@@ -336,19 +400,13 @@ async def free_memory(authorization: str | None = Header(default=None)):
 async def job_output_list(prompt_id: str, authorization: str | None = Header(default=None)):
     auth(authorization)
     if not re.fullmatch(r'[0-9a-fA-F-]{36}',prompt_id): raise HTTPException(400,'Invalid job id')
+    # A finished job is answered from the NAS record, so the gallery still works after ComfyUI restarts.
+    stored=job_store.get(prompt_id)
+    if stored and stored['summary']: return signed(prompt_id,stored['summary'])
     data=await request('GET',f'/history/{prompt_id}')
     entry=data.get(prompt_id)
     if entry is None: return {'status':'pending','completed':False,'outputs':[],'errors':[]}
-    status=entry.get('status',{})
-    outputs=[]
-    for item in job_outputs(entry):
-        if item['kind']!='text':
-            item={**item,'url':f'/api/jobs/{prompt_id}/view?'+urlencode(view_query(TOKEN,prompt_id,item))}
-        outputs.append(item)
-    errors=[m[1] for m in status.get('messages',[]) if isinstance(m,list) and len(m)==2 and m[0]=='execution_error']
-    interrupted=any(isinstance(m,list) and m and m[0]=='execution_interrupted' for m in status.get('messages',[]))
-    return {'status':status.get('status_str','unknown'),'completed':status.get('completed',False),'outputs':outputs,'interrupted':interrupted,
-            'errors':[{k:e.get(k) for k in ('node_id','node_type','exception_message')} for e in errors if isinstance(e,dict)]}
+    return signed(prompt_id,job_summary(entry))
 
 @app.get('/api/jobs/{prompt_id}/view')
 async def job_view(prompt_id: str, filename: str, expires: int, sig: str, subfolder: str = '', type: str = 'output',
@@ -356,6 +414,12 @@ async def job_view(prompt_id: str, filename: str, expires: int, sig: str, subfol
     '''Stream one output file. Authorized by the signed URL from /outputs, so <img> and <video> work.'''
     if not re.fullmatch(r'[0-9a-fA-F-]{36}',prompt_id): raise HTTPException(400,'Invalid job id')
     if not check_view(TOKEN,prompt_id,filename,subfolder,type,expires,sig): raise HTTPException(401,'Link expired or invalid')
+    # Gallery thumbnails come from the NAS copy, so they show even while the ComfyUI PC is off.
+    stored=job_store.get(prompt_id)
+    first=stored and stored['summary'] and cover(stored['summary']['outputs'])
+    if thumb and first and (first['filename'],first['subfolder'],first['type'])==(filename,subfolder,type) and job_store.thumb_path(prompt_id).is_file():
+        return FileResponse(job_store.thumb_path(prompt_id),media_type='image/webp',
+                            headers={'Cache-Control':f'private, max-age={max(0,expires-int(time.time()))}, immutable'})
     # The signature is only ever issued for this job's own outputs, so no /history round trip is needed here.
     params={'filename':filename,'subfolder':subfolder,'type':type}
     # ComfyUI re-encodes the image as WebP: a fraction of a full PNG, for cards and the gallery.
@@ -374,3 +438,42 @@ async def job_view(prompt_id: str, filename: str, expires: int, sig: str, subfol
     # Output files never change and the URL is stable until it expires, so let the phone keep them.
     headers['cache-control']=f'private, max-age={max(0,expires-int(time.time()))}, immutable'
     return StreamingResponse(upstream.aiter_bytes(),status_code=upstream.status_code,headers=headers,background=BackgroundTask(close))
+
+
+class PushKeys(BaseModel):
+    p256dh: str = Field(max_length=200)
+    auth: str = Field(max_length=100)
+
+class PushSubscription(BaseModel):
+    endpoint: str = Field(max_length=1000)
+    keys: PushKeys | None = None
+
+def push_ready():
+    if not push.enabled: raise HTTPException(503,'Push needs a writable DATA_DIR on the NAS')
+
+@app.get('/api/push/key')
+def push_key(authorization: str | None = Header(default=None)):
+    auth(authorization); push_ready()
+    return {'key':push.public_key()}
+
+@app.post('/api/push/subscribe')
+def push_subscribe(sub: PushSubscription, authorization: str | None = Header(default=None)):
+    auth(authorization); push_ready()
+    if sub.keys is None: raise HTTPException(400,'Subscription keys required')
+    try:
+        push.subscribe(sub.endpoint,sub.keys.p256dh,sub.keys.auth)
+    except PushError as exc:
+        raise HTTPException(400,str(exc)) from exc
+    return {'subscribed':True}
+
+@app.post('/api/push/unsubscribe')
+def push_unsubscribe(sub: PushSubscription, authorization: str | None = Header(default=None)):
+    auth(authorization); push_ready()
+    push.unsubscribe(sub.endpoint)
+    return {'subscribed':False}
+
+@app.post('/api/push/test')
+async def push_test(authorization: str | None = Header(default=None)):
+    auth(authorization); push_ready()
+    sent=await asyncio.to_thread(push.send,{'title':'Image Studio','body':'Notifications are working.','tag':'test','url':'/'})
+    return {'sent':sent}

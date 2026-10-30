@@ -94,3 +94,19 @@ def check_view(secret: str, prompt_id: str, filename: str, subfolder: str, kind:
     if not secret or expires < (now or time.time()):
         return False
     return hmac.compare_digest(sig, view_signature(secret, prompt_id, filename, subfolder, kind, expires))
+
+
+def job_summary(entry: dict) -> dict:
+    """What /outputs reports for a finished /history entry, without view URLs (those are signed per request)."""
+    status = entry.get("status") or {}
+    messages = [m for m in status.get("messages", []) if isinstance(m, list) and m]
+    errors = [m[1] for m in messages if len(m) == 2 and m[0] == "execution_error" and isinstance(m[1], dict)]
+    return {"status": status.get("status_str", "unknown"), "completed": status.get("completed", False),
+            "outputs": job_outputs(entry), "interrupted": any(m[0] == "execution_interrupted" for m in messages),
+            "errors": [{k: e.get(k) for k in ("node_id", "node_type", "exception_message")} for e in errors]}
+
+
+def cover(outputs: list[dict]) -> dict | None:
+    """The output the gallery shows for a job: the first final file, else the first preview."""
+    files = [o for o in outputs if o["kind"] != "text"]
+    return next((o for o in files if not o["preview"]), files[0] if files else None)

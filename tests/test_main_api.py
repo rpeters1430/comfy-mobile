@@ -52,6 +52,39 @@ class ApiTests(unittest.TestCase):
         r = self.client.get("/api/jobs/not-a-valid-uuid", headers={"Authorization": "Bearer secret123"})
         self.assertEqual(r.status_code, 400)
 
+    def test_finished_job_served_from_nas_without_comfyui(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from urllib.parse import parse_qs, urlparse
+        from unittest.mock import patch
+        from app.job_store import JobStore
+        from app.workflow_jobs import job_summary
+
+        job = "0f8d2a4c-1111-4222-8333-944455556666"
+        webp = b"RIFF\x10\x00\x00\x00WEBPVP8 " + b"\x00" * 8
+        with TemporaryDirectory() as tmp:
+            store = JobStore(Path(tmp))
+            store.add(job, "01_SDXL", "a cat")
+            store.finish(job, job_summary({"status": {"status_str": "success", "completed": True},
+                                           "outputs": {"9": {"images": [{"filename": "a.png", "subfolder": "", "type": "output"}]}}}))
+            store.save_thumb(job, webp)
+            # request() is never called: ComfyUI may be off.
+            with patch.object(main, "job_store", store), patch.object(main, "request", side_effect=AssertionError):
+                r = self.client.get(f"/api/jobs/{job}/outputs", headers={"Authorization": "Bearer secret123"})
+                self.assertEqual(200, r.status_code)
+                [output] = r.json()["outputs"]
+                self.assertEqual("a.png", output["filename"])
+                r = self.client.get(output["url"] + "&thumb=1")
+                self.assertEqual((200, webp), (r.status_code, r.content))
+                query = parse_qs(urlparse(output["url"]).query)
+                r = self.client.get(f"/api/jobs/{job}/view", params={**{k: v[0] for k, v in query.items()}, "sig": "0" * 64, "thumb": 1})
+                self.assertEqual(401, r.status_code)
+
+    def test_push_endpoints_need_auth(self):
+        for method, path in (("get", "/api/push/key"), ("post", "/api/push/subscribe"), ("post", "/api/push/test")):
+            self.assertEqual(401, getattr(self.client, method)(path).status_code if method == "get"
+                             else self.client.post(path, json={"endpoint": "https://fcm.googleapis.com/x"}).status_code)
+
 
 if __name__ == "__main__":
     unittest.main()

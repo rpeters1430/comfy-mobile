@@ -26,6 +26,9 @@ CAPTION_CHOICES = ("model", "caption_type", "length", "content_mode")
 CAPTION_TOGGLES = ("vulgar_slang", "lighting", "camera_angle", "shot_type", "composition", "depth_of_field",
                    "camera_settings", "aesthetic_quality", "mention_mood")
 MAX_SIDE, MAX_PIXELS = 2880, 2048 * 2048
+# Final image outputs that a fit-to-screen resize can be put in front of.
+SAVE_CLASSES = ("SaveImage", "SaveImageAdvanced")
+FIT_MAX_SIDE, FIT_MAX_PIXELS = 4096, 4096 * 4096
 
 
 class ControlError(ValueError):
@@ -84,6 +87,11 @@ def _latents(graph):
             and all(isinstance(node["inputs"].get(f), int) and not isinstance(node["inputs"].get(f), bool) for f in ("width", "height"))]
 
 
+def _saves(graph):
+    return [node_id for node_id, node in graph.items()
+            if node["class_type"] in SAVE_CLASSES and isinstance(node["inputs"].get("images"), list)]
+
+
 def _captions(graph, object_info):
     found = []
     for node_id, node in graph.items():
@@ -115,6 +123,8 @@ def find_controls(graph: dict, object_info: dict) -> dict:
     return {"models": models, "loras": loras, "lora_options": _options(object_info, "LoraLoaderModelOnly", "lora_name"),
             "can_add_lora": _lora_anchor(graph, models) is not None,
             "samplers": _samplers(graph), "size": size, "captions": _captions(graph, object_info),
+            "can_fit": bool(_saves(graph)) and "ImageScale" in object_info,
+            "upscale_options": _options(object_info, "UpscaleModelLoader", "model_name"),
             "sampler_options": _options(object_info, "KSampler", "sampler_name"),
             "scheduler_options": _options(object_info, "KSampler", "scheduler")}
 
@@ -185,12 +195,43 @@ def _apply_size(graph, size):
         graph[node_id]["inputs"]["width"], graph[node_id]["inputs"]["height"] = width, height
 
 
+def _apply_fit(graph, found, fit):
+    """Resize every saved image to an exact screen size: optional model upscale, then lanczos with a center crop.
+
+    The workflow still renders near its own pixel count, which is what the model was trained for; rendering a
+    2.6 MP phone screen in one pass tends to duplicate subjects."""
+    width, height, upscaler = fit.get("width"), fit.get("height"), fit.get("upscaler")
+    for side in (width, height):
+        if isinstance(side, bool) or not isinstance(side, int) or not 256 <= side <= FIT_MAX_SIDE:
+            raise ControlError(f"Screen width and height must be between 256 and {FIT_MAX_SIDE}")
+    if width * height > FIT_MAX_PIXELS:
+        raise ControlError("Screen size is too large")
+    if not found["can_fit"]:
+        raise ControlError("This workflow has no image output to fit to a screen")
+    if upscaler is not None and upscaler not in found["upscale_options"]:
+        raise ControlError(f"Upscale model not found in ComfyUI: {upscaler}")
+    if upscaler is not None:
+        graph["mobile_upscale_model"] = {"class_type": "UpscaleModelLoader", "inputs": {"model_name": upscaler}}
+    for i, save in enumerate(_saves(graph), 1):
+        source = graph[save]["inputs"]["images"]
+        if upscaler is not None:
+            graph[f"mobile_upscale_{i}"] = {"class_type": "ImageUpscaleWithModel",
+                                            "inputs": {"upscale_model": ["mobile_upscale_model", 0], "image": source}}
+            source = [f"mobile_upscale_{i}", 0]
+        graph[f"mobile_fit_{i}"] = {"class_type": "ImageScale", "inputs": {
+            "image": source, "upscale_method": "lanczos", "width": width, "height": height, "crop": "center"}}
+        graph[save]["inputs"]["images"] = [f"mobile_fit_{i}", 0]
+
+
 def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, extra_loras: list,
-                   sampling: dict | None = None, size: dict | None = None, caption: dict | None = None) -> None:
+                   sampling: dict | None = None, size: dict | None = None, caption: dict | None = None,
+                   fit: dict | None = None) -> None:
     """Apply phone choices in place. Only nodes and options found by find_controls are accepted."""
-    if not (models or loras or extra_loras or sampling or size or caption):
+    if not (models or loras or extra_loras or sampling or size or caption or fit):
         return
     found = find_controls(graph, object_info)
+    if fit:
+        _apply_fit(graph, found, fit)
     if sampling:
         _apply_sampling(graph, found, sampling)
     if caption:

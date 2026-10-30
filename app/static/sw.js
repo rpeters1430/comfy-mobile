@@ -1,5 +1,5 @@
-// Service worker: receives photos shared from other apps (Web Share Target) and opens
-// notifications for finished jobs. It never caches the app or API responses.
+// Service worker: receives photos shared from other apps (Web Share Target), shows push
+// notifications for finished jobs and opens them. It never caches the app or API responses.
 const SHARED = 'shared-images';
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -17,6 +17,15 @@ self.addEventListener('fetch', event => {
       new Response(file, { headers: { 'Content-Type': file.type, 'X-Name': encodeURIComponent(file.name || 'shared') } }))));
     return Response.redirect(`/?shared=${files.length}`, 303);
   })());
+});
+
+// Sent by the NAS when a job finishes. The tag is the job id, so this replaces the app's own notification for it.
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data?.json() || {}; } catch (e) {}
+  event.waitUntil(self.registration.showNotification(data.title || 'Image Studio', {
+    body: data.body || '', icon: '/icon-192.png', tag: data.tag, image: data.image, data: { url: data.url || '/' }
+  }));
 });
 
 self.addEventListener('notificationclick', event => {

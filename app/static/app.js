@@ -5,6 +5,7 @@ const GALLERY_KEY = 'image-studio-mobile:jobs:v1';
 const PROMPTS_KEY = 'image-studio-mobile:prompts:v1';
 const CONTROLS_KEY = 'image-studio-mobile:controls:v1';
 const CAPTION_KEY = 'image-studio-mobile:caption:v1';
+const STYLE_KEY = 'image-studio-mobile:style:v1';
 const SHARED_CACHE = 'shared-images';
 const MAX_SIDE = 2048;
 
@@ -280,6 +281,39 @@ $('delete-prompt').onclick = () => {
   showToast('Prompt removed');
 };
 
+/* ---------- Wallpaper Style Presets ---------- */
+const STYLE_PRESETS = [
+  { id: 'amoled', label: '🌑 AMOLED Dark', suffix: 'phone wallpaper, pure black background, deep shadows, glowing accents, high contrast, minimal, vertical composition' },
+  { id: 'minimal', label: '◻️ Minimal', suffix: 'minimalist phone wallpaper, clean simple shapes, lots of negative space, soft muted palette, uncluttered, vertical composition' },
+  { id: 'gradient', label: '🌈 Gradient', suffix: 'abstract gradient phone wallpaper, smooth flowing color blend, soft grain, no text, vertical composition' },
+  { id: 'nature', label: '🏔️ Landscape', suffix: 'scenic landscape phone wallpaper, dramatic natural light, sharp detail, atmospheric depth, vertical composition, photography' },
+  { id: 'anime', label: '🌸 Anime', suffix: 'anime style phone wallpaper, vibrant colors, detailed background art, cinematic lighting, vertical composition' },
+  { id: 'cyberpunk', label: '🌃 Neon City', suffix: 'cyberpunk phone wallpaper, neon lights, rain-soaked streets, magenta and cyan glow, night, vertical composition' },
+  { id: 'space', label: '🪐 Space', suffix: 'cosmic phone wallpaper, nebula, starfield, distant planets, deep space colors, vertical composition' },
+  { id: 'lowpoly', label: '🔷 Low Poly', suffix: 'low poly geometric phone wallpaper, faceted shapes, flat shading, crisp edges, vertical composition' },
+  { id: 'watercolor', label: '🎨 Watercolor', suffix: 'watercolor painting phone wallpaper, soft washes, paper texture, gentle bleeding edges, vertical composition' },
+  { id: 'pixel', label: '👾 Pixel Art', suffix: 'pixel art phone wallpaper, retro 16-bit style, limited palette, crisp pixels, vertical composition' },
+];
+// The middle of the screen sits under the clock and app icons, so every style asks for no text.
+const STYLE_TAIL = 'no text, no watermark';
+
+function currentStyle() { return STYLE_PRESETS.find(s => s.id === load(STYLE_KEY)) || null; }
+function styledPrompt(text, style, cinematic) {
+  return [text, style?.suffix, cinematic ? CINEMATIC_SUFFIX : null, style || cinematic ? STYLE_TAIL : null].filter(Boolean).join(', ');
+}
+
+function renderStyles() {
+  const current = currentStyle();
+  const chips = [{ id: '', label: 'None' }, ...STYLE_PRESETS].map(s => {
+    const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String((current?.id || '') === s.id) }, s.label);
+    chip.onclick = () => { store(STYLE_KEY, s.id || null); renderStyles(); };
+    return chip;
+  });
+  $('styles').replaceChildren(...chips);
+  $('style-hint').textContent = current ? `Adds: ${current.suffix}, ${STYLE_TAIL}` : 'Your prompt is sent as written.';
+}
+renderStyles();
+
 /* ---------- Models, LoRAs, Sampler & Shape Controls ---------- */
 const MAX_EXTRA_LORAS = 4;
 function fileLabel(path) { return String(path).split(/[\\/]/).pop().replace(/\.(safetensors|ckpt|pt|gguf)$/i, ''); }
@@ -318,7 +352,7 @@ async function loadControls(wf) {
   controls = found;
   const saved = savedControls()[wf.id] || {};
   const loraOk = name => controls.lora_options.includes(name);
-  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', customSize: null, preset: '', caption: {} };
+  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', preset: '', upscaler: '', cinematic: saved.cinematic !== false, caption: {} };
   for (const m of controls.models) choices.models[m.node] = m.options.includes(saved.models?.[m.node]) ? saved.models[m.node] : m.value;
   for (const l of controls.loras) {
     const s = saved.loras?.[l.node];
@@ -333,13 +367,14 @@ async function loadControls(wf) {
         values[field] = value;
     choices.sampling[smp.node] = values;
   }
-  if (saved.customSize) {
-    choices.customSize = saved.customSize;
-    choices.preset = saved.preset || '';
-  } else if (controls.size && (ASPECTS.includes(saved.aspect) || saved.aspect === '9:19.5' || saved.aspect === '9:20')) {
+  const preset = WALLPAPER_PRESETS.find(p => p.id === saved.preset);
+  if (controls.size && preset) {
+    choices.preset = preset.id;
+    choices.aspect = presetAspect(preset);
+  } else if (controls.size && ASPECTS.includes(saved.aspect)) {
     choices.aspect = saved.aspect;
-    choices.preset = saved.preset || '';
   }
+  if (controls.upscale_options.includes(saved.upscaler)) choices.upscaler = saved.upscaler;
   const shared = savedCaption();
   for (const cap of controls.captions) {
     const values = { ...cap.values };
@@ -365,14 +400,23 @@ const ASPECTS = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9'];
 
 const WALLPAPER_PRESETS = [
   { id: 'iphone', label: '🍏 iPhone (19.5:9)', aspect: '9:19.5', native: null, desc: 'Model-tuned for iPhone 13–16 Pro/Max' },
-  { id: 'pixel', label: '📱 Pixel (20:9)', aspect: '9:20', native: null, desc: 'Model-tuned for Google Pixel 6–9 / Pro' },
+  { id: 'pixel', label: '📱 Pixel (20:9)', aspect: '9:20', native: null, cinematic: true, desc: 'Model-tuned for Google Pixel 6–9 / Pro' },
   { id: 'samsung', label: '🌌 Galaxy (19.5:9)', aspect: '9:19.5', native: null, desc: 'Model-tuned for Galaxy S22–S25' },
   { id: 'story', label: '🎬 Story (9:16)', aspect: '9:16', native: null, desc: 'Model-tuned 9:16 vertical canvas' },
-  { id: 'pixel-native', label: '📱 Pixel Native (1080×2400)', aspect: null, native: { width: 1080, height: 2400 }, desc: 'Exact screen resolution for Pixel 7/8/9' },
+  { id: 'pixel-native', label: '📱 Pixel Native (1080×2400)', aspect: null, native: { width: 1080, height: 2400 }, cinematic: true, desc: 'Exact screen resolution for Pixel 7/8/9' },
   { id: 'iphone-native', label: '🍏 iPhone Native (1176×2552)', aspect: null, native: { width: 1176, height: 2552 }, desc: 'Exact screen resolution for iPhone 15/16 Pro' },
   { id: 'samsung-native', label: '🌌 Galaxy Native (1080×2344)', aspect: null, native: { width: 1080, height: 2344 }, desc: 'Exact screen resolution for Galaxy S23/S24' },
   { id: 'qhd-native', label: '🖥️ QHD 1440p (1440×2560)', aspect: null, native: { width: 1440, height: 2560 }, desc: 'Crisp Quad HD 16:9 vertical' },
 ];
+
+// Pixel's Cinematic wallpaper cuts the main subject out of the background on-device and moves the layers
+// in 3D, so it works best with one clear subject, real depth and good contrast. The parallax also zooms in a
+// little, which crops the edges, and the lock-screen clock sits at the top, so the subject stays low and central.
+const CINEMATIC_SUFFIX = 'single clear main subject in the lower middle of the frame, subject sharply separated from the background, ' +
+  'strong sense of depth with distinct foreground and background layers, uncluttered background, good contrast, ' +
+  'open sky or space in the top third, nothing important near the edges';
+
+function cinematicOn(c) { return !!(c?.cinematic && WALLPAPER_PRESETS.find(p => p.id === c.preset)?.cinematic); }
 
 function aspectSize(aspect, base) {
   const [a, b] = aspect.split(':').map(Number);
@@ -381,8 +425,12 @@ function aspectSize(aspect, base) {
   return { width, height: Math.max(256, Math.round(width * b / a / 64) * 64) };
 }
 
+// Exact-resolution presets render at the preset's shape within the workflow's own pixel budget, then the
+// server upscales and center-crops the saved image to the screen (see workflow_controls._apply_fit).
+function presetAspect(p) { return p.native ? `${p.native.width}:${p.native.height}` : p.aspect; }
+function fitSize(c) { return (controls?.can_fit && WALLPAPER_PRESETS.find(p => p.id === c?.preset)?.native) || null; }
+
 function chosenSize(c) {
-  if (c?.customSize) return c.customSize;
   return controls?.size && c?.aspect ? aspectSize(c.aspect, controls.size) : controls?.size || null;
 }
 
@@ -472,8 +520,11 @@ function sizeSection(changed) {
     } else if (choices.aspect) {
       desc = `Aspect ratio ${choices.aspect} (preserving workflow pixel budget)`;
     }
-    note.textContent = `${size.width} × ${size.height} px`;
+    const fit = fitSize(choices);
+    note.textContent = fit ? `${fit.width} × ${fit.height} px (rendered at ${size.width} × ${size.height}, then upscaled)`
+      : `${size.width} × ${size.height} px`;
     hint.textContent = desc;
+    upscaleRow.classList.toggle('hide', !fit);
   }
 
   const wpChips = WALLPAPER_PRESETS.map(preset => {
@@ -487,13 +538,7 @@ function sizeSection(changed) {
 
     chip.onclick = () => {
       choices.preset = preset.id;
-      if (preset.native) {
-        choices.customSize = { ...preset.native };
-        choices.aspect = '';
-      } else {
-        choices.customSize = null;
-        choices.aspect = preset.aspect;
-      }
+      choices.aspect = presetAspect(preset);
       refreshChips();
       updateDisplay();
       changed();
@@ -511,7 +556,6 @@ function sizeSection(changed) {
 
     chip.onclick = () => {
       choices.preset = '';
-      choices.customSize = null;
       choices.aspect = aspect;
       refreshChips();
       updateDisplay();
@@ -520,7 +564,27 @@ function sizeSection(changed) {
     return chip;
   });
 
+  const cinematicChip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(!!choices.cinematic) }, '🎞️ Cinematic-ready');
+  const cinematicHint = el('small', { class: 'status', style: 'display:block;margin-top:2px' },
+    'Composes for Pixel’s Cinematic wallpaper effect: one clear subject, layered depth, clean background. ' +
+    'Turn on the Cinematic effect when you set the image as your wallpaper.');
+  const cinematicRow = el('div', {}, el('div', { class: 'aspects' }, cinematicChip), cinematicHint);
+  cinematicChip.onclick = () => {
+    choices.cinematic = !choices.cinematic;
+    cinematicChip.setAttribute('aria-pressed', String(choices.cinematic));
+    changed();
+  };
+
+  const upscaler = el('select', { 'aria-label': 'Upscaler' },
+    new Option('Lanczos resize (no model)', ''), ...controls.upscale_options.map(o => new Option(fileLabel(o), o)));
+  upscaler.value = choices.upscaler;
+  upscaler.onchange = () => { choices.upscaler = upscaler.value; changed(); };
+  const upscaleRow = el('div', { style: 'margin-top:6px' }, el('label', {}, 'Upscaler'), upscaler,
+    controls.upscale_options.length ? null
+      : el('small', { class: 'status', style: 'display:block;margin-top:2px' }, 'Add an upscale model (e.g. 4x-UltraSharp) to ComfyUI’s models/upscale_models for sharper results.'));
+
   function refreshChips() {
+    cinematicRow.classList.toggle('hide', !WALLPAPER_PRESETS.find(p => p.id === choices.preset)?.cinematic);
     wpChips.forEach((chip, i) => {
       chip.setAttribute('aria-pressed', String(choices.preset === WALLPAPER_PRESETS[i].id));
     });
@@ -531,15 +595,18 @@ function sizeSection(changed) {
     });
   }
 
+  refreshChips();
   updateDisplay();
 
   return el('div', { class: 'lora' },
     el('label', { style: 'margin:0' }, 'Phone Wallpapers (Pixel, iPhone, Samsung)'),
     el('div', { class: 'aspects', style: 'margin-bottom:8px' }, wpChips),
+    cinematicRow,
     el('label', { style: 'margin:8px 0 0' }, 'Standard Shape & Aspect Ratio'),
     el('div', { class: 'aspects' }, aspectChips),
     note,
-    hint
+    hint,
+    upscaleRow
   );
 }
 
@@ -611,8 +678,9 @@ function controlsText(c) {
   const parts = Object.values(c.models || {}).map(fileLabel);
   const loras = [...Object.values(c.loras || {}).filter(l => l.on), ...(c.extra || [])];
   if (loras.length) parts.push(loras.map(l => `${fileLabel(l.name)} ${Number(l.strength).toFixed(2)}`).join(', '));
-  const size = chosenSize(c);
-  if (size && (c.aspect || c.customSize)) parts.push(`${size.width}×${size.height}`);
+  const size = fitSize(c) || chosenSize(c);
+  if (size && c.aspect) parts.push(`${size.width}×${size.height}`);
+  if (cinematicOn(c)) parts.push('Cinematic');
   const base = controls?.samplers.find(smp => smp.role === 'base');
   const v = base && c.sampling?.[base.node];
   if (v && 'steps' in v) parts.push(`${v.steps} steps` + ('cfg' in v ? ` · CFG ${v.cfg}` : ''));
@@ -640,10 +708,12 @@ function controlsPayload(c) {
     const changes = Object.fromEntries(Object.entries(c.caption?.[cap.node] || {}).filter(([f, v]) => v !== cap.values[f]));
     if (Object.keys(changes).length) caption[cap.node] = changes;
   }
-  const size = c.customSize || (c.aspect ? chosenSize(c) : null);
+  const size = c.aspect ? chosenSize(c) : null;
+  const fit = fitSize(c);
   return {
     models, loras, extra_loras: c.extra.map(x => ({ name: x.name, strength: x.strength })), sampling, caption,
-    ...(size && (size.width !== controls.size.width || size.height !== controls.size.height) ? { size } : {})
+    ...(size && (size.width !== controls.size.width || size.height !== controls.size.height) ? { size } : {}),
+    ...(fit ? { fit: { ...fit, ...(c.upscaler ? { upscaler: c.upscaler } : {}) } } : {})
   };
 }
 
@@ -665,13 +735,14 @@ $('form').onsubmit = async event => {
   if (selected.takes_prompt && !prompt) return void ($('form-error').textContent = 'Enter a prompt.');
   const base = $('seed').value === '' ? null : Number($('seed').value);
   const runs = Number($('runs').value) || 1;
+  const style = selected.takes_prompt ? currentStyle() : null;
   $('generate').disabled = true;
   try {
     for (let i = 0; i < runs; i++) {
       await submitJob({
         workflowId: selected.id, workflow: prettyName(selected.name), takesPrompt: selected.takes_prompt,
-        prompt: selected.takes_prompt ? prompt : '', images: slots.map(s => s.name), seed: base === null ? randomSeed() : base + i,
-        controls: controlsPayload(choices), controlsText: controlsText(choices)
+        prompt: selected.takes_prompt ? styledPrompt(prompt, style, cinematicOn(choices)) : '', images: slots.map(s => s.name), seed: base === null ? randomSeed() : base + i,
+        controls: controlsPayload(choices), controlsText: [style?.label, controlsText(choices)].filter(Boolean).join(' · ')
       }, i === 0);
     }
   } catch (e) {
@@ -967,17 +1038,64 @@ $('free-vram').onclick = async () => {
   }
 };
 
-function renderNotify() {
-  const supported = 'Notification' in window && 'serviceWorker' in navigator;
-  const state = supported ? Notification.permission : 'unsupported';
-  $('notify').classList.toggle('hide', state !== 'default');
-  if (state === 'granted') $('notify-status').textContent = 'On. You get notifications when backgrounded.';
-  if (state === 'denied') $('notify-status').textContent = 'Blocked in browser settings.';
-  if (state === 'unsupported') $('notify-status').textContent = 'Not supported in this browser.';
+/* Push: the NAS watches each job and pushes when it finishes, so this works with the app closed. */
+const canPush = () => 'Notification' in window && 'PushManager' in window && !!swReg?.pushManager;
+function urlKey(b64) { return Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)); }
+function sameKey(sub, key) {
+  const current = sub?.options?.applicationServerKey;
+  return !!current && new Uint8Array(current).join() === urlKey(key).join();
 }
+
+async function subscribePush() {
+  const { key } = await api('/push/key');
+  let sub = await swReg.pushManager.getSubscription();
+  // A new NAS data folder means a new server key, and an old subscription can't be reused.
+  if (sub && !sameKey(sub, key)) { await sub.unsubscribe(); sub = null; }
+  sub ||= await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlKey(key) });
+  await api('/push/subscribe', { method: 'POST', json: sub.toJSON() });
+}
+
+async function renderNotify() {
+  const sub = canPush() ? await swReg.pushManager.getSubscription() : null;
+  const state = !canPush() ? 'unsupported' : Notification.permission === 'denied' ? 'denied' : sub ? 'on' : 'off';
+  $('notify').classList.toggle('hide', state === 'unsupported' || state === 'denied');
+  $('notify').textContent = state === 'on' ? 'Turn off' : 'Enable';
+  $('notify-test').classList.toggle('hide', state !== 'on');
+  $('notify-status').textContent = {
+    on: 'On. This phone gets a notification when a job finishes, even with the app closed.',
+    off: 'Get a notification when a job finishes, even with the app closed.',
+    denied: 'Blocked in browser settings.',
+    unsupported: window.isSecureContext ? 'Not supported in this browser. On iPhone, add the app to the Home Screen first.'
+      : 'Needs the app to be opened over HTTPS (for example with Tailscale Serve).'
+  }[state];
+}
+
 $('notify').onclick = async () => {
-  await Notification.requestPermission();
+  $('notify').disabled = true;
+  try {
+    const sub = await swReg.pushManager.getSubscription();
+    if (sub) {
+      await api('/push/unsubscribe', { method: 'POST', json: { endpoint: sub.endpoint } }).catch(() => {});
+      await sub.unsubscribe();
+    } else if (await Notification.requestPermission() === 'granted') {
+      await subscribePush();
+      showToast('Notifications on');
+    }
+  } catch (e) {
+    $('notify-status').textContent = 'Could not turn on notifications: ' + e.message;
+    return;
+  } finally {
+    $('notify').disabled = false;
+  }
   renderNotify();
+};
+$('notify-test').onclick = async () => {
+  try {
+    const r = await api('/push/test', { method: 'POST' });
+    showToast(r.sent ? 'Test notification sent' : 'No phone reached');
+  } catch (e) {
+    showToast('Test failed: ' + e.message);
+  }
 };
 
 $('sync-now').onclick = async () => {
@@ -1049,6 +1167,8 @@ $('shared-dismiss').onclick = clearShared;
     token = savedToken;
     $('token').value = savedToken;
     refresh();
+    // Re-register with the NAS in case its data folder was reset since this phone subscribed.
+    if (canPush() && Notification.permission === 'granted' && await swReg.pushManager.getSubscription()) subscribePush().catch(() => {});
   }
   const params = new URLSearchParams(location.search);
   if (params.has('shared')) {

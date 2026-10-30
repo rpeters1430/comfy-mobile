@@ -166,6 +166,35 @@ class ControlTests(unittest.TestCase):
             with self.subTest(caption=caption), self.assertRaises(ControlError):
                 apply_controls(self.captioned(), INFO, {}, {}, [], caption=caption)
 
+    def saved(self):
+        return {"8": {"class_type": "VAEDecode", "inputs": {"samples": ["7", 0], "vae": ["1", 2]}},
+                "9": {"class_type": "SaveImage", "inputs": {"images": ["8", 0], "filename_prefix": "x"}}}
+
+    FIT_INFO = {**INFO, "ImageScale": {}, "UpscaleModelLoader": {"input": {"required": {"model_name": [["4x-UltraSharp.pth"]]}}}}
+
+    def test_fit_resizes_saved_images_to_the_screen(self):
+        graph = self.saved()
+        self.assertTrue(find_controls(graph, self.FIT_INFO)["can_fit"])
+        apply_controls(graph, self.FIT_INFO, {}, {}, [], fit={"width": 1080, "height": 2400})
+        self.assertEqual(["mobile_fit_1", 0], graph["9"]["inputs"]["images"])
+        self.assertEqual({"image": ["8", 0], "upscale_method": "lanczos", "width": 1080, "height": 2400, "crop": "center"},
+                         graph["mobile_fit_1"]["inputs"])
+
+    def test_fit_with_upscale_model(self):
+        graph = self.saved()
+        apply_controls(graph, self.FIT_INFO, {}, {}, [], fit={"width": 1080, "height": 2400, "upscaler": "4x-UltraSharp.pth"})
+        self.assertEqual({"upscale_model": ["mobile_upscale_model", 0], "image": ["8", 0]}, graph["mobile_upscale_1"]["inputs"])
+        self.assertEqual(["mobile_upscale_1", 0], graph["mobile_fit_1"]["inputs"]["image"])
+
+    def test_rejects_bad_fit(self):
+        for info, fit in ((self.FIT_INFO, {"width": 1080, "height": 9000}), (self.FIT_INFO, {"width": 1080, "height": 2400, "upscaler": "other.pth"}),
+                          (INFO, {"width": 1080, "height": 2400})):
+            with self.subTest(fit=fit), self.assertRaises(ControlError):
+                apply_controls(self.saved(), info, {}, {}, [], fit=fit)
+        with self.assertRaises(ControlError):
+            apply_controls({"9": {"class_type": "SaveVideo", "inputs": {"video": ["8", 0]}}}, self.FIT_INFO, {}, {}, [],
+                           fit={"width": 1080, "height": 2400})
+
 
 if __name__ == "__main__":
     unittest.main()

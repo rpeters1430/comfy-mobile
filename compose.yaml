@@ -11,9 +11,12 @@ services:
       STUDIO_TOKEN: ${STUDIO_TOKEN:?Set a strong access token}
       WORKFLOW_DIR: /workflows
       WORKFLOW_SYNC_DIR: /workflow-sync
+      DATA_DIR: /data
     volumes:
       - ./workflows:/workflows:ro
       - ./workflow-sync:/workflow-sync
+      # Job records, gallery thumbnails and push keys. Must be writable by uid 1000.
+      - ./data:/data
     mem_limit: 256m
     security_opt:
       - no-new-privileges:true
