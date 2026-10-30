@@ -352,6 +352,7 @@ async def jobs(job: Job, authorization: str | None = Header(default=None)):
         raise HTTPException(400,str(exc)) from exc
     result=await request('POST','/prompt',json={'prompt':graph,'client_id':CLIENT_ID})
     if result.get('prompt_id'):
+        progress.expect(result['prompt_id'], graph)
         try:
             job_store.add(result['prompt_id'], name.rsplit('/',1)[-1].removesuffix('.json'), job.prompt)
         except OSError:

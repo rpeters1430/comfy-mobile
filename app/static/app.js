@@ -814,8 +814,18 @@ async function ensurePollerRunning() {
         const p = await api(`/jobs/${id}/progress`, { signal: pollSignal() }).catch(() => null);
         // Single-step nodes (auto-caption, VAE) report 1/1; only sampler steps are worth showing.
         const steps = p?.max > 1;
-        entry.statusText.textContent = steps ? `Generating… step ${p.value}/${p.max} · ${secs}s` : `Generating… ${secs}s`;
-        if (steps) { entry.bar.max = p.max; entry.bar.value = p.value; entry.bar.classList.remove('hide'); }
+        const passes = p?.passes > 1 ? p.passes : 0;
+        const pass = passes ? `pass ${Math.min(Math.max(p.pass, 1), passes)}/${passes} · ` : '';
+        entry.statusText.textContent = p?.finishing ? `Finishing up (decoding and saving)… ${secs}s`
+          : steps ? `Generating… ${pass}step ${p.value}/${p.max} · ${secs}s`
+          : `Generating… ${passes && p.pass ? pass : ''}${secs}s`;
+        // One bar across every pass, so a two-pass video doesn't look done halfway.
+        if (steps) {
+          const done = passes ? (Math.min(Math.max(p.pass, 1), passes) - 1 + p.value / p.max) / passes : p.value / p.max;
+          entry.bar.max = 1; entry.bar.value = done; entry.bar.classList.remove('hide');
+        } else if (p?.finishing) {
+          entry.bar.removeAttribute('value'); entry.bar.classList.remove('hide');
+        }
         if (p?.frame && p.frame !== entry.frame) showLivePreview(id, entry, p.frame);
       } else if (isPending) {
         entry.card.classList.remove('running');
