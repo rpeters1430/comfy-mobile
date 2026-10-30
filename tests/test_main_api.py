@@ -23,6 +23,9 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn("var(--accent)", r.text)
 
+        r = self.client.get("/presets.js")
+        self.assertIn("WALLPAPER_PRESETS", r.text)
+
         r = self.client.get("/app.js")
         self.assertEqual(r.status_code, 200)
         self.assertIn("Image Studio Mobile", r.text)

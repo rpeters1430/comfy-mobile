@@ -282,25 +282,7 @@ $('delete-prompt').onclick = () => {
 };
 
 /* ---------- Wallpaper Style Presets ---------- */
-const STYLE_PRESETS = [
-  { id: 'amoled', label: '🌑 AMOLED Dark', suffix: 'phone wallpaper, pure black background, deep shadows, glowing accents, high contrast, minimal, vertical composition' },
-  { id: 'minimal', label: '◻️ Minimal', suffix: 'minimalist phone wallpaper, clean simple shapes, lots of negative space, soft muted palette, uncluttered, vertical composition' },
-  { id: 'gradient', label: '🌈 Gradient', suffix: 'abstract gradient phone wallpaper, smooth flowing color blend, soft grain, no text, vertical composition' },
-  { id: 'nature', label: '🏔️ Landscape', suffix: 'scenic landscape phone wallpaper, dramatic natural light, sharp detail, atmospheric depth, vertical composition, photography' },
-  { id: 'anime', label: '🌸 Anime', suffix: 'anime style phone wallpaper, vibrant colors, detailed background art, cinematic lighting, vertical composition' },
-  { id: 'cyberpunk', label: '🌃 Neon City', suffix: 'cyberpunk phone wallpaper, neon lights, rain-soaked streets, magenta and cyan glow, night, vertical composition' },
-  { id: 'space', label: '🪐 Space', suffix: 'cosmic phone wallpaper, nebula, starfield, distant planets, deep space colors, vertical composition' },
-  { id: 'lowpoly', label: '🔷 Low Poly', suffix: 'low poly geometric phone wallpaper, faceted shapes, flat shading, crisp edges, vertical composition' },
-  { id: 'watercolor', label: '🎨 Watercolor', suffix: 'watercolor painting phone wallpaper, soft washes, paper texture, gentle bleeding edges, vertical composition' },
-  { id: 'pixel', label: '👾 Pixel Art', suffix: 'pixel art phone wallpaper, retro 16-bit style, limited palette, crisp pixels, vertical composition' },
-];
-// The middle of the screen sits under the clock and app icons, so every style asks for no text.
-const STYLE_TAIL = 'no text, no watermark';
-
 function currentStyle() { return STYLE_PRESETS.find(s => s.id === load(STYLE_KEY)) || null; }
-function styledPrompt(text, style, cinematic) {
-  return [text, style?.suffix, cinematic ? CINEMATIC_SUFFIX : null, style || cinematic ? STYLE_TAIL : null].filter(Boolean).join(', ');
-}
 
 function renderStyles() {
   const current = currentStyle();
@@ -396,38 +378,6 @@ function strengthRow(choice, onChange) {
   return [range, out];
 }
 
-const ASPECTS = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9'];
-
-const WALLPAPER_PRESETS = [
-  { id: 'iphone', label: '🍏 iPhone (19.5:9)', aspect: '9:19.5', native: null, desc: 'Model-tuned for iPhone 13–16 Pro/Max' },
-  { id: 'pixel', label: '📱 Pixel (20:9)', aspect: '9:20', native: null, cinematic: true, desc: 'Model-tuned for Google Pixel 6–9 / Pro' },
-  { id: 'samsung', label: '🌌 Galaxy (19.5:9)', aspect: '9:19.5', native: null, desc: 'Model-tuned for Galaxy S22–S25' },
-  { id: 'story', label: '🎬 Story (9:16)', aspect: '9:16', native: null, desc: 'Model-tuned 9:16 vertical canvas' },
-  { id: 'pixel-native', label: '📱 Pixel Native (1080×2400)', aspect: null, native: { width: 1080, height: 2400 }, cinematic: true, desc: 'Exact screen resolution for Pixel 7/8/9' },
-  { id: 'iphone-native', label: '🍏 iPhone Native (1176×2552)', aspect: null, native: { width: 1176, height: 2552 }, desc: 'Exact screen resolution for iPhone 15/16 Pro' },
-  { id: 'samsung-native', label: '🌌 Galaxy Native (1080×2344)', aspect: null, native: { width: 1080, height: 2344 }, desc: 'Exact screen resolution for Galaxy S23/S24' },
-  { id: 'qhd-native', label: '🖥️ QHD 1440p (1440×2560)', aspect: null, native: { width: 1440, height: 2560 }, desc: 'Crisp Quad HD 16:9 vertical' },
-];
-
-// Pixel's Cinematic wallpaper cuts the main subject out of the background on-device and moves the layers
-// in 3D, so it works best with one clear subject, real depth and good contrast. The parallax also zooms in a
-// little, which crops the edges, and the lock-screen clock sits at the top, so the subject stays low and central.
-const CINEMATIC_SUFFIX = 'single clear main subject in the lower middle of the frame, subject sharply separated from the background, ' +
-  'strong sense of depth with distinct foreground and background layers, uncluttered background, good contrast, ' +
-  'open sky or space in the top third, nothing important near the edges';
-
-function cinematicOn(c) { return !!(c?.cinematic && WALLPAPER_PRESETS.find(p => p.id === c.preset)?.cinematic); }
-
-function aspectSize(aspect, base) {
-  const [a, b] = aspect.split(':').map(Number);
-  const area = base.width * base.height;
-  const width = Math.max(256, Math.round(Math.sqrt(area * a / b) / 64) * 64);
-  return { width, height: Math.max(256, Math.round(width * b / a / 64) * 64) };
-}
-
-// Exact-resolution presets render at the preset's shape within the workflow's own pixel budget, then the
-// server upscales and center-crops the saved image to the screen (see workflow_controls._apply_fit).
-function presetAspect(p) { return p.native ? `${p.native.width}:${p.native.height}` : p.aspect; }
 function fitSize(c) { return (controls?.can_fit && WALLPAPER_PRESETS.find(p => p.id === c?.preset)?.native) || null; }
 
 function chosenSize(c) {

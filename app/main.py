@@ -59,7 +59,8 @@ async def lifespan(app: FastAPI):
         await _http_client.aclose()
         _http_client = None
 
-app = FastAPI(title='Image Studio Mobile', version='0.4.0-dev', lifespan=lifespan)
+VERSION = '0.4.0-dev'
+app = FastAPI(title='Image Studio Mobile', version=VERSION, lifespan=lifespan)
 
 async def request(method, path, expect_json=True, **kwargs):
     client = _http_client
@@ -157,6 +158,9 @@ def home(): return FileResponse(STATIC/'index.html')
 @app.get('/style.css')
 def style(): return FileResponse(STATIC/'style.css', media_type='text/css', headers={'Cache-Control':'no-cache'})
 
+@app.get('/presets.js')
+def presets_js(): return FileResponse(STATIC/'presets.js', media_type='text/javascript', headers={'Cache-Control':'no-cache'})
+
 @app.get('/app.js')
 def app_js(): return FileResponse(STATIC/'app.js', media_type='text/javascript', headers={'Cache-Control':'no-cache'})
 
@@ -185,7 +189,7 @@ def check_auth(authorization: str | None = Header(default=None)):
 async def health(authorization: str | None = Header(default=None)):
     auth(authorization)
     info = await request('GET','/system_stats')
-    return {'comfyui':'online','devices':info.get('devices',[]),'version':'0.4.0-dev'}
+    return {'comfyui':'online','devices':info.get('devices',[]),'version':VERSION}
 
 @app.get('/api/catalog')
 async def catalog(authorization: str | None = Header(default=None)):

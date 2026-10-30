@@ -14,6 +14,7 @@ python -m unittest discover -s tests -v          # full suite (what CI runs, Pyt
 python -m unittest tests.test_workflow_conversion -v
 python -m unittest tests.test_workflow_conversion.ConversionTests.test_connected_graph_and_prompt
 python -m compileall -q app                      # CI also runs this as a syntax check
+node --test tests/                               # front-end helpers in static/presets.js
 docker build -t comfy-mobile .
 ```
 
@@ -45,7 +46,6 @@ Configuration is env-only: `COMFYUI_URL`, `STUDIO_TOKEN` (required, or every end
 ## Conventions
 
 - Keep security posture conservative. The service is meant for a trusted LAN or Tailscale network only, and new endpoints should be authenticated and must not leak ComfyUI user-data beyond workflow `.json` names.
-- The version string `0.4.0-dev` is duplicated in `FastAPI(version=...)` and in the `/api/health` response.
+- The version string lives in `VERSION` in `main.py` (used by FastAPI and `/api/health`); the README title repeats it.
 - `.env` lives on the NAS and must never be committed. Pushes to `main` publish `ghcr.io/rpeters1430/comfy-mobile:latest` and `v*` tags are published too. Renovate manages pinned dependencies, the action SHAs and the base image digest.
-- README.md still says the bundled UI workflows aren't runnable. That's out of date now that conversion exists.
 - `python tools/check_workflows.py` converts every workflow against `fixtures/object_info.local.json` (gitignored; refresh with `curl -o fixtures/object_info.local.json http://100.77.144.56:8188/object_info` over Tailscale). All 30 bundled workflows pass. A `LoraLoaderModelOnly` left on `None` is bypassed (mode 4) in the files rather than special-cased in the converter.
