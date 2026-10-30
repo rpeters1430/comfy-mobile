@@ -1,29 +1,36 @@
 import asyncio, json, logging, os, re, secrets, time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlencode, urlparse
 import httpx
-from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi import FastAPI, HTTPException, Header, Request, Query
 from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 try:
     from workflow_validation import inspect_workflow, load_workflow
-    from workflow_sync import WorkflowSync
+    from workflow_sync import WorkflowSync, bounded_get
     from workflow_conversion import convert_ui, ConversionError
     from workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls
-    from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, upload_name, view_query
+    from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, view_query
     from job_store import JobStore
+    from preset_store import PresetStore
+    from caption_review import CaptionError, capability, caption_graph, apply_review
+    from wake import WakePC, WakeError
     from push import Push, PushError
     from progress import ProgressTracker, listen
 except ImportError:
     from app.workflow_validation import inspect_workflow, load_workflow
-    from app.workflow_sync import WorkflowSync
+    from app.workflow_sync import WorkflowSync, bounded_get
     from app.workflow_conversion import convert_ui, ConversionError
     from app.workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls
-    from app.workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, upload_name, view_query
+    from app.workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, view_query
     from app.job_store import JobStore
+    from app.preset_store import PresetStore
+    from app.caption_review import CaptionError, capability, caption_graph, apply_review
+    from app.wake import WakePC, WakeError
     from app.push import Push, PushError
     from app.progress import ProgressTracker, listen
 
@@ -37,6 +44,8 @@ workflow_sync = WorkflowSync(COMFY, SYNC_DIR)
 # Writable NAS folder for job records, thumbnails and push keys. Without it those features are simply off.
 DATA_DIR = Path(os.getenv('DATA_DIR','/data'))
 job_store = JobStore(DATA_DIR)
+preset_store = PresetStore(DATA_DIR)
+wake_pc = WakePC(os.getenv('WOL_MAC', ''), os.getenv('WOL_BROADCAST', ''))
 push = Push(DATA_DIR, os.getenv('PUSH_CONTACT','mailto:image-studio@localhost'))
 log = logging.getLogger('image-studio')
 # Jobs are queued under this client id, and ComfyUI sends their progress only to it.
@@ -59,7 +68,7 @@ async def lifespan(app: FastAPI):
         await _http_client.aclose()
         _http_client = None
 
-VERSION = '0.4.0-dev'
+VERSION = '0.5.0'
 app = FastAPI(title='Image Studio Mobile', version=VERSION, lifespan=lifespan)
 
 async def request(method, path, expect_json=True, **kwargs):
@@ -117,13 +126,19 @@ async def finish_job(job_id: str, entry: dict) -> None:
     first = cover(summary['outputs'])
     if first and first['kind'] == 'image':
         try:
-            r = await _http_client.get(f'{COMFY}/view', params={'filename': first['filename'], 'subfolder': first['subfolder'],
-                                                               'type': first['type'], 'preview': 'webp;80'})
-            if r.status_code == 200:
-                job_store.save_thumb(job_id, r.content)
-        except (httpx.HTTPError, OSError):
+            data = await fetch_webp({'filename': first['filename'], 'subfolder': first['subfolder'], 'type': first['type']})
+            job_store.save_thumb(job_id, data)
+        except (HTTPException, OSError):
             pass
     job = job_store.get(job_id)
+    if not job: return  # evicted while ComfyUI was finishing
+    for index, name in enumerate((job.get('params') or {}).get('images', [])):
+        if not UPLOAD_NAME.fullmatch(name): continue
+        try:
+            if not job_store.input_path(job_id, index).is_file():
+                job_store.save_input(job_id, index, await fetch_webp({'filename': name, 'type': 'input', 'subfolder': ''}))
+        except (HTTPException, OSError, ValueError):
+            pass
     job_store.finish(job_id, summary)
     if not push.enabled:
         return
@@ -160,6 +175,9 @@ def style(): return FileResponse(STATIC/'style.css', media_type='text/css', head
 
 @app.get('/presets.js')
 def presets_js(): return FileResponse(STATIC/'presets.js', media_type='text/javascript', headers={'Cache-Control':'no-cache'})
+
+@app.get('/mobile-tools.js')
+def mobile_tools_js(): return FileResponse(STATIC/'mobile-tools.js', media_type='text/javascript', headers={'Cache-Control':'no-cache'})
 
 @app.get('/app.js')
 def app_js(): return FileResponse(STATIC/'app.js', media_type='text/javascript', headers={'Cache-Control':'no-cache'})
@@ -250,7 +268,7 @@ async def validate_workflow(workflow_id: str, authorization: str | None = Header
             graph = convert_ui(graph, info)
         except ConversionError as exc:
             return {'format': 'ui', 'runnable': False, 'errors': [str(exc)], 'warnings': []}
-    return {**inspect_workflow(graph, info), 'controls': find_controls(graph, info)}
+    return {**inspect_workflow(graph, info), 'controls': find_controls(graph, info), 'caption_review': capability(graph, info)}
 
 
 @app.get('/api/comfy/workflows/discovery')
@@ -313,7 +331,13 @@ class FitChoice(BaseModel):
     height: int
     upscaler: str | None = Field(default=None,max_length=300)
 
+class CaptionReview(BaseModel):
+    positive: str = Field(min_length=1, max_length=10000)
+    negative: str = Field(default='', max_length=10000)
+
 class Job(BaseModel):
+    stage: Literal['render', 'caption'] = 'render'
+    review: CaptionReview | None = None
     workflow_id: str = Field(max_length=240)
     prompt: str = Field(default='',max_length=10000)
     images: list[str] = Field(default_factory=list,max_length=8)
@@ -348,13 +372,21 @@ async def jobs(job: Job, authorization: str | None = Header(default=None)):
         apply_controls(graph,info,job.models,{k:v.model_dump() for k,v in job.loras.items()},[v.model_dump() for v in job.extra_loras],job.sampling,job.size,job.caption,
                        job.fit.model_dump() if job.fit else None)
         applied=apply_job(graph,job.prompt,job.images,job.seed)
-    except (ControlError, JobError) as exc:
+        if job.stage == 'caption':
+            if job.review: raise CaptionError('Caption preview cannot include approved text')
+            graph = caption_graph(graph, info)
+        elif job.review:
+            if not job.review.positive.strip(): raise CaptionError('Enter a positive caption')
+            graph = apply_review(graph, info, job.review.positive, job.review.negative)
+        final_check = inspect_workflow(graph, info)
+        if not final_check['runnable']: raise JobError('; '.join(final_check['errors']))
+    except (ControlError, JobError, CaptionError) as exc:
         raise HTTPException(400,str(exc)) from exc
     result=await request('POST','/prompt',json={'prompt':graph,'client_id':CLIENT_ID})
     if result.get('prompt_id'):
         progress.expect(result['prompt_id'], graph)
         try:
-            job_store.add(result['prompt_id'], name.rsplit('/',1)[-1].removesuffix('.json'), job.prompt)
+            job_store.add(result['prompt_id'], name.rsplit('/',1)[-1].removesuffix('.json'), job.prompt, params=job.model_dump())
         except OSError:
             log.exception('Could not record job')
     return {'prompt_id':result.get('prompt_id'),'node_errors':result.get('node_errors',{}),**applied}
@@ -539,3 +571,111 @@ async def push_test(authorization: str | None = Header(default=None)):
     auth(authorization); push_ready()
     sent=await asyncio.to_thread(push.send,{'title':'Image Studio','body':'Notifications are working.','tag':'test','url':'/'})
     return {'sent':sent}
+
+
+@app.get('/api/library/jobs')
+def library_jobs(limit: int = Query(default=30, ge=1, le=60), offset: int = Query(default=0, ge=0, le=500),
+                 authorization: str | None = Header(default=None)):
+    auth(authorization)
+    if not job_store.enabled: raise HTTPException(503, 'Gallery needs a writable DATA_DIR')
+    return job_store.list_jobs(limit, offset)
+
+@app.get('/api/library/jobs/{job_id}')
+def library_job(job_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    job = job_store.get(job_id)
+    if not job: raise HTTPException(404, 'Job not found')
+    return {'id': job_id, **{k: job.get(k) for k in ('workflow', 'prompt', 'created', 'params')},
+            'status': (job.get('summary') or {}).get('status', 'pending')}
+
+class PresetBody(BaseModel):
+    id: str | None = Field(default=None, pattern=r'^[0-9a-f-]{36}$')
+    name: str = Field(min_length=1, max_length=80)
+    job: Job
+    choices: dict = Field(default_factory=dict, max_length=20)
+
+def presets_ready():
+    if not preset_store.enabled: raise HTTPException(503, 'Presets need a writable DATA_DIR')
+
+@app.get('/api/presets')
+def list_presets(authorization: str | None = Header(default=None)):
+    auth(authorization); presets_ready()
+    return {'items': preset_store.list()}
+
+@app.post('/api/presets')
+def save_preset(body: PresetBody, authorization: str | None = Header(default=None)):
+    auth(authorization); presets_ready()
+    name = body.name.strip()
+    if not name: raise HTTPException(400, 'Enter a preset name')
+    job = body.job.model_dump(exclude={'images', 'stage', 'review'})
+    try:
+        return preset_store.save(name, job, body.choices, body.id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+@app.delete('/api/presets/{preset_id}')
+def delete_preset(preset_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization); presets_ready()
+    if not preset_store.delete(preset_id): raise HTTPException(404, 'Preset not found')
+    return {'deleted': True}
+
+@app.post('/api/presets/{preset_id}/validate')
+async def validate_preset(preset_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization); presets_ready()
+    preset = preset_store.get(preset_id)
+    if not preset: raise HTTPException(404, 'Preset not found')
+    job = Job(**preset['job'])
+    try:
+        root, name = (SYNC_DIR, job.workflow_id[7:]) if job.workflow_id.startswith('synced/') else (WF_DIR, job.workflow_id)
+        graph = load_workflow(root, name)
+        info = await get_object_info(force_refresh=True)
+        if isinstance(graph.get('nodes'), list): graph = convert_ui(graph, info)
+        check = inspect_workflow(graph, info)
+        if not check['runnable']: return {'valid': False, 'errors': check['errors']}
+        apply_controls(graph, info, job.models, {k: v.model_dump() for k, v in job.loras.items()},
+                       [v.model_dump() for v in job.extra_loras], job.sampling, job.size, job.caption,
+                       job.fit.model_dump() if job.fit else None)
+        return {'valid': True, 'errors': [], 'preset': preset}
+    except (ValueError, OSError, ConversionError, ControlError) as exc:
+        return {'valid': False, 'errors': [str(exc)]}
+
+
+async def fetch_webp(params):
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(12, connect=4)) as client:
+            data = await bounded_get(client, f'{COMFY}/view', params={**params, 'preview': 'webp;80'})
+        if data[:4] != b'RIFF' or data[8:12] != b'WEBP':
+            raise ValueError('Not a WebP preview')
+        return data
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(502, 'Input or output preview is unavailable from ComfyUI') from exc
+
+@app.get('/api/jobs/{job_id}/inputs/{index}')
+async def job_input(job_id: str, index: int, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    job = job_store.get(job_id)
+    images = (job.get('params') or {}).get('images', []) if job else []
+    if not 0 <= index < min(8, len(images)) or not UPLOAD_NAME.fullmatch(images[index]):
+        raise HTTPException(404, 'Input preview is not available for this job')
+    path = job_store.input_path(job_id, index)
+    headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'}
+    if path.is_file(): return FileResponse(path, media_type='image/webp', headers=headers)
+    data = await fetch_webp({'filename': images[index], 'type': 'input', 'subfolder': ''})
+    job_store.save_input(job_id, index, data)
+    return Response(data, media_type='image/webp', headers=headers)
+
+@app.get('/api/comfy/wake')
+def wake_status(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return wake_pc.status()
+
+@app.post('/api/comfy/wake')
+def wake(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    if not wake_pc.status()['enabled']: raise HTTPException(503, wake_pc.status()['reason'])
+    try:
+        return wake_pc.send()
+    except WakeError as exc:
+        raise HTTPException(429, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(502, 'Wake packet could not be sent from the NAS') from exc

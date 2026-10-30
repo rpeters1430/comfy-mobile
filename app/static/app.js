@@ -18,6 +18,14 @@ let slots = [];        // per image input: {name, uploading, preview, error}
 let sharedFiles = [];  // photos shared into the app
 let swReg = null;
 let controls = null;   // models & LoRAs from /validate
+let controlsReady = false;
+let captionCapability = null;
+let sharedPresets = [];
+let nasJobs = [];
+let galleryOffset = 0;
+let galleryHasMore = false;
+let galleryRevision = 0;
+let wakeController = null;
 let choices = null;    // active overrides
 
 /* ---------- Storage & Utilities ---------- */
@@ -72,7 +80,7 @@ async function api(path, opts = {}) {
   const r = await fetch('/api' + path, { ...opts, headers });
   let data = null;
   try { data = await r.json(); } catch (e) {}
-  if (!r.ok) throw Error(errorText(data?.detail) || String(r.status));
+  if (!r.ok) { const error = Error(errorText(data?.detail) || String(r.status)); error.status = r.status; throw error; }
   return data;
 }
 
@@ -167,8 +175,13 @@ if ($('wf-search')) {
   };
 }
 
-function selectWorkflow(wf) {
+async function selectWorkflow(wf, restored = null) {
+  for (const slot of slots) if (slot.preview) URL.revokeObjectURL(slot.preview);
   selected = wf;
+  controlsReady = false;
+  captionCapability = null;
+  $('review-before').checked = false;
+  $('caption-review-box').classList.add('hide');
   slots = Array.from({ length: wf.image_inputs || 0 }, () => ({ name: null, uploading: false, preview: null, error: null }));
   $('form').classList.remove('hide');
   $('form-title').textContent = prettyName(wf.name);
@@ -180,7 +193,8 @@ function selectWorkflow(wf) {
   renderSlots();
   renderSavedPrompts();
   renderWorkflows();
-  loadControls(wf);
+  await loadControls(wf, restored);
+  if (selected !== wf) return;
   if (sharedFiles.length && slots.length) {
     sharedFiles.slice(0, slots.length).forEach((file, i) => pickImage(i, file));
     clearShared();
@@ -323,16 +337,24 @@ function saveControls() {
   store(CONTROLS_KEY, JSON.stringify(all));
 }
 
-async function loadControls(wf) {
+async function loadControls(wf, restored = null) {
   controls = choices = null;
   $('controls-box').classList.add('hide');
   let found;
   try {
-    found = (await api('/workflows/' + encodeURIComponent(wf.id).replace(/%2F/g, '/') + '/validate')).controls;
-  } catch (e) { return; }
+    const validation = await api('/workflows/' + encodeURIComponent(wf.id).replace(/%2F/g, '/') + '/validate');
+    if (selected !== wf) return;
+    if (!validation.runnable) throw Error((validation.errors || []).join('; ') || 'Workflow is unavailable');
+    captionCapability = validation.caption_review;
+    $('caption-review-box').classList.toggle('hide', !wf.image_inputs);
+    $('review-before').disabled = !captionCapability?.supported;
+    $('caption-review-hint').textContent = captionCapability?.supported ? 'Preview the caption, edit it, then generate.' : captionCapability?.reason || 'Caption review is unavailable for this workflow.';
+    found = validation.controls;
+    controlsReady = true;
+  } catch (e) { if (selected === wf) $('form-error').textContent = 'Could not load settings: ' + e.message; return; }
   if (selected !== wf || !found || (!found.models.length && !found.loras.length && !found.samplers.length && !found.size && !found.captions.length)) return;
   controls = found;
-  const saved = savedControls()[wf.id] || {};
+  const saved = restored || savedControls()[wf.id] || {};
   const loraOk = name => controls.lora_options.includes(name);
   choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', preset: '', upscaler: '', cinematic: saved.cinematic !== false, caption: {} };
   for (const m of controls.models) choices.models[m.node] = m.options.includes(saved.models?.[m.node]) ? saved.models[m.node] : m.value;
@@ -360,7 +382,7 @@ async function loadControls(wf) {
   const shared = savedCaption();
   for (const cap of controls.captions) {
     const values = { ...cap.values };
-    const pick = { ...shared, caption_type: saved.caption?.[cap.node]?.caption_type };
+    const pick = restored ? saved.caption?.[cap.node] || {} : { ...shared, caption_type: saved.caption?.[cap.node]?.caption_type };
     for (const [field, value] of Object.entries(pick))
       if (field in values && (cap.options[field] ? cap.options[field].includes(value) : typeof value === 'boolean'))
         values[field] = value;
@@ -679,6 +701,7 @@ $('form').onsubmit = async event => {
   event.preventDefault();
   if (!selected) return;
   $('form-error').textContent = '';
+  if (!controlsReady) return void ($('form-error').textContent = 'Wait for workflow settings to load, or select it again.');
   if (slots.some(s => s.uploading)) return void ($('form-error').textContent = 'Wait for image upload to finish.');
   if (slots.some(s => !s.name)) return void ($('form-error').textContent = slots.length > 1 ? `Add all ${slots.length} images first.` : 'Add an image first.');
   const prompt = $('prompt').value.trim();
@@ -686,14 +709,17 @@ $('form').onsubmit = async event => {
   const base = $('seed').value === '' ? null : Number($('seed').value);
   const runs = Number($('runs').value) || 1;
   const style = selected.takes_prompt ? currentStyle() : null;
+  const stage = $('review-before').checked ? 'caption' : 'render';
+  const params = {
+    workflowId: selected.id, workflow: prettyName(selected.name), takesPrompt: selected.takes_prompt,
+    prompt: selected.takes_prompt ? styledPrompt(prompt, style, cinematicOn(choices)) : '',
+    images: slots.map(s => s.name), stage,
+    controls: controlsPayload(choices), controlsText: [style?.label, controlsText(choices)].filter(Boolean).join(' · ')
+  };
   $('generate').disabled = true;
   try {
-    for (let i = 0; i < runs; i++) {
-      await submitJob({
-        workflowId: selected.id, workflow: prettyName(selected.name), takesPrompt: selected.takes_prompt,
-        prompt: selected.takes_prompt ? styledPrompt(prompt, style, cinematicOn(choices)) : '', images: slots.map(s => s.name), seed: base === null ? randomSeed() : base + i,
-        controls: controlsPayload(choices), controlsText: [style?.label, controlsText(choices)].filter(Boolean).join(' · ')
-      }, i === 0);
+    for (let i = 0; i < (stage === 'caption' ? 1 : runs); i++) {
+      await submitJob({ ...params, seed: base === null ? randomSeed() : base + i }, i === 0);
     }
   } catch (e) {
     $('form-error').textContent = e.message;
@@ -705,8 +731,9 @@ $('form').onsubmit = async event => {
 async function submitJob(params, focus) {
   const r = await api('/jobs', {
     method: 'POST',
-    json: { workflow_id: params.workflowId, prompt: params.prompt, images: params.images, seed: params.seed, ...(params.controls || {}) }
+    json: { ...(params.controls || {}), workflow_id: params.workflowId, prompt: params.prompt, images: params.images, seed: params.seed, stage: params.stage || 'render', review: params.review || null }
   });
+  if (!r.prompt_id) throw Error('ComfyUI did not return a job ID');
   const job = { ...params, id: r.prompt_id, created: Date.now() };
   rememberJob(job);
   openJob(job, focus);
@@ -715,6 +742,7 @@ async function submitJob(params, focus) {
 
 function openJob(job, focus) {
   if (openJobs.has(job.id)) {
+    showTab('create');
     openJobs.get(job.id).card.scrollIntoView({ behavior: 'smooth' });
     return;
   }
@@ -883,7 +911,7 @@ function mediaFor(item, thumb) {
   if (item.kind === 'video') {
     return el('video', { src: item.url, controls: !thumb, playsinline: true, preload: 'metadata', muted: thumb, loop: true });
   }
-  return el('img', { src: item.url + '&thumb=1', alt: item.filename, loading: 'lazy', decoding: 'async' });
+  return el('img', { src: item.url + (thumb ? '&thumb=1' : ''), alt: item.filename, loading: 'lazy', decoding: 'async' });
 }
 
 function showActions(job, entry) {
@@ -956,7 +984,8 @@ function showResults(job, entry, r) {
   const previews = r.outputs.filter(o => o.kind !== 'text' && o.preview);
   const texts = r.outputs.filter(o => o.kind === 'text');
   const nodes = finals.map(item => el('figure', { class: 'result' },
-    el('a', { href: item.url, target: '_blank', rel: 'noopener' }, mediaFor(item)), resultActions(item)));
+    el('a', { href: item.url, target: '_blank', rel: 'noopener' }, mediaFor(item)), resultActions(item),
+      item.kind === 'image' ? el('button', { class: 'secondary', type: 'button', onclick: () => viewImage(job, item) }, job.images?.length ? 'Compare / full screen' : 'Full screen & zoom') : null));
 
   if (texts.length) {
     nodes.push(el('details', { open: true },
@@ -971,6 +1000,8 @@ function showResults(job, entry, r) {
       })
     ));
   }
+
+  if (job.stage === 'caption' && ok) nodes.unshift(captionEditor(job, r.outputs));
 
   if (previews.length) {
     nodes.push(el('details', {},
@@ -992,8 +1023,29 @@ function reopenUnfinished() {
 }
 
 /* ---------- Gallery ---------- */
-async function renderGallery() {
-  const jobs = galleryJobs();
+async function renderGallery(reset = true) {
+  const revision = ++galleryRevision;
+  const session = token;
+  $('gallery-more').disabled = true;
+  $('gallery-status').textContent = token ? 'Loading NAS history…' : 'Connect to load NAS history.';
+  if (token) {
+    try {
+      const page = await api(`/library/jobs?limit=30&offset=${reset ? 0 : galleryOffset}`);
+      if (revision !== galleryRevision || session !== token) return;
+      nasJobs = MobileTools.mergeHistory(reset ? [] : nasJobs, page.items.map(MobileTools.nasJob));
+      galleryOffset = page.offset + page.items.length;
+      galleryHasMore = page.has_more;
+      $('gallery-status').textContent = `${nasJobs.length} of ${page.total} NAS jobs loaded`;
+    } catch (e) {
+      if (revision !== galleryRevision || session !== token) return;
+      $('gallery-status').textContent = 'NAS history unavailable: ' + e.message + '. Device history is still shown.';
+    }
+  }
+  if (revision !== galleryRevision || session !== token) return;
+  const jobs = MobileTools.mergeHistory(galleryJobs(), nasJobs);
+  $('gallery-more').classList.toggle('hide', !galleryHasMore);
+  $('gallery-more').disabled = false;
+  $('remove-gone').classList.add('hide');
   if (!jobs.length) return $('gallery').replaceChildren(el('p', { class: 'status' }, 'No jobs yet.'));
   const thumbs = new Map();
   $('gallery').replaceChildren(...jobs.map(job => {
@@ -1005,38 +1057,41 @@ async function renderGallery() {
     return card;
   }));
   if (!token) return;
-  try {
-    const all = await api('/jobs/outputs', { method: 'POST', json: { ids: [...thumbs.keys()] } });
-    for (const [id, thumb] of thumbs) {
-      const r = all[id];
-      if (!r) { thumb.replaceChildren('Unavailable'); continue; }
-      const cover = r.outputs.find(o => o.kind !== 'text' && !o.preview) || r.outputs.find(o => o.kind !== 'text');
-      thumb.replaceChildren(cover ? mediaFor(cover, true) : r.status === 'missing' ? 'Gone from ComfyUI' : (r.completed ? 'No image' : 'In progress'));
+  const ids = [...thumbs.keys()];
+  for (let start = 0; start < ids.length; start += 60) {
+    try {
+      const all = await api('/jobs/outputs', { method: 'POST', json: { ids: ids.slice(start, start + 60) } });
+      if (revision !== galleryRevision || session !== token) return;
+      for (const id of ids.slice(start, start + 60)) {
+        const r = all[id], thumb = thumbs.get(id);
+        if (!r) { thumb.replaceChildren('Unavailable'); continue; }
+        const cover = r.outputs.find(o => o.kind !== 'text' && !o.preview) || r.outputs.find(o => o.kind !== 'text');
+        thumb.replaceChildren(cover ? mediaFor(cover, true) : r.status === 'missing' ? 'Gone from ComfyUI' : (r.completed ? 'Caption / text' : 'In progress'));
+      }
+    } catch (e) {
+      ids.slice(start, start + 60).forEach(id => thumbs.get(id).replaceChildren('Unavailable'));
     }
-    const gone = [...thumbs.keys()].filter(id => all[id]?.status === 'missing');
-    $('remove-gone').classList.toggle('hide', !gone.length);
-    $('remove-gone').textContent = `Remove ${gone.length} gone`;
-    $('remove-gone').onclick = () => {
-      store(GALLERY_KEY, JSON.stringify(galleryJobs().filter(j => !gone.includes(j.id))));
-      renderGallery();
-      showToast(`Removed ${gone.length} jobs`);
-    };
-  } catch (e) {
-    thumbs.forEach(thumb => thumb.replaceChildren('Unavailable'));
   }
 }
-$('clear-gallery').onclick = () => { store(GALLERY_KEY, null); renderGallery(); showToast('Gallery cleared'); };
+$('gallery-more').onclick = () => renderGallery(false);
+$('clear-gallery').onclick = () => { store(GALLERY_KEY, null); renderGallery(); showToast('Device list cleared. NAS history is retained.'); };
 
 /* ---------- Remote Connection & Lifecycle ---------- */
 async function refresh() {
   if (!token) { setStatus('Not connected'); return; }
+  loadSharedPresets().catch(() => {});
+  loadWakeStatus();
   setStatus('Loading…');
   if (!catalog) $('workflows').replaceChildren(el('p', { class: 'status' }, 'Loading workflows…'));
   try {
     const [health, cat] = await Promise.all([api('/health'), api('/catalog')]);
     const synced = new Set(cat.workflows.filter(w => w.id.startsWith('synced/')).map(w => w.name));
     catalog = { ...cat, workflows: cat.workflows.filter(w => w.id.startsWith('synced/') || !synced.has(w.name)) };
-    if (selected) selected = catalog.workflows.find(w => w.id === selected.id && w.runnable) || null;
+    if (selected) {
+      const fresh = catalog.workflows.find(w => w.id === selected.id && w.runnable);
+      if (fresh) Object.assign(selected, fresh); // preserve an in-flight settings request's selection
+      else { selected = null; controlsReady = false; }
+    }
     if (!selected) $('form').classList.add('hide');
     const device = health.devices?.[0];
     setStatus('● ComfyUI online' + (device ? ' · ' + deviceName(device.name) : ''), 'ok');
@@ -1063,6 +1118,7 @@ $('connect').onclick = async () => {
     await connect(candidate);
     showTab('create');
     refresh();
+    if (pendingJobId) openFromId(pendingJobId);
     showToast('Connected');
   } catch (e) {
     setStatus(e.message, 'error');
@@ -1070,7 +1126,15 @@ $('connect').onclick = async () => {
 };
 $('forget').onclick = () => {
   store(STORAGE_KEY, null);
+  wakeController?.abort();
+  galleryRevision++;
+  nasJobs = []; sharedPresets = []; galleryOffset = 0; galleryHasMore = false;
+  for (const entry of openJobs.values()) { entry.stopped = true; URL.revokeObjectURL(entry.live.src); }
+  openJobs.clear(); $('jobs').replaceChildren(); $('gallery').replaceChildren();
+  $('image-viewer').close();
   token = ''; catalog = null; selected = null; $('token').value = '';
+  $('wake-pc').disabled = true;
+  $('wake-status').textContent = 'Connect to check PC wake configuration.';
   $('workflows').replaceChildren(el('p', { class: 'status' }, 'Connect in Settings to load workflows.'));
   $('form').classList.add('hide'); $('unavailable-box').classList.add('hide');
   setStatus('Saved token cleared');
@@ -1201,6 +1265,202 @@ function renderShared() {
 }
 $('shared-dismiss').onclick = clearShared;
 
+/* ---------- Shared presets ---------- */
+async function loadSharedPresets() {
+  if (!token) return;
+  const session = token;
+  try {
+    const r = await api('/presets');
+    if (session !== token) return;
+    sharedPresets = r.items;
+    const current = $('preset-select').value;
+    $('preset-select').replaceChildren(new Option('Choose a preset…', ''), ...sharedPresets.map(p => new Option(p.name, p.id)));
+    if (sharedPresets.some(p => p.id === current)) $('preset-select').value = current;
+    $('preset-status').textContent = `${sharedPresets.length} shared presets on the NAS`;
+  } catch (e) {
+    if (session === token) $('preset-status').textContent = 'Shared presets unavailable: ' + e.message;
+    throw e;
+  }
+}
+$('preset-select').onchange = () => {
+  $('preset-name').value = sharedPresets.find(p => p.id === $('preset-select').value)?.name || '';
+};
+$('preset-save').onclick = async () => {
+  if (!selected || !controlsReady) return void ($('preset-status').textContent = 'Select a workflow and wait for its settings.');
+  const name = $('preset-name').value.trim();
+  if (!name) return void ($('preset-status').textContent = 'Enter a preset name.');
+  const current = sharedPresets.find(p => p.id === $('preset-select').value);
+  const job = MobileTools.presetJob(selected.id, $('prompt').value, $('seed').value === '' ? null : Number($('seed').value), controls, choices, controlsPayload(choices));
+  $('preset-save').disabled = true;
+  try {
+    const saved = await api('/presets', { method: 'POST', json: { name, job,
+      choices: { ...(choices || {}), _style: currentStyle()?.id || '' },
+      ...(current?.name === name ? { id: current.id } : {}) } });
+    await loadSharedPresets();
+    $('preset-select').value = saved.id;
+    $('preset-status').textContent = 'Preset saved. Available on every connected device.';
+  } catch (e) { $('preset-status').textContent = 'Could not save: ' + e.message; }
+  finally { $('preset-save').disabled = false; }
+};
+$('preset-load').onclick = async () => {
+  let preset = sharedPresets.find(p => p.id === $('preset-select').value);
+  if (!preset) return;
+  $('preset-load').disabled = true;
+  try {
+    const check = await api(`/presets/${preset.id}/validate`, { method: 'POST' });
+    if (!check.valid) throw Error('Preset needs updating: ' + check.errors.join('; '));
+    if (!check.preset) throw Error('Reload shared presets and try again.');
+    preset = check.preset;
+    if (!catalog) await refresh();
+    const wf = catalog?.workflows.find(w => w.id === preset.job.workflow_id && w.runnable);
+    if (!wf) throw Error('The saved workflow is unavailable. Refresh or sync workflows first.');
+    await selectWorkflow(wf, preset.choices);
+    if (selected !== wf || !controlsReady) return;
+    $('prompt').value = preset.job.prompt || '';
+    $('seed').value = preset.job.seed ?? '';
+    store(STYLE_KEY, preset.choices?._style || null);
+    renderStyles(); saveControls();
+    $('preset-status').textContent = 'Loaded. Add input photos if this workflow needs them.';
+  } catch (e) { $('preset-status').textContent = e.message; }
+  finally { $('preset-load').disabled = false; }
+};
+$('preset-delete').onclick = async () => {
+  const id = $('preset-select').value;
+  if (!id) return;
+  $('preset-delete').disabled = true;
+  try {
+    await api(`/presets/${id}`, { method: 'DELETE' });
+    await loadSharedPresets(); $('preset-name').value = '';
+    $('preset-status').textContent = 'Shared preset deleted.';
+  } catch (e) { $('preset-status').textContent = e.message; }
+  finally { $('preset-delete').disabled = false; }
+};
+
+/* ---------- Caption preview -> edit -> render ---------- */
+function captionEditor(job, outputs) {
+  const text = MobileTools.captionText(outputs);
+  if (!text.positive.trim()) return el('p', { class: 'status error' }, 'No positive caption was returned. Check the caption model before rendering.');
+  const positive = el('textarea', { 'aria-label': 'Approved positive caption', maxlength: 10000 });
+  const negative = el('textarea', { 'aria-label': 'Approved negative caption', maxlength: 10000 });
+  positive.value = text.positive; negative.value = text.negative;
+  const runs = el('select', { 'aria-label': 'Render count' }, [1, 2, 4, 8].map(n => new Option(String(n), String(n))));
+  const status = el('p', { class: 'status', role: 'status' });
+  const generate = el('button', { class: 'primary', type: 'button' }, 'Generate with edited caption');
+  generate.onclick = async () => {
+    if (!positive.value.trim()) { status.textContent = 'Enter a positive caption.'; return; }
+    generate.disabled = true;
+    const approved = { positive: positive.value, negative: negative.value };
+    const count = Number(runs.value);
+    try {
+      for (let i = 0; i < count; i++) {
+        await submitJob({ ...job, id: undefined, finished: false, stage: 'render',
+          review: approved, seed: i === 0 ? job.seed : randomSeed(),
+          controlsText: 'Reviewed caption', prompt: job.prompt || '' }, i === 0);
+      }
+      status.textContent = `${count} render${count > 1 ? 's' : ''} queued with your edited caption.`;
+    } catch (e) { status.textContent = 'Could not render: ' + e.message; }
+    finally { generate.disabled = false; }
+  };
+  return el('div', { class: 'caption-editor' }, el('h3', {}, 'Review caption'),
+    el('label', {}, 'Positive caption'), positive, el('label', {}, 'Negative caption'), negative,
+    el('label', {}, 'Runs'), runs, generate, status);
+}
+
+/* ---------- NAS job links and PC wake ---------- */
+let pendingJobId = null;
+async function openFromId(id) {
+  if (!id || !/^[0-9a-fA-F-]{36}$/.test(id)) return;
+  if (!token) { pendingJobId = id; return; }
+  const local = MobileTools.mergeHistory(galleryJobs(), nasJobs).find(j => j.id === id);
+  if (local) return openJob(local, true);
+  try {
+    const record = await api('/library/jobs/' + id);
+    openJob(MobileTools.nasJob(record), true);
+    pendingJobId = null;
+  } catch (e) { showToast('Job could not be opened: ' + e.message); }
+}
+async function loadWakeStatus() {
+  if (!token) return;
+  const session = token;
+  try {
+    const r = await api('/comfy/wake');
+    if (session !== token) return;
+    $('wake-pc').disabled = !r.enabled || r.cooldown > 0;
+    $('wake-status').textContent = r.enabled ? r.cooldown ? `Wake sent recently. Try again in ${r.cooldown}s.` : 'Wake your PC, then wait for ComfyUI to start.' : r.reason;
+    if (r.cooldown) setTimeout(() => { if (token === session) loadWakeStatus(); }, r.cooldown * 1000);
+  } catch (e) { if (session === token) $('wake-status').textContent = e.message; }
+}
+$('wake-pc').onclick = async () => {
+  wakeController?.abort();
+  const controller = new AbortController(); wakeController = controller;
+  $('wake-pc').disabled = true;
+  try {
+    await api('/comfy/wake', { method: 'POST', signal: controller.signal });
+    const until = Date.now() + 120000;
+    $('wake-status').textContent = 'Wake packet sent. Waiting for ComfyUI…';
+    while (!controller.signal.aborted && Date.now() < until) {
+      try {
+        await api('/health', { signal: controller.signal });
+        if (controller.signal.aborted) return;
+        await refresh();
+        $('wake-status').textContent = 'ComfyUI is online.';
+        return;
+      } catch (e) { if (controller.signal.aborted) return; }
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+    $('wake-status').textContent = 'No response yet. Check PC power, Wake-on-LAN settings and ComfyUI startup.';
+  } catch (e) { if (!controller.signal.aborted) $('wake-status').textContent = 'Wake failed: ' + e.message; }
+  finally { if (wakeController === controller && token) $('wake-pc').disabled = false; }
+};
+
+/* ---------- Image viewer, zoom and before/after ---------- */
+let viewerController = null;
+let viewerInputUrl = null;
+const viewer = $('image-viewer');
+function updateComparison() {
+  $('viewer-after-wrap').style.clipPath = $('compare-range').classList.contains('hide') ? 'none' : `inset(0 ${100 - Number($('compare-range').value)}% 0 0)`;
+}
+$('compare-range').oninput = updateComparison;
+$('viewer-zoom').oninput = () => {
+  const zoom = Number($('viewer-zoom').value);
+  $('viewer-stage').style.width = `${zoom * 100}%`;
+  $('viewer-stage').style.height = `${zoom * 60}vh`;
+};
+$('viewer-close').onclick = () => viewer.close();
+viewer.addEventListener('close', () => {
+  viewerController?.abort();
+  if (viewerInputUrl) URL.revokeObjectURL(viewerInputUrl);
+  viewerInputUrl = null;
+  $('viewer-before').removeAttribute('src'); $('viewer-after').removeAttribute('src');
+});
+async function viewImage(job, item) {
+  if (viewer.open) viewer.close();
+  viewerController?.abort();
+  const controller = new AbortController(); viewerController = controller;
+  $('viewer-title').textContent = 'Image viewer';
+  $('viewer-status').textContent = job.images?.length ? 'Loading input preview for comparison…' : 'Generated image. Use zoom to inspect details.';
+  $('viewer-after').src = item.url;
+  $('viewer-before').classList.add('hide');
+  $('compare-label').classList.add('hide'); $('compare-range').classList.add('hide');
+  $('viewer-zoom').value = '1'; $('viewer-zoom').oninput(); updateComparison();
+  viewer.showModal();
+  if (!job.images?.length) return;
+  try {
+    const r = await fetch(`/api/jobs/${job.id}/inputs/0`, { headers: { Authorization: 'Bearer ' + token }, signal: controller.signal });
+    if (!r.ok) throw Error(r.status === 404 ? 'This older job has no saved input preview.' : 'Input preview is unavailable. Try while ComfyUI is online.');
+    const blob = await r.blob();
+    if (controller.signal.aborted || !viewer.open || viewerController !== controller) return;
+    if (viewerInputUrl) URL.revokeObjectURL(viewerInputUrl);
+    viewerInputUrl = URL.createObjectURL(blob);
+    $('viewer-before').src = viewerInputUrl;
+    $('viewer-before').classList.remove('hide');
+    $('compare-range').classList.remove('hide'); $('compare-label').classList.remove('hide');
+    $('compare-range').value = '50'; updateComparison();
+    $('viewer-status').textContent = 'Input → generated. Drag the slider; zoom to inspect. For multi-image workflows, the first input is shown.';
+  } catch (e) { if (!controller.signal.aborted) $('viewer-status').textContent = e.message; }
+}
+
+
 /* ---------- Boot Init ---------- */
 (async () => {
   if ('serviceWorker' in navigator) {
@@ -1209,8 +1469,7 @@ $('shared-dismiss').onclick = clearShared;
       navigator.serviceWorker.addEventListener('message', event => {
         if (event.data?.type === 'open-job') {
           const id = new URL(event.data.url, location.href).searchParams.get('job');
-          const job = galleryJobs().find(j => j.id === id);
-          if (job) openJob(job, true);
+          openFromId(id);
         }
       });
     } catch (e) {}
@@ -1233,7 +1492,6 @@ $('shared-dismiss').onclick = clearShared;
   const jobId = params.get('job');
   if (jobId) {
     history.replaceState(null, '', '/');
-    const job = galleryJobs().find(j => j.id === jobId);
-    if (job) openJob(job, true);
+    openFromId(jobId);
   }
 })();
