@@ -1,4 +1,4 @@
-# Comfy Mobile — v0.6.0
+# Comfy Mobile — v0.6.1
 
 Mobile-first ComfyUI dashboard running on a NAS, connecting to ComfyUI on another machine.
 
@@ -15,6 +15,10 @@ GitHub Actions builds and publishes `ghcr.io/rpeters1430/comfy-mobile:latest` on
 - **Phone wallpapers**: Pixel, iPhone and Galaxy presets, rendered near the model's native size and then upscaled and center-cropped to the exact screen. Wallpaper style chips and a Cinematic-ready mode for Pixel.
 - **Notifications and gallery**: The NAS watches each job and sends a push notification when it finishes, even with the app closed (needs HTTPS). Finished jobs and thumbnails are kept on the NAS, so the gallery survives ComfyUI restarts.
 - **Workflow Sync**: Safe, one-way pull of workflows directly from ComfyUI's user-data directory to your NAS.
+
+## New in v0.6.1
+
+Model research now handles Windows model paths when matching Civitai files, searches with readable model names, filters unrelated results, and keeps wrong-version pages as brief diagnostics. Markdown settings tables and Diffusers inference keys are parsed explicitly. A single identified base sampler may be reviewed when followed by connected refinement passes; those refinement settings remain unchanged. Workflow diagnostics include the detected model and sampler counts.
 
 ## New in v0.6.0
 

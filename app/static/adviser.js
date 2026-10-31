@@ -42,12 +42,12 @@
     function render(row) {
       box.replaceChildren();
       for (const card of row.cards || []) {
-        const panel = el('details', { class: 'panel' }, el('summary', {}, card.file + (card.cached ? ' · cached' : '')));
+        const panel = el('details', { class: 'panel' }, el('summary', {}, card.file + ` · ${card.facts.length} verified settings` + (card.cached ? ' · cached' : '')));
         panel.append(el('p', {}, `${card.facts.length} verified settings · ${new Date(card.retrieved * 1000).toLocaleString()}`));
         for (const source of card.sources || []) {
           const href = safeSource(source.url);
           if (href) panel.append(el('a', { href, target: '_blank', rel: 'noopener noreferrer' }, `${source.verified ? 'Matched source' : 'Unverified source'}: ${new URL(href).hostname}`));
-          panel.append(el('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere' }, source.excerpt || 'No settings passage extracted.'));
+          panel.append(el('details', {}, el('summary', {}, 'Extracted source text'), el('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere' }, source.excerpt || 'No settings passage extracted.')));
         }
         for (const d of card.diagnostics || []) panel.append(el('p', { class: 'status' }, `${d.phase}: ${d.reason || JSON.stringify(d)}`));
         for (const d of card.rejected || []) panel.append(el('p', { class: 'status' }, `${d.field}: ${d.reason}`));

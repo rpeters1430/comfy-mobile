@@ -10,8 +10,8 @@ import httpx
 import trafilatura
 from lxml import html
 
-LABEL = r'(?:sampling\s+steps?|inference\s+steps?|steps?|cfg(?:\s+scale)?|guidance(?:\s+scale)?)'
-NUMBER = re.compile(r'(?P<label>' + LABEL + r')\s*[:=|\-]*\s*(?P<a>\d+(?:\.\d+)?)(?:\s*(?:[-–—]|to)\s*(?P<b>\d+(?:\.\d+)?))?',re.I)
+LABEL = r'(?:num_inference_steps|sampling[ _]+steps?|inference[ _]+steps?|steps?|cfg(?:[ _]+scale)?|guidance(?:[ _]+scale)?)'
+NUMBER = re.compile(r'(?<![a-z0-9_])(?P<label>' + LABEL + r')[\s:=|*`_\-]*(?P<a>\d+(?:\.\d+)?)(?:\s*(?:[-–—]|to)\s*(?P<b>\d+(?:\.\d+)?))?',re.I)
 SETTING = re.compile(r'steps?|cfg|guidance|sampler|scheduler|resolution|recommended',re.I)
 VARIANT = re.compile(r'turbo|lightning|hyper|lcm|dmd|schnell|distill|flash|swift',re.I)
 TRAINING = re.compile(r'train(?:ing)?|learning.rate|optimizer|epoch|warmup',re.I)
@@ -164,43 +164,81 @@ async def public_get(url, *, accept='text/html', limit=256_000):
     raise ResearchError('Source redirected too many times')
 
 
+def model_words(filename):
+    stem=re.split(r'[/\\]',filename)[-1].rsplit('.',1)[0]
+    stem=re.sub(r'(?<=[a-z])(?=[A-Z])',' ',stem)
+    stem=re.sub(r'(?<=[A-Z])(?=[A-Z][a-z])',' ',stem)
+    return re.sub(r'[_-]+',' ',stem).strip()
+
+
+def search_queries(filename):
+    basename=re.split(r'[/\\]',filename)[-1]
+    return [f'"{basename}" model recommended settings',
+            model_words(filename)+' model recommended inference settings steps cfg sampler']
+
+
+def relevant_result(filename,text):
+    ignored={'sdxl','sd15','lora','model','nsfw','safetensors','fp16','fp8','bf16','all','one'}
+    words=[w.lower() for w in re.findall(r'[A-Za-z]{3,}',model_words(filename)) if w.lower() not in ignored]
+    normalized=re.sub(r'[^a-z0-9]','',text.lower())
+    return bool(words) and any(w in normalized for w in words)
+
+
+def civitai_version(model,filename):
+    basename=re.split(r'[/\\]',filename)[-1].casefold()
+    versions=[v for v in model.get('modelVersions',[]) if any(f.get('name','').casefold()==basename for f in v.get('files',[]))]
+    return versions[0] if len(versions)==1 else None
+
+
 class Research:
     def __init__(self,searxng_url):
         self.url=searxng_url.rstrip('/')
 
+    async def search(self,query):
+        async with httpx.AsyncClient(timeout=httpx.Timeout(18,connect=4),follow_redirects=False,trust_env=False) as client:
+            async with client.stream('GET',self.url+'/search',params={'q':query,'format':'json'}) as r:
+                if r.status_code!=200:
+                    raise ResearchError('SearXNG JSON disabled (403)' if r.status_code==403 else f'Search HTTP {r.status_code}')
+                data=bytearray()
+                async for chunk in r.aiter_bytes():
+                    data.extend(chunk)
+                    if len(data)>256_000: raise ResearchError('Search response exceeds limit')
+        results=json.loads(data).get('results',[])
+        if not isinstance(results,list): raise ResearchError('Search results are not a list')
+        return results[:8]
+
     async def gather(self,target):
         if not self.url:
             return [],[{'phase':'search','reason':'SEARXNG_URL is not configured'}]
-        filename=target['file']
-        stem=re.split(r'[/\\]',filename)[-1].rsplit('.',1)[0]
-        sources=[]; diagnostics=[]
-        try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(18,connect=4),follow_redirects=False,trust_env=False) as client:
-                async with client.stream('GET',self.url+'/search',params={'q':stem+' recommended inference settings steps cfg sampler','format':'json'}) as r:
-                    if r.status_code!=200:
-                        raise ResearchError('SearXNG JSON disabled (403)' if r.status_code==403 else f'Search HTTP {r.status_code}')
-                    data=bytearray()
-                    async for chunk in r.aiter_bytes():
-                        data.extend(chunk)
-                        if len(data)>256_000: raise ResearchError('Search response exceeds limit')
-            results=json.loads(data).get('results',[])[:8]
-            diagnostics.append({'phase':'search','results':len(results)})
-        except (httpx.HTTPError,ValueError,AttributeError) as exc:
-            return [],[{'phase':'search','reason':str(exc) if isinstance(exc,ResearchError) else 'Search unavailable or invalid JSON'}]
-        for item in results:
-            if len(sources)>=5: break
-            if not isinstance(item,dict): continue
-            url=item.get('url','')
+        filename=target['file']; sources=[]; mismatches=[]; diagnostics=[]; results=[]; seen=set()
+        for query in search_queries(filename):
             try:
-                parsed=urlsplit(url)
-                host=parsed.hostname
+                found=await self.search(query)
+                diagnostics.append({'phase':'search','query':query,'results':len(found)})
+                for item in found:
+                    if not isinstance(item,dict) or not isinstance(item.get('url'),str): continue
+                    url=item['url']
+                    if url in seen: continue
+                    seen.add(url)
+                    if not relevant_result(filename,str(item.get('title',''))+' '+url):
+                        diagnostics.append({'phase':'relevance','reason':'Unrelated model result skipped','title':str(item.get('title',''))[:100]})
+                        continue
+                    results.append(item)
+            except (httpx.HTTPError,ValueError,AttributeError,TypeError) as exc:
+                diagnostics.append({'phase':'search','reason':str(exc) if isinstance(exc,ResearchError) else 'Search unavailable or invalid JSON'})
+        words=[w.lower() for w in model_words(filename).split() if len(w)>2]
+        results.sort(key=lambda item:-sum(w in (str(item.get('title',''))+' '+item['url']).lower() for w in words))
+        for item in results[:8]:
+            if len(sources)>=5: break
+            url=item['url']
+            try:
+                parsed=urlsplit(url); host=parsed.hostname
                 if host not in SOURCE_HOSTS:
                     diagnostics.append({'phase':'fetch','reason':'Source domain unsupported','host':str(host)[:100]}); continue
                 fetch_url=url
                 if host=='huggingface.co':
                     parts=parsed.path.strip('/').split('/')
                     if len(parts)<2: continue
-                    # Use the referenced revision when present, rather than silently changing it to main.
                     revision=parts[3] if len(parts)>3 and parts[2] in ('blob','raw','resolve','tree') else 'main'
                     fetch_url=f'https://huggingface.co/{parts[0]}/{parts[1]}/raw/{revision}/README.md'
                 elif host=='github.com':
@@ -211,24 +249,26 @@ class Research:
                     match=re.match(r'/models/(\d+)',parsed.path)
                     if not match: continue
                     raw=await public_get('https://civitai.com/api/v1/models/'+match[1],accept='application/json')
-                    model=json.loads(raw)
-                    versions=[v for v in model.get('modelVersions',[]) if any(f.get('name','').casefold()==filename.split('/')[-1].casefold() for f in v.get('files',[]))]
-                    if len(versions)!=1:
-                        diagnostics.append({'phase':'identity','reason':'No unique exact Civitai file version'}); continue
-                    version=versions[0]
+                    model=json.loads(raw); version=civitai_version(model,filename)
+                    if version is None:
+                        diagnostics.append({'phase':'identity','reason':'No unique exact Civitai file version','url':url}); continue
                     text=f"{filename}\n{model.get('name','')} {version.get('name','')}\n"+extract_document(model.get('description','')+'\n'+version.get('description',''),url)
                     sources.append(self.source(len(sources),url,text,True)); continue
-                raw=await public_get(fetch_url)
-                text=extract_document(raw,fetch_url)
+                raw=await public_get(fetch_url); text=extract_document(raw,fetch_url)
                 if not text: raise ResearchError('No readable page text')
-                # Source title is not sufficient proof: match the extracted model card itself.
                 verified=identity_matches(filename,text)
-                sources.append(self.source(len(sources),url,text,verified))
                 diagnostics.append({'phase':'extract','characters':len(text),'settings_characters':len(settings_excerpt(text)),'verified':verified,'url':url})
-            except (ResearchError,httpx.HTTPError,ValueError,TypeError,KeyError):
+                if verified: sources.append(self.source(len(sources),url,text,True))
+                else:
+                    diagnostics.append({'phase':'identity','reason':'Page read, but exact model/version was not established; settings withheld','url':url})
+                    if len(mismatches)<2: mismatches.append(self.source(0,url,'',False))
+            except (ResearchError,httpx.HTTPError,ValueError,TypeError,KeyError,OSError):
                 diagnostics.append({'phase':'fetch','reason':'Source unavailable, blocked, invalid or too large','host':str(urlsplit(url).hostname)[:100]})
+        # Keep brief mismatch links for diagnosis, without pages of irrelevant settings or AI input.
+        for mismatch in mismatches[:max(0,5-len(sources))]:
+            mismatch['id']=f's{len(sources)+1}'; sources.append(mismatch)
         return sources,diagnostics
 
     @staticmethod
     def source(index,url,text,verified):
-        return {'id':f's{index+1}','url':url[:1000],'text':text,'excerpt':settings_excerpt(text),'verified':verified}
+        return {'id':f's{index+1}','url':url[:1000],'text':text,'excerpt':settings_excerpt(text) if verified else 'Page does not establish this exact model/version; its settings were excluded.','verified':verified}

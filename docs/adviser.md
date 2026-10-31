@@ -50,7 +50,7 @@ Expand a model card for search count, source fetch/extraction result, extracted 
 
 - **SearXNG JSON disabled:** allow JSON output; HTML search success is insufficient.
 - **Source unavailable/blocked/too large:** search found a link but it could not be read. No settings are inferred from its search snippet.
-- **Unverified source:** the extracted text did not establish the exact model/version. Source cards remain visible; unsupported changes are withheld.
+- **Unverified source:** the extracted text did not establish the exact model/version. Brief source links remain visible; mismatched page excerpts are excluded from AI input and unsupported changes are withheld.
 - **Invalid/incomplete settings JSON:** provider parsing failed or output hit its limit; explicit numeric extraction can still succeed.
 - **Conflicting evidence:** incompatible source settings are displayed without choosing an arbitrary winner.
 - **No justified changes:** distinguish already-in-range settings from missing evidence using the cards; this is not a certification that the whole workflow is optimal.
@@ -61,7 +61,7 @@ Refresh saved research after changing providers or when testing parsing fixes. S
 
 Public adapters support Civitai exact file/version matches, Hugging Face model cards, GitHub/raw GitHub documents, and ComfyUI documentation. Other domains are explicitly reported as unsupported; this is not a general web browser. Source fetches are bounded, public HTTPS only, with validated pinned DNS and redirect checks. Civitai APIs may still require access the app does not have; no authentication-bypass service is used.
 
-Changes are limited to steps, CFG, sampler, scheduler and paired latent size on an unambiguous base generation pass. Refiners, multi-model/video splits, acceleration LoRA combinations and unknown wrappers can show research but withhold executable suggestions. Model replacement, LoRA strength, prompts and denoise remain manual. Final wallpaper fit is preserved.
+Changes are limited to steps, CFG, sampler, scheduler and paired latent size on an unambiguous base generation pass. One identifiable base pass can be reviewed with connected downstream refinement passes; refinement settings remain unchanged. Parallel branches, multi-model/video splits, acceleration LoRA combinations and unknown wrappers can show research but withhold executable suggestions. Model replacement, LoRA strength, prompts and denoise remain manual. Final wallpaper fit is preserved.
 
 Trafilatura and explicit table preservation replace basic HTML stripping. Schema-constrained AI assists evidence extraction; deterministic validation selects changes. Neither finding a page nor producing valid JSON establishes that its settings apply to your model. Browser rendering/Crawl4AI and benchmark comparisons are follow-ups, not included in this release.
 

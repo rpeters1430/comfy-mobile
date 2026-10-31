@@ -72,3 +72,30 @@ class TaskTests(unittest.IsolatedAsyncioTestCase):
                 adviser.cancel(three['id'],'owner')
                 await finish()
                 self.assertEqual('cancelled',adviser.get(three['id'],'owner')['status'])
+
+class RefinementRegressionTests(unittest.TestCase):
+    def test_identifies_base_and_leaves_downstream_refiner_unchanged(self):
+        import copy
+        g=copy.deepcopy(GRAPH)
+        g['4']={'class_type':'KSampler','inputs':{**g['2']['inputs'],'latent_image':['2',0],'denoise':0.4,'steps':15}}
+        g['3']['inputs']['images']=['4',0]
+        controls=copy.deepcopy(CONTROLS)
+        controls['samplers'].append({'node':'4','role':'refine','values':{'steps':15,'cfg':7}})
+        proposals,notes=propose(g,controls,[{'file':'Example_v1.safetensors','facts':[FACT]}])
+        self.assertEqual(['2'],[c['node'] for p in proposals for c in p['changes']])
+        self.assertTrue(any('refinement' in note for note in notes))
+        # A separate branch at low denoise is not established as this base pass's refinement.
+        del g['4']['inputs']['latent_image']
+        self.assertEqual([],propose(g,controls,[{'file':'Example_v1.safetensors','facts':[FACT]}])[0])
+
+class AdvancedScheduleRegressionTests(unittest.TestCase):
+    def test_split_advanced_noise_schedules_remain_manual(self):
+        import copy
+        from app.workflow_controls import _samplers
+        g=copy.deepcopy(GRAPH)
+        g['2']['class_type']='KSamplerAdvanced'
+        g['2']['inputs'].update(start_at_step=0,end_at_step=20,add_noise='enable',return_with_leftover_noise='enable')
+        g['4']={'class_type':'KSamplerAdvanced','inputs':{**g['2']['inputs'],'latent_image':['2',0], 'start_at_step':20,'end_at_step':30,'add_noise':'disable','return_with_leftover_noise':'disable'}}
+        g['3']['inputs']['images']=['4',0]
+        controls={**CONTROLS,'samplers':_samplers(g)}
+        self.assertEqual([],propose(g,controls,[{'file':'Example_v1.safetensors','facts':[FACT]}])[0])

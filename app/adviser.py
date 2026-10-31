@@ -67,10 +67,31 @@ def propose(graph,controls,cards):
     models=[x for x in active if x['kind']=='model']
     samplers=[(k,n) for k,n in graph.items() if n['class_type'] in ('KSampler','KSamplerAdvanced','SamplerCustom','SamplerCustomAdvanced')]
     base=[c for c in controls['samplers'] if c['role']=='base' and c['node'] in graph]
-    if len(models)!=1 or len(samplers)!=1 or not base:
-        return [],['Settings changes need one unambiguous base model and sampler pass; research remains available.']
-    # Refine/partial denoise and unknown model wrappers are deliberately unsupported.
-    main_id,main=samplers[0]
+    roles={c['node']:c['role'] for c in controls['samplers']}
+    advanced=[n for k,n in samplers if n['class_type']=='KSamplerAdvanced']
+    # Advanced continuation passes share a sigma schedule; changing one pass alone is unsafe.
+    if advanced and (len(samplers)>1 or any(n['inputs'].get('return_with_leftover_noise')=='enable' or
+        not isinstance(n['inputs'].get('end_at_step',10000),(int,float)) or
+        n['inputs'].get('end_at_step',10000)<n['inputs'].get('steps',150) for n in advanced)):
+        return [],['Partial or connected advanced sampler schedules remain manual to preserve noise-schedule continuity.']
+    base_passes=[(k,n) for k,n in samplers if roles.get(k)=='base' or n['class_type'] in ('SamplerCustom','SamplerCustomAdvanced')]
+    if len(models)!=1 or len(base_passes)!=1 or not base:
+        return [],[f'Workflow analysis: {len(models)} active model files, {len(samplers)} sampler passes, {len(base_passes)} identifiable base passes. Changes require one identifiable base pass; research remains available.']
+    main_id,main=base_passes[0]
+    def upstream(root):
+        seen=set(); pending=[root]
+        while pending:
+            key=pending.pop()
+            if key in seen or key not in graph: continue
+            seen.add(key)
+            pending.extend(v[0] for v in graph[key]['inputs'].values() if isinstance(v,list) and len(v)==2 and isinstance(v[0],str))
+        return seen
+    refinement=[k for k,n in samplers if k!=main_id]
+    if any(roles.get(k)!='refine' or main_id not in upstream(k) for k in refinement):
+        return [],['Additional sampler branches are not proven downstream refinements; settings remain manual.']
+    if refinement: notes.append(f'Base sampler {main_id} identified; {len(refinement)} downstream refinement passes are left unchanged.')
+    main_inputs=upstream(main_id)
+    base=[c for c in base if c['node'] in main_inputs]
     if main['class_type'] in ('KSampler','KSamplerAdvanced'):
         if not any(c['node']==main_id for c in base) or not _base_chain(graph,main_id):
             return [],['Refine passes or model wrapper chains are unsupported.']
@@ -150,7 +171,7 @@ class Adviser:
                     ts=targets(row['graph'])
                     if len(ts)>16: row['notes'].append('Only the first 16 active models are researched.')
                     for i,target in enumerate(ts[:16]):
-                        cachekey=hashlib.sha256(json.dumps([os.getenv('COMFYUI_URL',''),target,3],sort_keys=True).encode()).hexdigest()
+                        cachekey=hashlib.sha256(json.dumps([os.getenv('COMFYUI_URL',''),target,4],sort_keys=True).encode()).hexdigest()
                         card=None if refresh else self.store.get('cache',cachekey)
                         if card:
                             card={**card,'cached':True}
@@ -161,9 +182,9 @@ class Adviser:
                                 raw.extend({**f,'source_id':src['id']} for f in candidates(src['text']))
                             facts,rejected=verify_facts(raw,sources,target['file'])
                             ai=AI()
-                            if sources and not ai.config.problem():
+                            if any(s.get('verified') for s in sources) and not ai.config.problem():
                                 try:
-                                    assisted=await ai.extract(target,sources)
+                                    assisted=await ai.extract(target,[s for s in sources if s.get('verified')])
                                     extra,bad=verify_facts(assisted,sources,target['file'])
                                     facts.extend(f for f in extra if f not in facts); rejected.extend(bad)
                                     diagnostics.append({'phase':'ai','reason':'Structured response validated','accepted':len(extra)})
