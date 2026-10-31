@@ -1,4 +1,4 @@
-# Comfy Mobile — v0.7.0
+# Comfy Mobile — v0.7.1
 
 Mobile-first ComfyUI dashboard running on a NAS, connecting to ComfyUI on another machine.
 
@@ -15,6 +15,10 @@ GitHub Actions builds and publishes `ghcr.io/rpeters1430/comfy-mobile:latest` on
 - **Phone wallpapers**: Pixel, iPhone and Galaxy presets, rendered near the model's native size and then upscaled and center-cropped to the exact screen. Wallpaper style chips and a Cinematic-ready mode for Pixel.
 - **Notifications and gallery**: The NAS watches each job and sends a push notification when it finishes, even with the app closed (needs HTTPS). Finished jobs and thumbnails are kept on the NAS, so the gallery survives ComfyUI restarts.
 - **Workflow Sync**: Safe, one-way pull of workflows directly from ComfyUI's user-data directory to your NAS.
+
+## New in v0.7.1
+
+Fixes from a code audit. Workflows greyed out for a missing model or node become runnable within about a minute of fixing it on the PC, with no container restart. Presets saved by older releases report as invalid instead of failing. Live progress stays visible for large batches. All app scripts are revalidated on load, so a phone never mixes two releases after an update. Gallery images reuse one connection to ComfyUI. Direct Python dependencies are now pinned.
 
 ## New in v0.7.0
 
