@@ -59,6 +59,9 @@ test('photo details use recorded settings and approved prompt without guessing d
  assert.equal(rows.Resolution, '1024 × 1536');
  const legacy=Object.fromEntries(photoDetails({workflow:'Old'},{filename:'old.png'}));
  assert.equal(legacy.Models,'Not recorded');
+ assert.equal(legacy['Auto LoRAs'], undefined);
+ const auto=Object.fromEntries(photoDetails({controls:{auto_loras:'Auto LoRAs: TechWearXL (matched techwear, hood)'}},{}));
+ assert.equal(auto['Auto LoRAs'],'TechWearXL (matched techwear, hood)');
 });
 
 test('broken synced copy does not hide a working bundled workflow', () => {

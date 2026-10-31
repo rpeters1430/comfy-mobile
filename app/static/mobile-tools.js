@@ -55,7 +55,9 @@
       ['File', item?.filename || 'Loading…'], ['Resolution', resolution || 'Loading…'],
       ['Prompt', job.review?.positive || job.prompt || 'No typed prompt recorded'],
       ['Negative prompt', job.review?.negative ?? 'Not recorded'],
-      ['Models', models || 'Not recorded'], ['LoRAs', loras || 'Not recorded'], ['Sampling', sampling || 'Not recorded'],
+      ['Models', models || 'Not recorded'], ['LoRAs', loras || 'Not recorded'],
+      ...(settings.auto_loras ? [['Auto LoRAs', settings.auto_loras.replace(/^Auto LoRAs: /, '')]] : []),
+      ['Sampling', sampling || 'Not recorded'],
       ['Output fit', settings.fit ? `${settings.fit.width} × ${settings.fit.height}` : 'Workflow default'],
       ...(details.adviser ? [['Settings review', details.adviser.review_id], ['Approved changes', details.adviser.changes.map(p => p.label + ': ' + p.evidence.map(e => e.quote).join('; ')).join('\n')]] : []),
       ['Job ID', job.id || 'Not recorded']];

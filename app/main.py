@@ -369,6 +369,7 @@ class Job(BaseModel):
     caption: dict[str,dict[str,bool|str]] = Field(default_factory=dict,max_length=4)
     fit: FitChoice | None = None
     skip_detailers: bool = False
+    auto_loras: str = Field(default='', max_length=1000)  # the phone's note on what auto LoRAs added; recorded only
 
 async def prepare_job(job: Job):
     try:

@@ -763,7 +763,7 @@ $('form').onsubmit = async event => {
       params.controls = withAutoLoras(params.controls, auto);
       if (params.review) params.review = { ...params.review, positive: withTriggers(params.review.positive, auto) };
       else params.prompt = withTriggers(params.prompt, auto);
-      showToast(auto.label);
+      showToast(auto.label, 6000);
     }
     if (!approval && stage === 'render' && $('check-settings').checked) {
       if (!await checkSettings({ ...params, seed: base })) return;
@@ -789,24 +789,30 @@ const AUTO_LORA_KEY = 'image-studio-mobile:auto-loras:v1';
 $('auto-loras').checked = load(AUTO_LORA_KEY) === '1';
 $('auto-loras').onchange = () => store(AUTO_LORA_KEY, $('auto-loras').checked ? '1' : '0');
 
+// Returns null when the option is off; otherwise what was added, or why nothing was, so every run says so.
 async function suggestLoras(text, current) {
-  const base = controls?.can_add_lora && baseFamily();
+  if (!$('auto-loras').checked || !controls?.can_add_lora) return null;
+  const skip = why => ({ loras: [], triggers: [], label: 'Auto LoRAs: ' + why });
+  const base = baseFamily();
   const have = current.extra_loras || [];
   const limit = Math.min(2, MAX_EXTRA_LORAS - have.length);
-  if (!$('auto-loras').checked || !base || !text.trim() || limit < 1) return null;
+  if (!base) return skip("skipped, this checkpoint's model family is unknown");
+  if (!text.trim()) return skip('skipped, no prompt to match. For photo workflows, tick "Review caption before rendering"');
+  if (limit < 1) return skip('skipped, all extra LoRA slots are in use');
   const exclude = [...have.map(x => x.name), ...controls.loras.map(l => current.loras?.[l.node]?.name || l.value)];
   let suggestions;
   try { ({ suggestions } = await api('/loras/suggest', { method: 'POST', json: { text, base, exclude, limit } })); }
-  catch (e) { return null; }  // a suggestion failure never blocks the job
-  if (!suggestions?.length) return null;
+  catch (e) { return skip('skipped, ' + e.message); }  // a suggestion failure never blocks the job
+  if (!suggestions?.length) return skip(`none of your ${base} LoRAs match this description`);
   const lower = text.toLowerCase();
   return { loras: suggestions.map(s => ({ name: s.name, strength: s.strength })),
     triggers: [...new Set(suggestions.map(s => s.trigger).filter(t => t && !lower.includes(t.toLowerCase())))],
-    label: 'Auto LoRAs: ' + suggestions.map(s => fileLabel(s.name)).join(', ') };
+    label: 'Auto LoRAs: ' + suggestions.map(s => `${fileLabel(s.name)} (matched ${s.matched.join(', ')}${s.trigger ? `; trigger "${s.trigger}"` : ''})`).join(', ') };
 }
 
+// The label rides along in the job body so the job record, and so Photo details, keep it.
 function withAutoLoras(current, auto) {
-  return auto ? { ...current, extra_loras: [...(current.extra_loras || []), ...auto.loras] } : current;
+  return auto ? { ...current, extra_loras: [...(current.extra_loras || []), ...auto.loras], auto_loras: auto.label } : current;
 }
 
 function withTriggers(text, auto) { return auto?.triggers.length ? [text, ...auto.triggers].join(', ') : text; }
