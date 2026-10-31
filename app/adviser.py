@@ -1,6 +1,7 @@
 """Research tasks and conservative proposals; no graph execution or arbitrary AI patches."""
 import asyncio
 import copy
+import math
 import hashlib
 import json
 import os
@@ -9,11 +10,11 @@ import time
 
 try:
     from .research import Research, candidates, verify_facts, VARIANT
-    from .adviser_ai import AI, AIError
+    from .adviser_ai import AI, AIError, AIConfig, DEFAULT_URLS
     from .adviser_store import Store
 except ImportError:
     from research import Research, candidates, verify_facts, VARIANT
-    from adviser_ai import AI, AIError
+    from adviser_ai import AI, AIError, AIConfig, DEFAULT_URLS
     from adviser_store import Store
 
 
@@ -134,12 +135,83 @@ def propose(graph,controls,cards):
     return result,notes
 
 
+def workflow_context(graph,controls):
+    graph=reachable(graph)
+    controls={**controls,'samplers':[c for c in controls['samplers'] if c['node'] in graph]}
+    active=targets(graph)
+    models=[t['file'] for t in active if t['kind']=='model']
+    base=[c for c in controls['samplers'] if c['role']=='base' and graph.get(c['node'],{}).get('class_type')=='KSampler']
+    other_base=[c for c in controls['samplers'] if c['role']=='base' and graph.get(c['node'],{}).get('class_type') in ('KSamplerAdvanced','SamplerCustom','SamplerCustomAdvanced')]
+    allowed=[]
+    complex_pass=any(n['class_type'] in ('KSamplerAdvanced','SamplerCustom','SamplerCustomAdvanced') for n in reachable(graph).values())
+    if len(models)==1 and len(base)==1 and not other_base and not complex_pass and _base_chain(graph,base[0]['node']) and not any(t['kind']=='lora' and VARIANT.search(t['file']) for t in active):
+        for field,current in base[0]['values'].items():
+            if field in ('steps','cfg','sampler_name','scheduler'):
+                cap={'node':base[0]['node'],'field':field,'current':current}
+                if field in ('steps','cfg'):cap.update(min=1 if field=='steps' else 0,max=150 if field=='steps' else 30)
+                else:cap['options']=controls.get('sampler_options' if field=='sampler_name' else 'scheduler_options',[])
+                allowed.append(cap)
+    return {'models':models,'loras':[t['file'] for t in active if t['kind']=='lora'],
+            'samplers':controls['samplers'],'capabilities':allowed}
+
+
+def ai_proposals(context,report):
+    capabilities={(c['node'],c['field']):c for c in context['capabilities']}
+    proposals=[]; seen=set()
+    for change in report.get('changes',[]):
+        key=(change['node'],change['field']); cap=capabilities.get(key)
+        if not cap or key in seen: continue
+        value=change['value'];field=change['field']
+        if field in ('steps','cfg'):
+            try:value=float(value)
+            except (ValueError,TypeError):continue
+            if not math.isfinite(value) or not cap['min']<=value<=cap['max'] or (field=='steps' and value%1):continue
+            if field=='steps':value=int(value)
+        elif value not in cap['options']:continue
+        if value==cap['current']:continue
+        seen.add(key)
+        proposals.append({'id':'ai-'+str(len(proposals)),'basis':'ai','label':f"{field} · node {change['node']} · AI suggestion",
+                          'changes':[{'node':change['node'],'field':field,'current':cap['current'],'value':value}],
+                          'reason':change['reason'],'evidence':[]})
+    return proposals
+
+
+def merge_proposals(published,ai):
+    fields={(c.get('node'),c['field']) for p in published for c in p['changes']}
+    return [{**p,'basis':'published'} for p in published]+[p for p in ai if not any((c.get('node'),c['field']) in fields for c in p['changes'])]
+
+
 class Adviser:
     def __init__(self,root):
         self.store=Store(root); self.tasks={}; self.lock=asyncio.Lock()
 
+    def config(self):
+        try: saved=self.store.get('config','ai')
+        except (ValueError,OSError): saved=None
+        return AIConfig(**saved) if saved else AIConfig.env()
+
+    def ai(self):
+        return AI(self.config())
+
+    def public_config(self):
+        cfg=self.config()
+        return {'provider':cfg.provider,'model':cfg.model,'base_url':cfg.base_url,'has_key':bool(cfg.api_key)}
+
+    def proposed_config(self,values):
+        old=self.config()
+        base=values.get('base_url','').strip() or DEFAULT_URLS.get(values['provider'],'')
+        key=values.get('api_key','').strip()
+        if not key and old.provider==values['provider'] and old.base_url.rstrip('/')==base.rstrip('/'):
+            key=old.api_key
+        return AIConfig(values['provider'],values.get('model','').strip(),base,key)
+
+    def save_config(self,cfg):
+        from dataclasses import asdict
+        self.store.put('config','ai',asdict(cfg),ttl=10*365*86400)
+        os.chmod(self.store.path,0o600)
+
     def status(self):
-        cfg=AI().config
+        cfg=self.config()
         return {'provider':cfg.provider,'model':cfg.model,'ai_configured':not bool(cfg.problem()),
                 'search_configured':bool(os.getenv('SEARXNG_URL','')),
                 'problem':cfg.problem(), 'hosted':cfg.provider!='ollama'}
@@ -152,12 +224,12 @@ class Adviser:
     def public(self,row):
         return {k:v for k,v in row.items() if k not in ('owner','graph','controls','source_hash','hashes','approved_hashes','job')}
 
-    def start(self,owner,graph,controls,source_hash,job,seeds,refresh=False):
+    def start(self,owner,graph,controls,source_hash,job,seeds,refresh=False,web_research=False):
         if len(self.tasks)>=3: raise ValueError('Research queue is full; cancel a review or wait')
         key=secrets.token_urlsafe(24)
         row={'id':key,'owner':owner,'status':'queued','created':time.time(),'expires':time.time()+600,
              'graph':graph,'controls':controls,'source_hash':source_hash,'job':job,'seeds':seeds,
-             'cards':[],'proposals':[],'notes':[]}
+             'cards':[],'proposals':[],'notes':[],'ai_called':False,'web_research':web_research}
         self.store.put('review',key,row)
         self.tasks[key]=asyncio.create_task(self._run(key,owner,refresh))
         self.tasks[key].add_done_callback(lambda task:self.tasks.pop(key,None))
@@ -168,7 +240,18 @@ class Adviser:
             async with self.lock:
                 async with asyncio.timeout(180):
                     row=self.get(key,owner); row['status']='researching'; self.store.put('review',key,row)
-                    ts=targets(row['graph'])
+                    ai=self.ai()
+                    if ai.config.problem(): raise AIError('AI is not configured: '+ai.config.problem())
+                    row['phase']='Calling '+ai.config.provider+' / '+ai.config.model+' to review workflow settings'
+                    self.store.put('review',key,row)
+                    context=workflow_context(row['graph'],row['controls'])
+                    if not context['capabilities']: row['notes'].append('This graph has no safely editable base sampler controls; the AI assessment is informational.')
+                    report=await ai.review(context)
+                    row['ai_called']=True;row['ai_summary']=report['summary']
+                    row['ai_provider']=ai.config.provider;row['ai_model']=ai.config.model
+                    row['proposals']=ai_proposals(context,report)
+                    self.store.put('review',key,row)
+                    ts=targets(row['graph']) if row.get('web_research') else []
                     if len(ts)>16: row['notes'].append('Only the first 16 active models are researched.')
                     for i,target in enumerate(ts[:16]):
                         cachekey=hashlib.sha256(json.dumps([os.getenv('COMFYUI_URL',''),target,4],sort_keys=True).encode()).hexdigest()
@@ -181,7 +264,7 @@ class Adviser:
                             for src in sources:
                                 raw.extend({**f,'source_id':src['id']} for f in candidates(src['text']))
                             facts,rejected=verify_facts(raw,sources,target['file'])
-                            ai=AI()
+                            ai=self.ai()
                             if any(s.get('verified') for s in sources) and not ai.config.problem():
                                 try:
                                     assisted=await ai.extract(target,[s for s in sources if s.get('verified')])
@@ -200,14 +283,19 @@ class Adviser:
                         row['cards'].append(card)
                         row['phase']=f'Researched {i+1}/{min(len(ts),16)} models'
                         self.store.put('review',key,row)
-                    row['proposals'],notes=propose(row['graph'],row['controls'],row['cards'])
+                    published,notes=propose(row['graph'],row['controls'],row['cards']) if row.get('web_research') else ([],[])
+                    row['proposals']=merge_proposals(published,row['proposals'])
                     row['notes'].extend(notes); row['status']='done'; self.store.put('review',key,row)
         except asyncio.CancelledError:
             return
+        except AIError as exc:
+            row=self.get(key,owner);row['status']='failed';row['notes'].append('AI review failed: '+str(exc))
+            self.store.put('review',key,row)
         except TimeoutError:
             try:
-                row=self.get(key,owner); row['status']='done'; row['notes'].append('Research deadline reached; partial results shown.')
-                row['proposals'],notes=propose(row['graph'],row['controls'],row['cards']); row['notes'].extend(notes)
+                row=self.get(key,owner); row['status']='done' if row.get('ai_called') else 'failed'; row['notes'].append('Review deadline reached; '+('AI assessment retained.' if row.get('ai_called') else 'AI did not finish.'))
+                published,notes=propose(row['graph'],row['controls'],row['cards'])
+                row['proposals']=merge_proposals(published,row.get('proposals',[])); row['notes'].extend(notes)
                 self.store.put('review',key,row)
             except ValueError: pass
         except Exception:

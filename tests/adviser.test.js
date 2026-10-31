@@ -37,7 +37,7 @@ test('research/apply UI keeps rendering explicit and binds current form', async 
   const proposal={id:'p1',label:'Steps',changes:[{current:30,value:25}],reason:'Published range',evidence:[{quote:'Steps: 25'}]};
   const api=async(path,options={})=>{
     paths.push(path);
-    if (path==='/adviser/status') return {search_configured:true,ai_configured:true,provider:'ollama',model:'local'};
+    if (path==='/adviser/status') return {search_configured:false,ai_configured:true,provider:'ollama',model:'local'};
     if (path==='/adviser/reviews') {assert.deepEqual(options.json.seeds,[7,7]);return {id:'review'};}
     if (path==='/adviser/reviews/review') return {status:'done',cards:[],notes:[],proposals:[proposal]};
     if (path.endsWith('/apply')) return {token:'approved',expires:Date.now()/1000+600,seeds:[7,7],sampling:{node:{steps:25}}};

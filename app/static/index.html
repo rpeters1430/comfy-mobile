@@ -101,10 +101,21 @@
       </div>
       <p class="status" style="margin:4px 0 0">Leave seed empty for a random seed each run. With a fixed seed, runs use seed, seed+1, …</p>
       <details class="controls" id="adviser-box">
-        <summary>Research &amp; review settings</summary>
-        <p class="status">Find published model settings and review changes before rendering.</p>
+        <summary>AI settings review</summary>
+        <p class="status">Ask your selected AI to review this workflow. Suggestions are optional and require your approval.</p>
+        <details id="adviser-config">
+          <summary>AI connection setup</summary>
+          <label>Provider<select id="ai-provider"><option value="ollama">Local Ollama</option><option value="openai">OpenAI</option><option value="gemini">Gemini</option><option value="openrouter">OpenRouter</option><option value="compatible">Other compatible API</option></select></label>
+          <label>API base URL<input id="ai-base" type="url" autocomplete="off" placeholder="Ollama PC URL, or leave blank for hosted default"></label>
+          <label>API key<input id="ai-key" type="password" autocomplete="new-password" placeholder="Not needed for local Ollama"></label>
+          <label>Model<input id="ai-model" list="ai-models" autocomplete="off" placeholder="Load models or enter an exact model ID"></label>
+          <datalist id="ai-models"></datalist>
+          <div class="row"><button type="button" class="secondary" id="ai-load-models">Load models</button><button type="button" class="secondary" id="ai-test-save">Test &amp; save connection</button></div>
+          <p id="ai-connection-status" class="status" role="status" aria-live="polite">Keys are stored on the NAS and are never returned to this screen.</p>
+        </details>
+        <label><input type="checkbox" id="adviser-web"> Add published guidance from web research (optional)</label>
         <label><input type="checkbox" id="adviser-refresh"> Refresh saved research</label>
-        <div class="row"><button type="button" class="secondary" id="adviser-start">Research settings</button><button type="button" class="ghost hide" id="adviser-cancel">Cancel research</button></div>
+        <div class="row"><button type="button" class="secondary" id="adviser-start">Review with AI</button><button type="button" class="ghost hide" id="adviser-cancel">Cancel research</button></div>
         <p class="status" id="adviser-status" role="status" aria-live="polite"></p>
         <div id="adviser-results"></div>
       </details>

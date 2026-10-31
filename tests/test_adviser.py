@@ -58,13 +58,13 @@ class TaskTests(unittest.IsolatedAsyncioTestCase):
                     if not adviser.tasks: return
                 self.fail('background review did not finish')
             gather=AsyncMock(return_value=([source],[{'phase':'search','results':1}]))
-            with patch('app.adviser.Research.gather',gather),patch.dict('os.environ',{'ADVISER_MODEL':''}):
-                one=adviser.start('owner',GRAPH,CONTROLS,'source',{},[42])
+            with patch('app.adviser.Research.gather',gather),patch.dict('os.environ',{'ADVISER_MODEL':'local','OLLAMA_URL':'http://pc:11434'}),patch('app.adviser.AI.review',AsyncMock(return_value={'summary':'AI reviewed','changes':[]})),patch('app.adviser.AI.extract',AsyncMock(return_value=[])):
+                one=adviser.start('owner',GRAPH,CONTROLS,'source',{},[42],web_research=True)
                 await finish()
                 row=adviser.get(one['id'],'owner')
                 self.assertEqual('done',row['status'])
                 self.assertEqual(1,len(row['proposals']))
-                two=adviser.start('owner',GRAPH,CONTROLS,'source',{},[43])
+                two=adviser.start('owner',GRAPH,CONTROLS,'source',{},[43],web_research=True)
                 await finish()
                 self.assertTrue(adviser.get(two['id'],'owner')['cards'][0]['cached'])
                 self.assertEqual(1,gather.await_count)
@@ -99,3 +99,59 @@ class AdvancedScheduleRegressionTests(unittest.TestCase):
         g['3']['inputs']['images']=['4',0]
         controls={**CONTROLS,'samplers':_samplers(g)}
         self.assertEqual([],propose(g,controls,[{'file':'Example_v1.safetensors','facts':[FACT]}])[0])
+
+class RealAIRegressionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_provider_is_failure_not_research_complete(self):
+        import asyncio
+        from unittest.mock import patch
+        from app.adviser import Adviser
+        with tempfile.TemporaryDirectory() as folder,patch.dict('os.environ',{'ADVISER_MODEL':'','ADVISER_BASE_URL':'','OLLAMA_URL':''}):
+            adviser=Adviser(Path(folder))
+            row=adviser.start('owner',GRAPH,CONTROLS,'source',{},[42])
+            for _ in range(100):
+                await asyncio.sleep(.001)
+                if not adviser.tasks:break
+            done=adviser.get(row['id'],'owner')
+            self.assertEqual('failed',done['status'])
+            self.assertFalse(done.get('ai_called'))
+            self.assertTrue(any('AI' in note for note in done['notes']))
+
+    async def test_ai_is_called_without_verified_web_pages(self):
+        import asyncio
+        from unittest.mock import AsyncMock,patch
+        from app.adviser import Adviser
+        reply={'summary':'AI assessed the actual workflow','changes':[{'node':'2','field':'steps','value':'25','reason':'Trial setting, not an author recommendation.'}]}
+        with tempfile.TemporaryDirectory() as folder,patch.dict('os.environ',{'ADVISER_MODEL':'local','OLLAMA_URL':'http://pc:11434'}),patch('app.adviser.AI.review',AsyncMock(return_value=reply)) as review:
+            adviser=Adviser(Path(folder)); row=adviser.start('owner',GRAPH,CONTROLS,'source',{},[42])
+            for _ in range(100):
+                await asyncio.sleep(.001)
+                if not adviser.tasks:break
+            done=adviser.get(row['id'],'owner')
+            self.assertEqual('done',done['status']);self.assertTrue(done['ai_called'])
+            self.assertEqual(1,review.await_count)
+            self.assertEqual('ai',done['proposals'][0]['basis'])
+
+class AIProposalValidationTests(unittest.TestCase):
+    def test_ai_cannot_change_unknown_nodes_or_invalid_options(self):
+        from app.adviser import workflow_context,ai_proposals
+        context=workflow_context(GRAPH,CONTROLS)
+        changes=[{'node':'unknown','field':'steps','value':'25','reason':'no'},
+                 {'node':'2','field':'steps','value':'nan','reason':'no'},
+                 {'node':'2','field':'sampler_name','value':'invented','reason':'no'},
+                 {'node':'2','field':'cfg','value':'5','reason':'Trial only'}]
+        result=ai_proposals(context,{'summary':'test','changes':changes})
+        self.assertEqual(1,len(result));self.assertEqual('cfg',result[0]['changes'][0]['field'])
+        self.assertEqual('ai',result[0]['basis']);self.assertEqual([],result[0]['evidence'])
+
+class ReachableAIControlsTests(unittest.TestCase):
+    def test_disconnected_base_is_not_an_ai_edit_target(self):
+        import copy
+        from app.adviser import workflow_context
+        g=copy.deepcopy(GRAPH)
+        g['4']={'class_type':'KSampler','inputs':{**g['2']['inputs'],'denoise':0.5}}
+        g['3']['inputs']['images']=['4',0]
+        c=copy.deepcopy(CONTROLS)
+        c['samplers'].append({'node':'4','role':'refine','values':{'steps':30,'cfg':7}})
+        context=workflow_context(g,c)
+        self.assertEqual([],context['capabilities'])
+        self.assertEqual(['4'],[s['node'] for s in context['samplers']])

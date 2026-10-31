@@ -11,6 +11,7 @@ from starlette.background import BackgroundTask
 
 try:
     from adviser import Adviser, fingerprint
+    from adviser_ai import AI, AIError
     from workflow_validation import inspect_workflow, load_workflow
     from workflow_sync import WorkflowSync, bounded_get
     from workflow_conversion import convert_ui, ConversionError
@@ -24,6 +25,7 @@ try:
     from progress import ProgressTracker, listen
 except ImportError:
     from app.adviser import Adviser, fingerprint
+    from app.adviser_ai import AI, AIError
     from app.workflow_validation import inspect_workflow, load_workflow
     from app.workflow_sync import WorkflowSync, bounded_get
     from app.workflow_conversion import convert_ui, ConversionError
@@ -77,7 +79,7 @@ async def lifespan(app: FastAPI):
         await _http_client.aclose()
         _http_client = None
 
-VERSION = '0.6.1'
+VERSION = '0.7.0'
 app = FastAPI(title='Image Studio Mobile', version=VERSION, lifespan=lifespan)
 
 async def request(method, path, expect_json=True, **kwargs):
@@ -427,10 +429,39 @@ class ReviewRequest(BaseModel):
     job: Job
     seeds: list[int] = Field(min_length=1,max_length=8)
     refresh: bool = False
+    web_research: bool = False
 
 class ApplySettingsRequest(BaseModel):
     job: Job
     selected: list[str] = Field(min_length=1,max_length=32)
+
+class AIConnection(BaseModel):
+    provider: Literal['ollama','openai','gemini','openrouter','compatible']
+    model: str = Field(default='',max_length=300)
+    base_url: str = Field(default='',max_length=1000)
+    api_key: str = Field(default='',max_length=4000)
+
+@app.get('/api/adviser/config')
+def adviser_config(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return adviser.public_config()
+
+@app.post('/api/adviser/models')
+async def adviser_models(body: AIConnection, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    try: return {'models':await AI(adviser.proposed_config(body.model_dump())).models()}
+    except (AIError,ValueError) as exc: raise HTTPException(400,str(exc)) from exc
+
+@app.put('/api/adviser/config')
+async def save_adviser_config(body: AIConnection, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    cfg=adviser.proposed_config(body.model_dump())
+    try:
+        await AI(cfg).test()
+        adviser.save_config(cfg)
+    except (AIError,ValueError,OSError) as exc:
+        raise HTTPException(400,str(exc)) from exc
+    return {**adviser.public_config(),'connected':True}
 
 @app.get('/api/adviser/status')
 def adviser_status(authorization: str | None = Header(default=None)):
@@ -447,7 +478,7 @@ async def create_adviser_review(body: ReviewRequest, authorization: str | None =
     graph,info,_,_,source_hash=await prepare_job(job)
     try:
         return adviser.start(adviser_owner(),graph,find_controls(graph,info),source_hash,
-                             job.model_dump(exclude={'adviser_token','adviser_index'}),body.seeds,body.refresh)
+                             job.model_dump(exclude={'adviser_token','adviser_index'}),body.seeds,body.refresh,body.web_research)
     except (ValueError,OSError) as exc:
         raise HTTPException(400,'Cannot start research: queue full or DATA_DIR unavailable') from exc
 

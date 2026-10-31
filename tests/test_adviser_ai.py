@@ -32,3 +32,16 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
         ai=AI(AIConfig(provider='ollama',model='local',base_url='http://pc:11434'), transport=httpx.MockTransport(lambda req: httpx.Response(200,json={'done':True,'message':{'content':'bad'}})))
         with self.assertRaisesRegex(AIError,'JSON'):
             await ai.extract({'file':'x'}, [])
+
+class WorkflowReviewTests(unittest.IsolatedAsyncioTestCase):
+    async def test_review_calls_model_without_web_sources_and_excludes_private_inputs(self):
+        def respond(req):
+            body=json.loads(req.content)
+            context=json.loads(body['messages'][1]['content'])
+            self.assertEqual('30',str(context['capabilities'][0]['current']))
+            self.assertNotIn('secret prompt',req.content.decode())
+            result={'summary':'Review completed','changes':[{'node':'2','field':'steps','value':'25','reason':'A modest initial trial; compare with the same seed.'}]}
+            return httpx.Response(200,json={'done':True,'message':{'content':json.dumps(result)}})
+        ai=AI(AIConfig(provider='ollama',model='local',base_url='http://pc:11434'),transport=httpx.MockTransport(respond))
+        result=await ai.review({'models':['Example'],'capabilities':[{'node':'2','field':'steps','current':30}],'prompt':'secret prompt','images':['private.png']})
+        self.assertEqual('Review completed',result['summary'])

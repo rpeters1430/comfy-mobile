@@ -77,3 +77,27 @@ class AdviserApiTests(unittest.TestCase):
             data['seed']=44
             self.assertEqual(409,self.client.post('/api/jobs',headers=AUTH,json=data).status_code)
             self.assertEqual(1,request.await_count)
+
+class ProviderSetupTests(unittest.TestCase):
+    setUp = AdviserApiTests.setUp
+    tearDown = AdviserApiTests.tearDown
+    def test_save_requires_working_ai_and_never_returns_secret(self):
+        body={'provider':'openai','base_url':'https://provider.example/v1','model':'chosen','api_key':'private-api-key'}
+        self.assertEqual(401,self.client.get('/api/adviser/config').status_code)
+        with patch('app.main.AI.test',AsyncMock(return_value={'summary':'Connected','changes':[]})):
+            result=self.client.put('/api/adviser/config',headers=AUTH,json=body)
+        self.assertEqual(200,result.status_code,result.text)
+        self.assertNotIn('private-api-key',result.text)
+        saved=self.client.get('/api/adviser/config',headers=AUTH)
+        self.assertTrue(saved.json()['has_key'])
+        self.assertNotIn('private-api-key',saved.text)
+        self.assertEqual('private-api-key',self.adviser.config().api_key)
+        # Changing destination must not forward the old key.
+        self.assertEqual('',self.adviser.proposed_config({**body,'base_url':'https://other.example/v1','api_key':''}).api_key)
+
+    def test_bad_connection_is_not_saved(self):
+        from app.adviser_ai import AIError
+        with patch('app.main.AI.test',AsyncMock(side_effect=AIError('Provider HTTP 401'))):
+            response=self.client.put('/api/adviser/config',headers=AUTH,json={'provider':'openai','base_url':'https://provider.example/v1','model':'chosen','api_key':'bad'})
+        self.assertEqual(400,response.status_code)
+        self.assertIsNone(self.adviser.store.get('config','ai'))

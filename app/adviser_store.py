@@ -1,6 +1,7 @@
 """Bounded transactional review/cache storage, independent of the job database."""
 from contextlib import contextmanager
 import json
+import os
 import sqlite3
 import time
 from pathlib import Path
@@ -16,6 +17,7 @@ class Store:
             raise ValueError('Adviser needs a writable DATA_DIR')
         try:
             conn=sqlite3.connect(self.path,timeout=3)
+            os.chmod(self.path,0o600)
             conn.execute('CREATE TABLE IF NOT EXISTS records (kind TEXT, id TEXT, expires REAL, body TEXT, PRIMARY KEY(kind,id))')
         except sqlite3.Error as exc:
             raise ValueError('Adviser storage is unavailable') from exc

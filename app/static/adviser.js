@@ -23,6 +23,45 @@
   function mount({ api, el, getForm, apply, random }) {
     const box = document.getElementById('adviser-results'), status = document.getElementById('adviser-status');
     const button = document.getElementById('adviser-start'), cancel = document.getElementById('adviser-cancel');
+    const setup = document.getElementById('adviser-config');
+    let setupLoaded = false;
+    if (setup) {
+      const field = id => document.getElementById(id);
+      const connectionStatus = field('ai-connection-status');
+      const values = () => ({ provider: field('ai-provider').value, base_url: field('ai-base').value.trim(),
+        model: field('ai-model').value.trim(), api_key: field('ai-key').value });
+      setup.ontoggle = async () => {
+        if (!setup.open || setupLoaded) return;
+        try {
+          const c = await api('/adviser/config');
+          field('ai-provider').value = c.provider; field('ai-base').value = c.base_url; field('ai-model').value = c.model;
+          field('ai-key').placeholder = c.has_key ? 'Saved on NAS; leave blank to keep it' : 'Not needed for local Ollama';
+          setupLoaded = true;
+        } catch (e) { connectionStatus.textContent = e.message; }
+      };
+      field('ai-provider').onchange = () => {
+        const defaults = { openai: 'https://api.openai.com/v1', gemini: 'https://generativelanguage.googleapis.com/v1beta/openai', openrouter: 'https://openrouter.ai/api/v1' };
+        field('ai-base').value = defaults[field('ai-provider').value] || ''; field('ai-key').value = ''; field('ai-model').value = '';
+        connectionStatus.textContent = 'Choose the model, then test this connection.';
+      };
+      field('ai-load-models').onclick = async () => {
+        const b = field('ai-load-models'); b.disabled = true; connectionStatus.textContent = 'Loading available models…';
+        try {
+          const r = await api('/adviser/models', { method: 'POST', json: values() });
+          field('ai-models').replaceChildren(...r.models.map(value => el('option', { value })));
+          if (r.models.length === 1) field('ai-model').value = r.models[0];
+          connectionStatus.textContent = `${r.models.length} models available. Select or type a model, then test.`;
+        } catch (e) { connectionStatus.textContent = e.message; } finally { b.disabled = false; }
+      };
+      field('ai-test-save').onclick = async () => {
+        const b = field('ai-test-save'); b.disabled = true; connectionStatus.textContent = 'Calling this model to test structured AI output…';
+        try {
+          const r = await api('/adviser/config', { method: 'PUT', json: values() });
+          field('ai-key').value = ''; field('ai-key').placeholder = r.has_key ? 'Saved on NAS; leave blank to keep it' : 'Not needed for local Ollama';
+          connectionStatus.textContent = `Connected and saved: ${r.provider} / ${r.model}. Ready for AI review.`;
+        } catch (e) { connectionStatus.textContent = 'Connection not saved: ' + e.message; } finally { b.disabled = false; }
+      };
+    }
     let current = null, approved = null, generation = 0;
     const say = text => { status.textContent = text; };
     function matches(key) { try { return signature(getForm()) === key; } catch (_) { return false; } }
@@ -41,6 +80,7 @@
     cancel.onclick = stop;
     function render(row) {
       box.replaceChildren();
+      if (row.ai_summary) box.append(el('div', { class: 'panel' }, el('strong', {}, `AI assessment · ${row.ai_provider} / ${row.ai_model}`), el('p', { style: 'white-space:pre-wrap' }, row.ai_summary)));
       for (const card of row.cards || []) {
         const panel = el('details', { class: 'panel' }, el('summary', {}, card.file + ` · ${card.facts.length} verified settings` + (card.cached ? ' · cached' : '')));
         panel.append(el('p', {}, `${card.facts.length} verified settings · ${new Date(card.retrieved * 1000).toLocaleString()}`));
@@ -60,6 +100,7 @@
         check.checked = true; selections.push([proposal.id, check]);
         const section = el('div', { class: 'panel' }, el('label', {}, check, proposal.label));
         for (const c of proposal.changes) section.append(el('p', {}, `${JSON.stringify(c.current)} → ${JSON.stringify(c.value)}`));
+        section.append(el('p', { class: 'status' }, proposal.basis === 'ai' ? 'AI suggestion — not an author-published recommendation. Compare results before saving a preset.' : 'Supported by published source evidence.'));
         section.append(el('p', {}, proposal.reason));
         for (const e of proposal.evidence) section.append(el('blockquote', {}, e.quote));
         box.append(section);
@@ -82,7 +123,7 @@
           } catch (e) { say(e.message); } finally { use.disabled = false; }
         };
         box.append(use);
-      } else if (row.status === 'done') box.append(el('p', {}, 'No justified changes found. See source diagnostics; this does not certify every setting.'));
+      } else if (row.status === 'done') box.append(el('p', {}, row.ai_called ? 'The AI returned no applicable settings changes. See its assessment above.' : 'No AI assessment was completed; check the connection setup and error details.'));
       const keep = el('button', { type: 'button', class: 'ghost' }, 'Keep current settings');
       keep.onclick = stop; box.append(keep);
     }
@@ -95,10 +136,12 @@
       try {
         const config = await api('/adviser/status');
         if (revision !== generation) return;
-        if (!config.search_configured) throw Error('Configure SEARXNG_URL on the NAS first.');
+        if (!config.ai_configured) { if (setup) setup.open = true; throw Error('AI is not configured. Open AI connection setup, choose a model, and use Test & save connection.'); }
+        const web = !!document.getElementById('adviser-web')?.checked;
+        if (web && !config.search_configured) throw Error('Web research is enabled but SearXNG is not configured. Turn off web research to use AI review alone.');
         say(`Researching with ${config.ai_configured ? config.provider + ' / ' + config.model : 'explicit numeric extraction; AI not configured'}. ${config.hosted ? 'Model names and source excerpts go to your configured provider.' : ''}`);
         const seeds = batchSeeds(form.job.seed, form.runs, random);
-        const row = await api('/adviser/reviews', { method: 'POST', json: { job: { ...form.job, seed: seeds[0] }, seeds, refresh: document.getElementById('adviser-refresh').checked } });
+        const row = await api('/adviser/reviews', { method: 'POST', json: { job: { ...form.job, seed: seeds[0] }, seeds, refresh: document.getElementById('adviser-refresh').checked, web_research: web } });
         if (revision !== generation) { await api('/adviser/reviews/' + encodeURIComponent(row.id), { method: 'DELETE' }); return; }
         current = { id: row.id, key: signature(form), form };
         cancel.classList.remove('hide');
@@ -106,10 +149,10 @@
           const result = await api('/adviser/reviews/' + encodeURIComponent(row.id));
           if (revision !== generation) return;
           if (!['queued', 'researching'].includes(result.status)) {
-            say(result.status === 'done' ? 'Research complete. Review the evidence and suggested changes.' : `Research ${result.status}. Current settings kept.`);
+            say(result.status === 'done' && result.ai_called ? `AI review complete · ${result.ai_provider} / ${result.ai_model}` : result.status === 'done' ? 'No AI assessment recorded for this review.' : `AI review ${result.status}. Current settings kept.`);
             render(result); return;
           }
-          say(result.phase || 'Finding and reading model sources…');
+          say(result.phase || 'Waiting for AI workflow review…');
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       } catch (e) { if (revision === generation) say(e.message); }

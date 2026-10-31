@@ -59,10 +59,13 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
    else if (p === '/api/jobs/'+jobId+'/inputs/0') return route.fulfill({contentType:'image/png',body:png});
    else if (p === '/api/uploads') data={name:imageName};
    else if (p === '/api/jobs' && method==='POST') {const body=req.postDataJSON();submissions.push(body);stage=body.stage;data={prompt_id:jobId};}
+   else if (p === '/api/adviser/config' && method==='GET') data={provider:'ollama',base_url:'http://pc:11434',model:'local',has_key:false};
+   else if (p === '/api/adviser/models') data={models:['local']};
+   else if (p === '/api/adviser/config' && method==='PUT') data={provider:'ollama',base_url:'http://pc:11434',model:'local',has_key:false,connected:true};
    else if (p === '/api/adviser/status') data={search_configured:true,ai_configured:true,provider:'ollama',model:'local'};
    else if (p === '/api/adviser/reviews' && method==='POST') {reviewRequest=req.postDataJSON();data={id:'review'};}
    else if (p === '/api/adviser/reviews/review/apply') data={token:'approved',expires:Date.now()/1000+600,seeds:reviewRequest.seeds,sampling:{'7':{steps:25}},size:null};
-   else if (p === '/api/adviser/reviews/review') data={status:method==='DELETE'?'cancelled':'done',cards:[],notes:[],proposals:[{id:'0',label:'Steps',changes:[{current:30,value:25}],reason:'Published range',evidence:[{quote:'Steps: 25'}]}]};
+   else if (p === '/api/adviser/reviews/review') data={status:method==='DELETE'?'cancelled':'done',ai_called:true,ai_provider:'ollama',ai_model:'local',ai_summary:'AI assessed current settings',cards:[],notes:[],proposals:[{id:'0',label:'Steps',changes:[{current:30,value:25}],reason:'Published range',evidence:[{quote:'Steps: 25'}]}]};
    else if (p === '/api/comfy/wake') {if(method==='POST')woke=true; data=method==='POST'?{sent:true}:{enabled:true,cooldown:0};}
    else throw Error('Unhandled mock endpoint '+method+' '+p);
    return route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
@@ -75,6 +78,13 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   delayValidation = true;
   assert.equal(await page.evaluate(async()=>{const wf=catalog.workflows[0];const loading=selectWorkflow(wf);await refresh();await loading;return controlsReady;}),true);
   delayValidation = false;
+  await page.locator('#adviser-box > summary').click();
+  await page.locator('#adviser-config > summary').click();
+  await page.waitForFunction(()=>document.querySelector('#ai-model').value==='local');
+  await page.locator('#ai-load-models').click();
+  await page.waitForFunction(()=>document.querySelector('#ai-connection-status').textContent.includes('models available'));
+  await page.locator('#ai-test-save').click();
+  await page.waitForFunction(()=>document.querySelector('#ai-connection-status').textContent.includes('Connected and saved'));
   await page.locator('#named-presets summary').click();
   await page.locator('#preset-name').fill('Shared portrait');await page.locator('#preset-save').click();
   await page.waitForFunction(()=>document.querySelector('#preset-status').textContent.includes('Preset saved'));
