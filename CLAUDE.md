@@ -65,6 +65,11 @@ Configuration is env-only: `COMFYUI_URL`, `STUDIO_TOKEN` (required, or every end
 - `settings_check.check(graph, controls)` runs fixed per-family rules over the final job graph (`POST /api/jobs/check` reuses `prepare_job`, so it sees exactly what Generate sends). It needs no AI or setup, unlike the adviser. Families come from the model folder (`SDXL\`, `Pony\`, `SD15\`, `Krea2\`…), then filename keywords. Unknown families get no family advice. Rules: LoRA/model family mismatch, duplicate LoRAs, strength > 1.5, speed models (turbo/lightning/DMD/`Nstep`) with too many steps or CFG, SD1.5/SDXL step, CFG and size ranges, and Pony score tags. Fixes are offered only on plain `KSampler` fields that `find_controls` exposes. All bundled workflows produce no issues at their defaults; keep it that way when adding rules.
 - The phone calls it on Generate when "Check settings before generating" is ticked (stored per device). It skips the check when an adviser approval is active, and a failed check never blocks the job.
 
+## Model pickers and auto LoRAs
+
+- `find_controls` returns `families` (`settings_check.family` labels) for model and LoRA options. `MobileTools.modelGroups` groups pickers by family, the checkpoint's family first (✓), and lists a file kept loose and in a folder once. LoRA pickers warn on a family mismatch.
+- `POST /api/loras/suggest` (`lora_suggest.py`, no AI): profiles each LoRA from ComfyUI's `/view_metadata/loras` (kohya `ss_tag_frequency`, cached per process) plus filename words, weights matches by rarity, and needs a filename word or two tags to match. Only the given family, never speed LoRAs. The phone's "Auto-add matching LoRAs" adds up to two per job (not to saved choices) from the prompt or reviewed caption and appends trigger words; it is skipped under an adviser approval.
+
 ## Skip face detailer
 
 - `find_controls` lists `FaceDetailer(Pipe)` nodes whose only used output is the image as `detailers`. A job's `skip_detailers: true` removes them and wires their input image to their consumers. On workflow 02 this cuts roughly 1–2 minutes per detected face. The phone shows it as "Skip face detailer" under Models & settings.

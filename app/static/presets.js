@@ -51,8 +51,14 @@ function aspectSize(aspect, base) {
 
 // Exact-resolution presets render at the preset's shape within the workflow's own pixel budget, then the
 // server upscales and center-crops the saved image to the screen (see workflow_controls._apply_fit).
+// A 4x upscale model costs minutes on a 1.5 MP render; below 2x enlargement lanczos looks the same after the
+// downscale to screen size, so the model is only worth running for small renders (SD1.5) or big screens.
+function upscaleWorthIt(render, target) {
+  return target.width * target.height >= 4 * render.width * render.height;
+}
+
 function presetAspect(p) { return p.native ? `${p.native.width}:${p.native.height}` : p.aspect; }
 
 if (typeof module !== 'undefined') {
-  module.exports = { STYLE_PRESETS, STYLE_TAIL, ASPECTS, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect };
+  module.exports = { STYLE_PRESETS, STYLE_TAIL, ASPECTS, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt };
 }

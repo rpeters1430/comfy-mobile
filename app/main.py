@@ -15,7 +15,7 @@ try:
     from workflow_validation import inspect_workflow, load_workflow
     from workflow_sync import WorkflowSync, bounded_get
     from workflow_conversion import convert_ui, ConversionError
-    from workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls, run_details
+    from workflow_controls import ControlError, MAX_EXTRA_LORAS, _options, apply_controls, find_controls, run_details
     from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, view_query
     from job_store import JobStore
     from preset_store import PresetStore
@@ -24,13 +24,15 @@ try:
     from push import Push, PushError
     from progress import ProgressTracker, listen
     from settings_check import check as check_settings
+    from settings_check import LABELS, SPEED, family
+    import lora_suggest
 except ImportError:
     from app.adviser import Adviser, fingerprint
     from app.adviser_ai import AI, AIError
     from app.workflow_validation import inspect_workflow, load_workflow
     from app.workflow_sync import WorkflowSync, bounded_get
     from app.workflow_conversion import convert_ui, ConversionError
-    from app.workflow_controls import ControlError, MAX_EXTRA_LORAS, apply_controls, find_controls, run_details
+    from app.workflow_controls import ControlError, MAX_EXTRA_LORAS, _options, apply_controls, find_controls, run_details
     from app.workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, view_query
     from app.job_store import JobStore
     from app.preset_store import PresetStore
@@ -39,6 +41,8 @@ except ImportError:
     from app.push import Push, PushError
     from app.progress import ProgressTracker, listen
     from app.settings_check import check as check_settings
+    from app.settings_check import LABELS, SPEED, family
+    from app import lora_suggest
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
@@ -424,6 +428,39 @@ async def check_job(job: Job, authorization: str | None = Header(default=None)):
     if job.stage != 'render': return {'issues': []}
     graph, info, *_ = await prepare_job(job)
     return {'issues': check_settings(graph, find_controls(graph, info))}
+
+class LoraSuggestRequest(BaseModel):
+    text: str = Field(max_length=10000)
+    base: str = Field(max_length=40)
+    exclude: list[str] = Field(default_factory=list, max_length=16)
+    limit: int = Field(default=2, ge=1, le=MAX_EXTRA_LORAS)
+
+_lora_profiles: dict = {}
+
+async def lora_profile(name, gate):
+    """Training-tag profile from ComfyUI's safetensors metadata, kept for the life of the process."""
+    if name not in _lora_profiles:
+        async with gate:
+            try:
+                meta = await request('GET', '/view_metadata/loras', params={'filename': name})
+            except HTTPException as e:
+                if not isinstance(e.detail, dict):  # ComfyUI unreachable: try again next time
+                    raise
+                meta = {}  # ComfyUI answers 404 for files without metadata
+            _lora_profiles[name] = lora_suggest.profile(name, meta)
+    return _lora_profiles[name]
+
+@app.post('/api/loras/suggest')
+async def suggest_loras(body: LoraSuggestRequest, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    info = await get_object_info()
+    used = {lora_suggest.filename(n) for n in body.exclude}
+    # Speed LoRAs change how many steps a run needs, so they are never added behind the user's back.
+    names = [n for n in lora_suggest.unique(_options(info, 'LoraLoaderModelOnly', 'lora_name'))
+             if LABELS.get(family(n)) == body.base and not SPEED.search(n) and lora_suggest.filename(n) not in used]
+    gate = asyncio.Semaphore(8)
+    profiles = await asyncio.gather(*(lora_profile(n, gate) for n in names))
+    return {'suggestions': lora_suggest.suggest(body.text, profiles, body.limit)}
 
 def job_intent(job):
     return hashlib.sha256(json.dumps(job.model_dump(exclude={'adviser_token','adviser_index'}),sort_keys=True,separators=(',',':')).encode()).hexdigest()

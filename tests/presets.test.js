@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  STYLE_PRESETS, STYLE_TAIL, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect
+  STYLE_PRESETS, STYLE_TAIL, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt
 } = require('../app/static/presets.js');
 
 test('styledPrompt sends the prompt as written without a style', () => {
@@ -42,4 +42,10 @@ test('preset aspects parse', () => {
     const [a, b] = presetAspect(p).split(':').map(Number);
     assert.ok(a > 0 && b > a, p.id);
   }
+});
+
+test('upscale model runs only for at least 2x enlargement', () => {
+  const pixel = WALLPAPER_PRESETS.find(p => p.id === 'pixel-native').native;
+  assert.equal(upscaleWorthIt({ width: 832, height: 1216 }, pixel), false);  // SDXL ~1 MP
+  assert.equal(upscaleWorthIt({ width: 512, height: 1152 }, pixel), true);   // SD1.5-sized render
 });

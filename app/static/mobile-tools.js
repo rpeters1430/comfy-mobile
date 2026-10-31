@@ -60,7 +60,34 @@
       ...(details.adviser ? [['Settings review', details.adviser.review_id], ['Approved changes', details.adviser.changes.map(p => p.label + ': ' + p.evidence.map(e => e.quote).join('; ')).join('\n')]] : []),
       ['Job ID', job.id || 'Not recorded']];
   }
-  const api = { nasJob, mergeHistory, captionText, presetJob, preferredWorkflows, photoDetails };
+  // Model/LoRA picker groups: by model family (server-supplied), the base model's family first, and the same
+  // file kept in two folders listed once, preferring the copy inside a folder.
+  function modelGroups(options, families, base, keep) {
+    const parts = o => String(o).split(/[\\/]/);
+    const stem = o => parts(o).pop().replace(/\.(safetensors|ckpt|pt|gguf)$/i, '');
+    const fam = o => families[o] || '';
+    // Same filename anywhere is the same file; keep the current pick, else the copy whose family is known, else the deeper path.
+    const better = (o, prev) => o === keep || (prev !== keep && (!!fam(o) - !!fam(prev) || parts(o).length - parts(prev).length) > 0);
+    const seen = new Map();
+    for (const o of options) {
+      const key = stem(o).toLowerCase();
+      if (!seen.has(key) || better(o, seen.get(key))) seen.set(key, o);
+    }
+    const groups = new Map();
+    for (const o of options) {
+      if (seen.get(stem(o).toLowerCase()) !== o) continue;
+      const folder = parts(o).length > 1 ? parts(o)[0] : '';
+      const text = stem(o).replace(/_/g, ' ') + (folder && folder.toLowerCase() !== fam(o).toLowerCase() ? ` · ${folder}` : '');
+      if (!groups.has(fam(o))) groups.set(fam(o), []);
+      groups.get(fam(o)).push({ value: o, text });
+    }
+    const rank = f => f === base ? 0 : f ? 1 : 2;
+    return [...groups.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b)).map(f => ({
+      label: f === base && f ? `✓ ${f}` : f || 'Unknown family',
+      items: groups.get(f).sort((a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }))
+    }));
+  }
+  const api = { nasJob, mergeHistory, captionText, presetJob, preferredWorkflows, photoDetails, modelGroups };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.MobileTools = api;
 })(globalThis);

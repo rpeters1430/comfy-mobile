@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { mergeHistory, nasJob, captionText, presetJob } = require('../app/static/mobile-tools.js');
+const { mergeHistory, nasJob, captionText, presetJob, modelGroups } = require('../app/static/mobile-tools.js');
 
 test('NAS history restores rerun parameters while preserving device display state', () => {
  const remote = nasJob({id:'a', workflow:'Edit', prompt:'short', created:10, status:'success',
@@ -70,4 +70,20 @@ test('broken synced copy does not hide a working bundled workflow', () => {
  assert.deepEqual(selected.map(w=>w.id),['synced/one.json','one.json','synced/two.json']);
  assert.equal(selected.find(w=>w.id==='one.json').bundled_fallback,true);
  assert.equal(workflows[1].bundled_fallback,undefined);
+});
+
+test('model groups put the base family first, drop root duplicates and label odd folders', () => {
+  const options = ['juggernaut.safetensors', 'SDXL/juggernaut.safetensors', 'Pony/jill_v1.safetensors',
+    'Krea2/tessa.safetensors', 'fv.safetensors'];
+  const families = { 'juggernaut.safetensors': 'SDXL', 'SDXL/juggernaut.safetensors': 'SDXL', 'Pony/jill_v1.safetensors': 'SDXL',
+    'Krea2/tessa.safetensors': 'Krea 2' };
+  const groups = modelGroups(options, families, 'SDXL', '');
+  assert.deepEqual(groups.map(g => g.label), ['✓ SDXL', 'Krea 2', 'Unknown family']);
+  assert.deepEqual(groups[0].items, [{ value: 'Pony/jill_v1.safetensors', text: 'jill v1 · Pony' },
+    { value: 'SDXL/juggernaut.safetensors', text: 'juggernaut' }]);
+  // A loose copy of unknown family is dropped when a folder copy's family is known.
+  const fv = modelGroups(['fv.safetensors', 'SDXL/fv.safetensors'], { 'SDXL/fv.safetensors': 'SDXL' }, 'SDXL', '');
+  assert.deepEqual(fv.map(g => g.items.map(i => i.value)), [['SDXL/fv.safetensors']]);
+  // The current value survives deduplication even when it is the root copy.
+  assert.equal(modelGroups(options, families, 'SDXL', 'juggernaut.safetensors')[0].items[1].value, 'juggernaut.safetensors');
 });

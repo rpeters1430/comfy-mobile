@@ -319,20 +319,31 @@ renderStyles();
 /* ---------- Models, LoRAs, Sampler & Shape Controls ---------- */
 const MAX_EXTRA_LORAS = 4;
 function fileLabel(path) { return String(path).split(/[\\/]/).pop().replace(/\.(safetensors|ckpt|pt|gguf)$/i, ''); }
-function folderOf(path) { const parts = String(path).split(/[\\/]/); return parts.length > 1 ? parts[0] : ''; }
+function familyOf(name) { return controls?.families?.[name] || ''; }
 
-function modelSelect(options, value, families, label) {
+// The checkpoint's family, which LoRAs must match; empty when unknown or the workflow mixes families.
+function baseFamily() {
+  const fams = new Set(controls.models.map(m => familyOf(choices.models[m.node])));
+  return fams.size === 1 ? [...fams][0] : '';
+}
+
+function modelSelect(options, value, base, label) {
   const select = el('select', { 'aria-label': label });
-  const groups = new Map();
-  for (const o of options) groups.has(folderOf(o)) ? groups.get(folderOf(o)).push(o) : groups.set(folderOf(o), [o]);
-  if (groups.size < 2) select.append(...options.map(o => new Option(fileLabel(o), o)));
-  else {
-    const rank = f => families.includes(f) ? families.indexOf(f) : families.length + (f === '' ? 1 : 0);
-    const order = [...groups.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, undefined, { sensitivity: 'base' }));
-    select.append(...order.map(f => el('optgroup', { label: f || 'Top level' }, groups.get(f).map(o => new Option(fileLabel(o), o)))));
-  }
+  select.append(...MobileTools.modelGroups(options, controls.families || {}, base, value)
+    .map(g => el('optgroup', { label: g.label }, g.items.map(i => new Option(i.text, i.value)))));
   select.value = value;
   return select;
+}
+
+// A warning line under a LoRA picker, and the function that refreshes it when the pick changes.
+function loraFamilyNote(name, base) {
+  const note = el('small', { class: 'status', style: 'display:block' });
+  const set = n => {
+    const f = familyOf(n);
+    note.textContent = base && f && f !== base ? `⚠ Made for ${f}, so it won't work with this ${base} checkpoint.` : '';
+  };
+  set(name);
+  return [note, set];
 }
 
 function savedControls() { try { return JSON.parse(load(CONTROLS_KEY) || '{}'); } catch (e) { return {}; } }
@@ -346,6 +357,7 @@ function saveControls() {
 async function loadControls(wf, restored = null) {
   controls = choices = null;
   $('controls-box').classList.add('hide');
+  $('auto-loras-row').classList.add('hide');
   let found;
   try {
     const validation = await api('/workflows/' + encodeURIComponent(wf.id).replace(/%2F/g, '/') + '/validate');
@@ -397,6 +409,7 @@ async function loadControls(wf, restored = null) {
     choices.caption[cap.node] = values;
   }
   $('controls-box').classList.remove('hide');
+  $('auto-loras-row').classList.toggle('hide', !controls.can_add_lora);
   renderControls();
 }
 
@@ -418,50 +431,52 @@ function chosenSize(c) {
 function renderControls() {
   if (!controls || !choices) return;
   const rows = [];
-  const families = [
-    ...controls.models.map(m => folderOf(m.value)),
-    ...controls.loras.map(l => folderOf(l.value))
-  ].filter(Boolean);
+  const base = baseFamily();
 
   for (const m of controls.models) {
-    const select = modelSelect(m.options, choices.models[m.node], families, m.field === 'unet_name' ? 'Diffusion model' : 'Checkpoint');
-    select.onchange = () => { choices.models[m.node] = select.value; saveControls(); renderSummary(); };
+    const select = modelSelect(m.options, choices.models[m.node], familyOf(choices.models[m.node]), m.field === 'unet_name' ? 'Diffusion model' : 'Checkpoint');
+    // Re-render so the LoRA pickers regroup and re-check against the new checkpoint's family.
+    select.onchange = () => { choices.models[m.node] = select.value; saveControls(); renderSummary(); renderControls(); };
     rows.push(el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, m.field === 'unet_name' ? 'Diffusion model' : 'Checkpoint'), select));
   }
 
   for (const l of controls.loras) {
     const choice = choices.loras[l.node];
-    const select = modelSelect(controls.lora_options, choice.name, families, 'LoRA');
+    const select = modelSelect(controls.lora_options, choice.name, base, 'LoRA');
+    const [warn, setWarn] = loraFamilyNote(choice.name, base);
     const toggle = el('button', { class: 'ghost', type: 'button' }, choice.on ? 'On' : 'Off');
     const box = el('div', { class: 'lora' + (choice.on ? '' : ' off') });
     const update = () => { saveControls(); renderSummary(); };
-    select.onchange = () => { choice.name = select.value; update(); };
+    select.onchange = () => { choice.name = select.value; setWarn(choice.name); update(); };
     toggle.onclick = () => {
       choice.on = !choice.on;
       toggle.textContent = choice.on ? 'On' : 'Off';
       box.classList.toggle('off', !choice.on);
       update();
     };
-    box.append(el('div', { class: 'row between' }, el('label', { style: 'margin:0' }, 'LoRA'), toggle), select,
+    box.append(el('div', { class: 'row between' }, el('label', { style: 'margin:0' }, 'LoRA'), toggle), select, warn,
       el('div', { class: 'row' }, ...strengthRow(choice, update)));
     rows.push(box);
   }
 
   if (controls.can_add_lora) {
     choices.extra.forEach((choice, i) => {
-      const select = modelSelect(controls.lora_options, choice.name, families, `Extra LoRA ${i + 1}`);
+      const select = modelSelect(controls.lora_options, choice.name, base, `Extra LoRA ${i + 1}`);
+      const [warn, setWarn] = loraFamilyNote(choice.name, base);
       const remove = el('button', { class: 'ghost', type: 'button', 'aria-label': 'Remove LoRA' }, '✕');
       const update = () => { saveControls(); renderSummary(); };
-      select.onchange = () => { choice.name = select.value; update(); };
+      select.onchange = () => { choice.name = select.value; setWarn(choice.name); update(); };
       remove.onclick = () => { choices.extra.splice(i, 1); update(); renderControls(); };
       rows.push(el('div', { class: 'lora' },
         el('div', { class: 'row between' }, el('label', { style: 'margin:0' }, `Extra LoRA ${i + 1}`), remove),
-        select, el('div', { class: 'row' }, ...strengthRow(choice, update))));
+        select, warn, el('div', { class: 'row' }, ...strengthRow(choice, update))));
     });
     if (choices.extra.length < MAX_EXTRA_LORAS && controls.lora_options.length) {
       const add = el('button', { class: 'ghost', type: 'button', style: 'margin-top:10px;width:100%' }, '+ Add another LoRA');
       add.onclick = () => {
-        const unused = controls.lora_options.find(name => !choices.extra.some(x => x.name === name) && !Object.values(choices.loras).some(l => l.name === name)) || controls.lora_options[0];
+        const free = name => !choices.extra.some(x => x.name === name) && !Object.values(choices.loras).some(l => l.name === name);
+        const unused = controls.lora_options.find(name => free(name) && (!base || familyOf(name) === base))
+          || controls.lora_options.find(free) || controls.lora_options[0];
         choices.extra.push({ name: unused, strength: 1.0 });
         saveControls(); renderSummary(); renderControls();
       };
@@ -514,6 +529,7 @@ function sizeSection(changed) {
       : `${size.width} × ${size.height} px`;
     hint.textContent = desc;
     upscaleRow.classList.toggle('hide', !fit);
+    upscaleSkip.classList.toggle('hide', !fit || !controls.upscale_options.length || upscaleWorthIt(size, fit));
   }
 
   const wpChips = WALLPAPER_PRESETS.map(preset => {
@@ -570,7 +586,9 @@ function sizeSection(changed) {
     new Option('Lanczos resize (no model)', ''), ...controls.upscale_options.map(o => new Option(fileLabel(o), o)));
   upscaler.value = choices.upscaler;
   upscaler.onchange = () => { choices.upscaler = upscaler.value; changed(); };
-  const upscaleRow = el('div', { style: 'margin-top:6px' }, el('label', {}, 'Upscaler'), upscaler,
+  const upscaleSkip = el('small', { class: 'status', style: 'display:block;margin-top:2px' },
+    'Under 2× enlargement, so lanczos is used: an upscale model would add minutes for no visible gain.');
+  const upscaleRow = el('div', { style: 'margin-top:6px' }, el('label', {}, 'Upscaler'), upscaler, upscaleSkip,
     controls.upscale_options.length ? null
       : el('small', { class: 'status', style: 'display:block;margin-top:2px' }, 'Add an upscale model (e.g. 4x-UltraSharp) to ComfyUI’s models/upscale_models for sharper results.'));
 
@@ -706,7 +724,7 @@ function controlsPayload(c) {
     models, loras, extra_loras: c.extra.map(x => ({ name: x.name, strength: x.strength })), sampling, caption,
     ...(c.skipDetailers && controls.detailers?.length ? { skip_detailers: true } : {}),
     ...(size && (size.width !== controls.size.width || size.height !== controls.size.height) ? { size } : {}),
-    ...(fit ? { fit: { ...fit, ...(c.upscaler ? { upscaler: c.upscaler } : {}) } } : {})
+    ...(fit ? { fit: { ...fit, ...(c.upscaler && upscaleWorthIt(chosenSize(c), fit) ? { upscaler: c.upscaler } : {}) } } : {})
   };
 }
 
@@ -740,11 +758,18 @@ $('form').onsubmit = async event => {
   };
   $('generate').disabled = true;
   try {
+    const auto = stage === 'render' && !approval ? await suggestLoras(params.review?.positive || params.prompt, params.controls) : null;
+    if (auto) {
+      params.controls = withAutoLoras(params.controls, auto);
+      if (params.review) params.review = { ...params.review, positive: withTriggers(params.review.positive, auto) };
+      else params.prompt = withTriggers(params.prompt, auto);
+      showToast(auto.label);
+    }
     if (!approval && stage === 'render' && $('check-settings').checked) {
       if (!await checkSettings({ ...params, seed: base })) return;
-      params.controls = controlsPayload(choices);
-      params.controlsText = [style?.label, controlsText(choices)].filter(Boolean).join(' · ');
+      params.controls = withAutoLoras(controlsPayload(choices), auto);
     }
+    params.controlsText = [style?.label, controlsText(choices), auto?.label].filter(Boolean).join(' · ');
     for (let i = 0; i < (stage === 'caption' ? 1 : runs); i++) {
       await submitJob({ ...params, seed: approval ? approval.seeds[i] : base === null ? randomSeed() : base + i, adviserToken: approval?.token || null, adviserIndex: i }, i === 0);
     }
@@ -758,6 +783,33 @@ $('form').onsubmit = async event => {
 function jobBody(params) {
   return { ...(params.controls || {}), workflow_id: params.workflowId, prompt: params.prompt, images: params.images, seed: params.seed, stage: params.stage || 'render', review: params.review || null, adviser_token: params.adviserToken || null, adviser_index: params.adviserIndex || 0 };
 }
+
+/* Auto LoRAs: added per job from the prompt or reviewed caption; the user's own picks are never changed. */
+const AUTO_LORA_KEY = 'image-studio-mobile:auto-loras:v1';
+$('auto-loras').checked = load(AUTO_LORA_KEY) === '1';
+$('auto-loras').onchange = () => store(AUTO_LORA_KEY, $('auto-loras').checked ? '1' : '0');
+
+async function suggestLoras(text, current) {
+  const base = controls?.can_add_lora && baseFamily();
+  const have = current.extra_loras || [];
+  const limit = Math.min(2, MAX_EXTRA_LORAS - have.length);
+  if (!$('auto-loras').checked || !base || !text.trim() || limit < 1) return null;
+  const exclude = [...have.map(x => x.name), ...controls.loras.map(l => current.loras?.[l.node]?.name || l.value)];
+  let suggestions;
+  try { ({ suggestions } = await api('/loras/suggest', { method: 'POST', json: { text, base, exclude, limit } })); }
+  catch (e) { return null; }  // a suggestion failure never blocks the job
+  if (!suggestions?.length) return null;
+  const lower = text.toLowerCase();
+  return { loras: suggestions.map(s => ({ name: s.name, strength: s.strength })),
+    triggers: [...new Set(suggestions.map(s => s.trigger).filter(t => t && !lower.includes(t.toLowerCase())))],
+    label: 'Auto LoRAs: ' + suggestions.map(s => fileLabel(s.name)).join(', ') };
+}
+
+function withAutoLoras(current, auto) {
+  return auto ? { ...current, extra_loras: [...(current.extra_loras || []), ...auto.loras] } : current;
+}
+
+function withTriggers(text, auto) { return auto?.triggers.length ? [text, ...auto.triggers].join(', ') : text; }
 
 /* Settings check: built-in server rules shown before Generate. Advice only; a failed check never blocks a job. */
 const CHECK_KEY = 'image-studio-mobile:check-settings:v1';
@@ -1403,15 +1455,17 @@ function captionEditor(job, outputs) {
   generate.onclick = async () => {
     if (!positive.value.trim()) { status.textContent = 'Enter a positive caption.'; return; }
     generate.disabled = true;
-    const approved = { positive: positive.value, negative: negative.value };
     const count = Number(runs.value);
     try {
+      // Suggestions use the current workflow's settings, so only when this caption came from it.
+      const auto = selected?.id === job.workflowId ? await suggestLoras(positive.value, job.controls || {}) : null;
+      const approved = { positive: withTriggers(positive.value, auto), negative: negative.value };
       for (let i = 0; i < count; i++) {
         await submitJob({ ...job, id: undefined, finished: false, stage: 'render',
-          review: approved, seed: i === 0 ? job.seed : randomSeed(),
-          controlsText: 'Reviewed caption', prompt: job.prompt || '' }, i === 0);
+          review: approved, seed: i === 0 ? job.seed : randomSeed(), controls: withAutoLoras(job.controls || {}, auto),
+          controlsText: ['Reviewed caption', auto?.label].filter(Boolean).join(' · '), prompt: job.prompt || '' }, i === 0);
       }
-      status.textContent = `${count} render${count > 1 ? 's' : ''} queued with your edited caption.`;
+      status.textContent = `${count} render${count > 1 ? 's' : ''} queued with your edited caption.` + (auto ? ` ${auto.label}.` : '');
     } catch (e) { status.textContent = 'Could not render: ' + e.message; }
     finally { generate.disabled = false; }
   };

@@ -44,6 +44,8 @@ class ControlTests(unittest.TestCase):
         self.assertEqual([{"node": "2", "value": LORAS[0], "strength": 0.6}], found["loras"])
         self.assertEqual(LORAS, found["lora_options"])
         self.assertTrue(found["can_add_lora"])
+        self.assertEqual("SDXL", found["families"][LORAS[0]])
+        self.assertEqual("SDXL", found["families"]["SDXL\\b.safetensors"])
 
     def test_swaps_model_and_lora(self):
         graph = self.graph()
