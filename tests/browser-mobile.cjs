@@ -8,8 +8,8 @@ const root = path.resolve(__dirname, '../app/static');
 const jobId = '0f8d2a4c-1111-4222-8333-944455556666';
 const imageName = 'mobile_' + 'a'.repeat(32) + '.png';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');
-const controls = {models:[{node:'3',field:'ckpt_name',value:'base',options:['base','alternate']}],loras:[],samplers:[],captions:[],
- lora_options:[],upscale_options:[],sampler_options:[],scheduler_options:[],can_add_lora:false,size:null};
+const controls = {models:[{node:'3',field:'ckpt_name',value:'base',options:['base','alternate']}],loras:[],samplers:[{node:'7',role:'base',values:{steps:30,cfg:7,sampler_name:'euler',scheduler:'normal'}}],captions:[],
+ lora_options:[],upscale_options:[],sampler_options:['euler','dpmpp_2m'],scheduler_options:['normal'],can_add_lora:false,size:null};
 const workflows = [{id:'edit.json',name:'Photo_Edit',runnable:true,image_inputs:1,takes_prompt:false,node_types:['LoadImage']}];
 const library = {id:jobId,workflow:'Photo Edit',prompt:'',created:1700000000,status:'success',
  params:{workflow_id:'edit.json',prompt:'',images:[imageName],seed:42,stage:'render'}};
@@ -33,6 +33,7 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
   const errors = [], submissions = [];
+  let reviewRequest = null;
   let presets = [], stage = 'render', stale = false, woke = false, delayValidation = false, fullUnavailable = false;
   page.on('pageerror', error => errors.push(error.message));
   await context.route('**/image.png?*', route => fullUnavailable && !route.request().url().includes('thumb=1')
@@ -58,6 +59,10 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
    else if (p === '/api/jobs/'+jobId+'/inputs/0') return route.fulfill({contentType:'image/png',body:png});
    else if (p === '/api/uploads') data={name:imageName};
    else if (p === '/api/jobs' && method==='POST') {const body=req.postDataJSON();submissions.push(body);stage=body.stage;data={prompt_id:jobId};}
+   else if (p === '/api/adviser/status') data={search_configured:true,ai_configured:true,provider:'ollama',model:'local'};
+   else if (p === '/api/adviser/reviews' && method==='POST') {reviewRequest=req.postDataJSON();data={id:'review'};}
+   else if (p === '/api/adviser/reviews/review/apply') data={token:'approved',expires:Date.now()/1000+600,seeds:reviewRequest.seeds,sampling:{'7':{steps:25}},size:null};
+   else if (p === '/api/adviser/reviews/review') data={status:method==='DELETE'?'cancelled':'done',cards:[],notes:[],proposals:[{id:'0',label:'Steps',changes:[{current:30,value:25}],reason:'Published range',evidence:[{quote:'Steps: 25'}]}]};
    else if (p === '/api/comfy/wake') {if(method==='POST')woke=true; data=method==='POST'?{sent:true}:{enabled:true,cooldown:0};}
    else throw Error('Unhandled mock endpoint '+method+' '+p);
    return route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
@@ -89,8 +94,16 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   await page.locator('[aria-label="Approved positive caption"]').fill('edited portrait');
   // Close the existing caption card to let a new render with the same mock ID create its own card.
   const editor = page.locator('.caption-editor');
-  await editor.getByRole('button',{name:'Generate with edited caption'}).click();
+  await editor.getByRole('button',{name:'Review settings with this caption'}).click();
+  await page.getByRole('button',{name:'Apply selected to settings'}).waitFor();
+  assert.equal(submissions.length,1);assert.equal(reviewRequest.job.review.positive,'edited portrait');
+  await page.getByRole('button',{name:'Apply selected to settings'}).click();
+  await page.waitForFunction(()=>document.querySelector('#adviser-status').textContent.includes('Selected changes applied'));
+  assert.equal(submissions.length,1);
+  await Promise.all([page.waitForResponse(r => new URL(r.url()).pathname === '/api/jobs' && r.request().method() === 'POST'), page.locator('#generate').click()]);
+
   assert.equal(submissions[1].review.positive,'edited portrait');assert.equal(submissions[1].stage,'render');
+  assert.equal(submissions[1].sampling['7'].steps,25);assert.equal(submissions[1].adviser_token,'approved');
   await page.locator('nav [data-tab=gallery]').click();
   await page.locator('#gallery .card').first().click();
   await page.locator('#image-viewer').waitFor({state:'visible'});

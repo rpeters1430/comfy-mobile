@@ -87,6 +87,8 @@
         <label><input type="checkbox" id="review-before"> Review caption before rendering</label>
         <p id="caption-review-hint" class="status">Preview the caption, edit it, then generate.</p>
       </div>
+      <p id="caption-draft" class="status hide" role="status"></p>
+      <button type="button" class="ghost hide" id="caption-draft-clear">Clear edited caption</button>
       <div class="row" style="align-items:flex-end;margin-top:6px">
         <div style="flex:2">
           <label for="seed">Seed</label>
@@ -98,6 +100,14 @@
         </div>
       </div>
       <p class="status" style="margin:4px 0 0">Leave seed empty for a random seed each run. With a fixed seed, runs use seed, seed+1, …</p>
+      <details class="controls" id="adviser-box">
+        <summary>Research &amp; review settings</summary>
+        <p class="status">Find published model settings and review changes before rendering.</p>
+        <label><input type="checkbox" id="adviser-refresh"> Refresh saved research</label>
+        <div class="row"><button type="button" class="secondary" id="adviser-start">Research settings</button><button type="button" class="ghost hide" id="adviser-cancel">Cancel research</button></div>
+        <p class="status" id="adviser-status" role="status" aria-live="polite"></p>
+        <div id="adviser-results"></div>
+      </details>
       <button class="primary" id="generate" type="submit">✨ Generate</button>
       <p id="form-error" class="status error" role="alert" style="margin-top:8px"></p>
     </form>
@@ -172,6 +182,7 @@
   <button id="viewer-job" class="ghost" type="button">Open job details / run again</button>
 </dialog>
 <script src="/mobile-tools.js" defer></script>
+<script src="/adviser.js" defer></script>
 <script src="/app.js" defer></script>
 </body>
 </html>

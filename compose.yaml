@@ -12,6 +12,12 @@ services:
       WORKFLOW_DIR: /workflows
       WORKFLOW_SYNC_DIR: /workflow-sync
       DATA_DIR: /data
+      SEARXNG_URL: ${SEARXNG_URL:-}
+      OLLAMA_URL: ${OLLAMA_URL:-}
+      ADVISER_PROVIDER: ${ADVISER_PROVIDER:-ollama}
+      ADVISER_MODEL: ${ADVISER_MODEL:-}
+      ADVISER_BASE_URL: ${ADVISER_BASE_URL:-}
+      ADVISER_API_KEY: ${ADVISER_API_KEY:-}
       WOL_MAC: ${WOL_MAC:-}
       WOL_BROADCAST: ${WOL_BROADCAST:-}
     volumes:

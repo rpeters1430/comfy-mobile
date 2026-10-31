@@ -1,4 +1,4 @@
-# Comfy Mobile — v0.5.1
+# Comfy Mobile — v0.6.0
 
 Mobile-first ComfyUI dashboard running on a NAS, connecting to ComfyUI on another machine.
 
@@ -15,6 +15,12 @@ GitHub Actions builds and publishes `ghcr.io/rpeters1430/comfy-mobile:latest` on
 - **Phone wallpapers**: Pixel, iPhone and Galaxy presets, rendered near the model's native size and then upscaled and center-cropped to the exact screen. Wallpaper style chips and a Cinematic-ready mode for Pixel.
 - **Notifications and gallery**: The NAS watches each job and sends a push notification when it finishes, even with the app closed (needs HTTPS). Finished jobs and thumbnails are kept on the NAS, so the gallery survives ComfyUI restarts.
 - **Workflow Sync**: Safe, one-way pull of workflows directly from ComfyUI's user-data directory to your NAS.
+
+## New in v0.6.0
+
+Optional **Research & review settings** reads published model settings through your SearXNG instance and model-card adapters. It preserves tables and split-line settings, shows extraction/AI diagnostics and source quotes, and proposes validated changes for an unambiguous base generation pass. Apply selected changes to the form, then press Generate. Reviews capture batch seeds and are checked again against the current workflow before submission.
+
+Use local Ollama or explicitly configure an OpenAI, Gemini, OpenRouter or compatible structured-output endpoint. Keys stay in NAS environment variables. No automatic paid fallback; normal generation works without research. See [configuration, provider examples and limitations](docs/adviser.md).
 
 ## New in v0.5.1
 

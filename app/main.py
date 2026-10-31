@@ -1,4 +1,4 @@
-import asyncio, json, logging, os, re, secrets, time
+import asyncio, copy, hashlib, json, logging, os, re, secrets, time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 try:
+    from adviser import Adviser, fingerprint
     from workflow_validation import inspect_workflow, load_workflow
     from workflow_sync import WorkflowSync, bounded_get
     from workflow_conversion import convert_ui, ConversionError
@@ -22,6 +23,7 @@ try:
     from push import Push, PushError
     from progress import ProgressTracker, listen
 except ImportError:
+    from app.adviser import Adviser, fingerprint
     from app.workflow_validation import inspect_workflow, load_workflow
     from app.workflow_sync import WorkflowSync, bounded_get
     from app.workflow_conversion import convert_ui, ConversionError
@@ -45,6 +47,7 @@ workflow_sync = WorkflowSync(COMFY, SYNC_DIR)
 DATA_DIR = Path(os.getenv('DATA_DIR','/data'))
 job_store = JobStore(DATA_DIR)
 preset_store = PresetStore(DATA_DIR)
+adviser = Adviser(DATA_DIR)
 wake_pc = WakePC(os.getenv('WOL_MAC', ''), os.getenv('WOL_BROADCAST', ''))
 push = Push(DATA_DIR, os.getenv('PUSH_CONTACT','mailto:image-studio@localhost'))
 log = logging.getLogger('image-studio')
@@ -56,19 +59,25 @@ _http_client: httpx.AsyncClient | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _http_client
+    if DATA_DIR.is_dir():
+        try: adviser.store.interrupt()
+        except (ValueError,OSError): log.warning('Adviser store unavailable; manual generation remains enabled')
     _http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(20.0, connect=4.0),
         limits=httpx.Limits(max_keepalive_connections=20, max_connections=50)
     )
     tasks = [asyncio.create_task(watch_jobs()), asyncio.create_task(listen(COMFY, CLIENT_ID, progress))]
     yield
+    if DATA_DIR.is_dir():
+        try: await adviser.shutdown()
+        except (ValueError,OSError): pass
     for task in tasks:
         task.cancel()
     if _http_client is not None:
         await _http_client.aclose()
         _http_client = None
 
-VERSION = '0.5.1'
+VERSION = '0.6.0'
 app = FastAPI(title='Image Studio Mobile', version=VERSION, lifespan=lifespan)
 
 async def request(method, path, expect_json=True, **kwargs):
@@ -178,6 +187,9 @@ def presets_js(): return FileResponse(STATIC/'presets.js', media_type='text/java
 
 @app.get('/mobile-tools.js')
 def mobile_tools_js(): return FileResponse(STATIC/'mobile-tools.js', media_type='text/javascript', headers={'Cache-Control':'no-cache'})
+
+@app.get('/adviser.js')
+def adviser_js(): return FileResponse(STATIC/'adviser.js',media_type='text/javascript')
 
 @app.get('/app.js')
 def app_js(): return FileResponse(STATIC/'app.js', media_type='text/javascript', headers={'Cache-Control':'no-cache'})
@@ -336,6 +348,8 @@ class CaptionReview(BaseModel):
     negative: str = Field(default='', max_length=10000)
 
 class Job(BaseModel):
+    adviser_token: str | None = Field(default=None, max_length=100)
+    adviser_index: int = Field(default=0, ge=0, le=7)
     stage: Literal['render', 'caption'] = 'render'
     review: CaptionReview | None = None
     workflow_id: str = Field(max_length=240)
@@ -350,14 +364,13 @@ class Job(BaseModel):
     caption: dict[str,dict[str,bool|str]] = Field(default_factory=dict,max_length=4)
     fit: FitChoice | None = None
 
-@app.post('/api/jobs')
-async def jobs(job: Job, authorization: str | None = Header(default=None)):
-    auth(authorization)
+async def prepare_job(job: Job):
     try:
         root, name = (SYNC_DIR, job.workflow_id[7:]) if job.workflow_id.startswith('synced/') else (WF_DIR, job.workflow_id)
         graph = load_workflow(root, name)
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         raise HTTPException(400, str(exc)) from exc
+    source_hash = hashlib.sha256(json.dumps(graph,sort_keys=True,separators=(',',':')).encode()).hexdigest()
     info = await get_object_info()
     if isinstance(graph.get('nodes'), list):
         try:
@@ -382,15 +395,104 @@ async def jobs(job: Job, authorization: str | None = Header(default=None)):
         if not final_check['runnable']: raise JobError('; '.join(final_check['errors']))
     except (ControlError, JobError, CaptionError) as exc:
         raise HTTPException(400,str(exc)) from exc
+    return graph, info, applied, name, source_hash
+
+@app.post('/api/jobs')
+async def jobs(job: Job, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    graph, info, applied, name, source_hash = await prepare_job(job)
     details = run_details(graph, info)
+    if job.adviser_token:
+        approval = adviser.store.get('approval',job.adviser_token,owner=adviser_owner())
+        actual = fingerprint(graph,find_controls(graph,info),source_hash)
+        if not approval or job.adviser_index >= len(approval['hashes']) or approval['hashes'][job.adviser_index] != actual or approval['seeds'][job.adviser_index] != job.seed or approval['intents'][job.adviser_index] != job_intent(job):
+            raise HTTPException(409,'Approved workflow, settings or batch seeds changed; review again or run manually')
+        details['adviser'] = {**approval['audit'],'batch_index':job.adviser_index}
     result=await request('POST','/prompt',json={'prompt':graph,'client_id':CLIENT_ID})
     if result.get('prompt_id'):
         progress.expect(result['prompt_id'], graph)
         try:
-            job_store.add(result['prompt_id'], name.rsplit('/',1)[-1].removesuffix('.json'), job.prompt, params=job.model_dump(), details=details)
+            job_store.add(result['prompt_id'], name.rsplit('/',1)[-1].removesuffix('.json'), job.prompt, params=job.model_dump(exclude={'adviser_token','adviser_index'}), details=details)
         except OSError:
             log.exception('Could not record job')
     return {'prompt_id':result.get('prompt_id'),'node_errors':result.get('node_errors',{}),'details':details,**applied}
+
+def job_intent(job):
+    return hashlib.sha256(json.dumps(job.model_dump(exclude={'adviser_token','adviser_index'}),sort_keys=True,separators=(',',':')).encode()).hexdigest()
+
+def adviser_owner():
+    return hashlib.sha256(TOKEN.encode()).hexdigest()
+
+class ReviewRequest(BaseModel):
+    job: Job
+    seeds: list[int] = Field(min_length=1,max_length=8)
+    refresh: bool = False
+
+class ApplySettingsRequest(BaseModel):
+    job: Job
+    selected: list[str] = Field(min_length=1,max_length=32)
+
+@app.get('/api/adviser/status')
+def adviser_status(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return adviser.status()
+
+@app.post('/api/adviser/reviews')
+async def create_adviser_review(body: ReviewRequest, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    if body.job.stage != 'render': raise HTTPException(400,'Finish caption review before researching render settings')
+    if any(type(seed) is not int or not 0 <= seed <= 18446744073709551615 for seed in body.seeds):
+        raise HTTPException(400,'Invalid batch seeds')
+    job=body.job.model_copy(update={'seed':body.seeds[0], 'adviser_token':None})
+    graph,info,_,_,source_hash=await prepare_job(job)
+    try:
+        return adviser.start(adviser_owner(),graph,find_controls(graph,info),source_hash,
+                             job.model_dump(exclude={'adviser_token','adviser_index'}),body.seeds,body.refresh)
+    except (ValueError,OSError) as exc:
+        raise HTTPException(400,'Cannot start research: queue full or DATA_DIR unavailable') from exc
+
+@app.get('/api/adviser/reviews/{review_id}')
+def get_adviser_review(review_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    try: return adviser.public(adviser.get(review_id,adviser_owner()))
+    except ValueError as exc: raise HTTPException(404,str(exc)) from exc
+
+@app.delete('/api/adviser/reviews/{review_id}')
+def cancel_adviser_review(review_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    try: return adviser.cancel(review_id,adviser_owner())
+    except ValueError as exc: raise HTTPException(404,str(exc)) from exc
+
+@app.post('/api/adviser/reviews/{review_id}/apply')
+async def apply_adviser_review(review_id: str, body: ApplySettingsRequest, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    try: row=adviser.get(review_id,adviser_owner())
+    except ValueError as exc: raise HTTPException(404,str(exc)) from exc
+    if row['status'] != 'done': raise HTTPException(409,'Research is not ready')
+    job=body.job.model_copy(update={'seed':row['seeds'][0],'adviser_token':None})
+    graph,info,_,_,source_hash=await prepare_job(job)
+    if fingerprint(graph,find_controls(graph,info),source_hash) != fingerprint(row['graph'],row['controls'],row['source_hash']):
+        raise HTTPException(409,'Workflow or form changed; research again')
+    by_id={p['id']:p for p in row['proposals']}
+    if len(set(body.selected))!=len(body.selected) or any(key not in by_id for key in body.selected):
+        raise HTTPException(400,'Unknown or duplicate proposal')
+    values=job.model_dump(exclude={'adviser_token','adviser_index'})
+    chosen=[by_id[key] for key in body.selected]
+    for proposal in chosen:
+        for change in proposal['changes']:
+            if change['field']=='size': values['size']=change['value']
+            else: values['sampling'].setdefault(change['node'],{})[change['field']]=change['value']
+    hashes=[]; intents=[]
+    for seed in row['seeds']:
+        values['seed']=seed
+        candidate=Job(**values)
+        intents.append(job_intent(candidate))
+        g,i,_,_,sh=await prepare_job(candidate)
+        hashes.append(fingerprint(g,find_controls(g,i),sh))
+    token=secrets.token_urlsafe(32)
+    audit={'review_id':review_id,'applied_at':time.time(),'changes':chosen}
+    adviser.store.put('approval',token,{'owner':adviser_owner(),'hashes':hashes,'seeds':row['seeds'],'intents':intents,'audit':audit},ttl=max(1,row.get('expires',time.time()+600)-time.time()))
+    return {'sampling':values['sampling'],'size':values.get('size'),'token':token,'seeds':row['seeds'],'review_id':review_id,'expires':row.get('expires',time.time()+600)}
 
 @app.post('/api/uploads')
 async def upload(req: Request, authorization: str | None = Header(default=None)):
@@ -608,7 +710,7 @@ def save_preset(body: PresetBody, authorization: str | None = Header(default=Non
     auth(authorization); presets_ready()
     name = body.name.strip()
     if not name: raise HTTPException(400, 'Enter a preset name')
-    job = body.job.model_dump(exclude={'images', 'stage', 'review'})
+    job = body.job.model_dump(exclude={'images', 'stage', 'review', 'adviser_token', 'adviser_index'})
     try:
         return preset_store.save(name, job, body.choices, body.id)
     except ValueError as exc:

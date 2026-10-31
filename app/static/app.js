@@ -13,6 +13,7 @@ let token = '';
 let catalog = null;
 let filter = 'all';
 let searchQuery = '';
+let captionDraft = null;
 let selected = null;   // catalog workflow entry
 let slots = [];        // per image input: {name, uploading, preview, error}
 let sharedFiles = [];  // photos shared into the app
@@ -178,6 +179,10 @@ if ($('wf-search')) {
 
 async function selectWorkflow(wf, restored = null) {
   for (const slot of slots) if (slot.preview) URL.revokeObjectURL(slot.preview);
+  adviserUI.reset();
+  captionDraft = null;
+  $('caption-draft').classList.add('hide');
+  $('caption-draft-clear').classList.add('hide');
   selected = wf;
   controlsReady = false;
   captionCapability = null;
@@ -372,6 +377,8 @@ async function loadControls(wf, restored = null) {
         values[field] = value;
     choices.sampling[smp.node] = values;
   }
+  const advised = saved.adviserSize;
+  if (controls.size && advised && [advised.width, advised.height].every(v => Number.isInteger(v) && v >= 256 && v <= 2880 && v % 8 === 0) && advised.width * advised.height <= 2048 * 2048) choices.adviserSize = { ...advised };
   const preset = WALLPAPER_PRESETS.find(p => p.id === saved.preset);
   if (controls.size && preset) {
     choices.preset = preset.id;
@@ -404,6 +411,7 @@ function strengthRow(choice, onChange) {
 function fitSize(c) { return (controls?.can_fit && WALLPAPER_PRESETS.find(p => p.id === c?.preset)?.native) || null; }
 
 function chosenSize(c) {
+  if (c?.adviserSize) return c.adviserSize;
   return controls?.size && c?.aspect ? aspectSize(c.aspect, controls.size) : controls?.size || null;
 }
 
@@ -490,6 +498,8 @@ function sizeSection(changed) {
     if (choices.preset) {
       const p = WALLPAPER_PRESETS.find(x => x.id === choices.preset);
       if (p) desc = p.desc;
+    } else if (choices.adviserSize) {
+      desc = 'Published render size selected in settings review';
     } else if (choices.aspect) {
       desc = `Aspect ratio ${choices.aspect} (preserving workflow pixel budget)`;
     }
@@ -510,6 +520,7 @@ function sizeSection(changed) {
     }, preset.label);
 
     chip.onclick = () => {
+      delete choices.adviserSize;
       choices.preset = preset.id;
       choices.aspect = presetAspect(preset);
       refreshChips();
@@ -528,6 +539,7 @@ function sizeSection(changed) {
     }, aspect || (controls.size_from_photo ? 'Match photo' : 'Original'));
 
     chip.onclick = () => {
+      delete choices.adviserSize;
       choices.preset = '';
       choices.aspect = aspect;
       refreshChips();
@@ -681,7 +693,7 @@ function controlsPayload(c) {
     const changes = Object.fromEntries(Object.entries(c.caption?.[cap.node] || {}).filter(([f, v]) => v !== cap.values[f]));
     if (Object.keys(changes).length) caption[cap.node] = changes;
   }
-  const size = c.aspect ? chosenSize(c) : null;
+  const size = c.adviserSize || (c.aspect ? chosenSize(c) : null);
   const fit = fitSize(c);
   return {
     models, loras, extra_loras: c.extra.map(x => ({ name: x.name, strength: x.strength })), sampling, caption,
@@ -707,6 +719,7 @@ $('form').onsubmit = async event => {
   if (slots.some(s => !s.name)) return void ($('form-error').textContent = slots.length > 1 ? `Add all ${slots.length} images first.` : 'Add an image first.');
   const prompt = $('prompt').value.trim();
   if (selected.takes_prompt && !prompt) return void ($('form-error').textContent = 'Enter a prompt.');
+  const approval = adviserUI.approvalFor();
   const base = $('seed').value === '' ? null : Number($('seed').value);
   const runs = Number($('runs').value) || 1;
   const style = selected.takes_prompt ? currentStyle() : null;
@@ -714,13 +727,13 @@ $('form').onsubmit = async event => {
   const params = {
     workflowId: selected.id, workflow: prettyName(selected.name), takesPrompt: selected.takes_prompt,
     prompt: selected.takes_prompt ? styledPrompt(prompt, style, cinematicOn(choices)) : '',
-    images: slots.map(s => s.name), stage,
+    images: slots.map(s => s.name), stage, review: activeCaptionDraft(),
     controls: controlsPayload(choices), controlsText: [style?.label, controlsText(choices)].filter(Boolean).join(' · ')
   };
   $('generate').disabled = true;
   try {
     for (let i = 0; i < (stage === 'caption' ? 1 : runs); i++) {
-      await submitJob({ ...params, seed: base === null ? randomSeed() : base + i }, i === 0);
+      await submitJob({ ...params, seed: approval ? approval.seeds[i] : base === null ? randomSeed() : base + i, adviserToken: approval?.token || null, adviserIndex: i }, i === 0);
     }
   } catch (e) {
     $('form-error').textContent = e.message;
@@ -732,10 +745,11 @@ $('form').onsubmit = async event => {
 async function submitJob(params, focus) {
   const r = await api('/jobs', {
     method: 'POST',
-    json: { ...(params.controls || {}), workflow_id: params.workflowId, prompt: params.prompt, images: params.images, seed: params.seed, stage: params.stage || 'render', review: params.review || null }
+    json: { ...(params.controls || {}), workflow_id: params.workflowId, prompt: params.prompt, images: params.images, seed: params.seed, stage: params.stage || 'render', review: params.review || null, adviser_token: params.adviserToken || null, adviser_index: params.adviserIndex || 0 }
   });
   if (!r.prompt_id) throw Error('ComfyUI did not return a job ID');
-  const job = { ...params, details: r.details || null, id: r.prompt_id, created: Date.now() };
+  const { adviserToken, adviserIndex, ...recorded } = params;
+  const job = { ...recorded, details: r.details || null, id: r.prompt_id, created: Date.now() };
   rememberJob(job);
   openJob(job, focus);
   return job;
@@ -1361,9 +1375,22 @@ function captionEditor(job, outputs) {
     } catch (e) { status.textContent = 'Could not render: ' + e.message; }
     finally { generate.disabled = false; }
   };
+  const research = el('button', { class: 'secondary', type: 'button' }, 'Review settings with this caption');
+  research.onclick = () => {
+    if (!positive.value.trim()) return void (status.textContent = 'Enter a positive caption.');
+    if (!selected || selected.id !== job.workflowId || JSON.stringify(slots.map(s => s.name)) !== JSON.stringify(job.images))
+      return void (status.textContent = 'Select the original workflow and input image before reviewing these settings.');
+    captionDraft = { workflowId: job.workflowId, images: [...job.images], text: { positive: positive.value, negative: negative.value } };
+    $('review-before').checked = false;
+    $('runs').value = runs.value;
+    $('caption-draft').textContent = 'Edited caption selected for rendering: ' + positive.value;
+    $('caption-draft').classList.remove('hide'); $('caption-draft-clear').classList.remove('hide');
+    $('adviser-box').open = true; $('adviser-box').scrollIntoView({ behavior: 'smooth' });
+    $('adviser-start').click();
+  };
   return el('div', { class: 'caption-editor' }, el('h3', {}, 'Review caption'),
     el('label', {}, 'Positive caption'), positive, el('label', {}, 'Negative caption'), negative,
-    el('label', {}, 'Runs'), runs, generate, status);
+    el('label', {}, 'Runs'), runs, generate, research, status);
 }
 
 /* ---------- NAS job links and PC wake ---------- */
@@ -1580,6 +1607,38 @@ $('viewer-compare').onclick = async () => {
   } finally { if (viewerState === state && revision === viewerItemRevision) $('viewer-compare').disabled = false; }
 };
 
+
+/* Native settings adviser uses the same effective controls as Generate. */
+function activeCaptionDraft() {
+  if (!captionDraft || $('review-before').checked) return null;
+  if (selected?.id !== captionDraft.workflowId || JSON.stringify(slots.map(s => s.name)) !== JSON.stringify(captionDraft.images)) {
+    captionDraft = null; $('caption-draft').classList.add('hide'); $('caption-draft-clear').classList.add('hide');
+    return null;
+  }
+  return { ...captionDraft.text };
+}
+$('caption-draft-clear').onclick = () => {
+  captionDraft = null; $('caption-draft').classList.add('hide'); $('caption-draft-clear').classList.add('hide');
+  adviserUI.reset();
+};
+function adviserForm() {
+  if (!selected || !controlsReady) throw Error('Select a workflow and wait for settings.');
+  if (slots.some(s => s.uploading || !s.name)) throw Error('Add input images and wait for uploads.');
+  const prompt = $('prompt').value.trim();
+  if (selected.takes_prompt && !prompt) throw Error('Enter a prompt first.');
+  return {
+    job: { ...controlsPayload(choices), workflow_id: selected.id,
+      prompt: selected.takes_prompt ? styledPrompt(prompt, currentStyle(), cinematicOn(choices)) : '',
+      images: slots.map(s => s.name), seed: $('seed').value === '' ? null : Number($('seed').value),
+      stage: $('review-before').checked ? 'caption' : 'render', review: activeCaptionDraft() },
+    runs: Number($('runs').value) || 1
+  };
+}
+const adviserUI = SettingsAdviser.mount({ api, el, getForm: adviserForm, random: randomSeed, apply: result => {
+  for (const [node, fields] of Object.entries(result.sampling || {})) Object.assign(choices.sampling[node] || (choices.sampling[node] = {}), fields);
+  if (result.size) choices.adviserSize = result.size;
+  renderControls(); renderSummary(); saveControls();
+}});
 
 /* ---------- Boot Init ---------- */
 (async () => {

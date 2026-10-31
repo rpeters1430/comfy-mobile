@@ -57,6 +57,7 @@
       ['Negative prompt', job.review?.negative ?? 'Not recorded'],
       ['Models', models || 'Not recorded'], ['LoRAs', loras || 'Not recorded'], ['Sampling', sampling || 'Not recorded'],
       ['Output fit', settings.fit ? `${settings.fit.width} × ${settings.fit.height}` : 'Workflow default'],
+      ...(details.adviser ? [['Settings review', details.adviser.review_id], ['Approved changes', details.adviser.changes.map(p => p.label + ': ' + p.evidence.map(e => e.quote).join('; ')).join('\n')]] : []),
       ['Job ID', job.id || 'Not recorded']];
   }
   const api = { nasJob, mergeHistory, captionText, presetJob, preferredWorkflows, photoDetails };
