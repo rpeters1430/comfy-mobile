@@ -161,11 +161,15 @@
 <script src="/presets.js" defer></script>
 <dialog id="image-viewer" aria-labelledby="viewer-title">
   <div class="row between"><h2 id="viewer-title">Image viewer</h2><button id="viewer-close" class="secondary" type="button">Close</button></div>
+  <div class="row between" id="viewer-paging"><button id="viewer-previous" class="secondary" type="button">Previous</button><span id="viewer-count" class="status"></span><button id="viewer-next" class="secondary" type="button">Next</button></div>
   <p id="viewer-status" class="status" role="status"></p>
-  <div id="viewer-scroll"><div id="viewer-stage"><img id="viewer-before" alt="Input image"><div id="viewer-after-wrap"><img id="viewer-after" alt="Generated image"></div></div></div>
+  <div id="viewer-scroll"><div id="viewer-stage"><img id="viewer-before" alt="Input image"><div id="viewer-after-wrap"><img id="viewer-after" alt="Generated image"></div><video id="viewer-video" class="hide" controls playsinline preload="metadata"></video></div></div>
   <label id="compare-label" for="compare-range">Before / after</label>
   <input id="compare-range" type="range" min="0" max="100" value="50" aria-label="Reveal generated image">
-  <label for="viewer-zoom">Zoom</label><input id="viewer-zoom" type="range" min="1" max="3" step="0.25" value="1">
+  <label id="viewer-zoom-label" for="viewer-zoom">Zoom</label><input id="viewer-zoom" type="range" min="1" max="3" step="0.25" value="1">
+  <div class="row" id="viewer-tools"><button id="viewer-compare" class="secondary hide" type="button">Compare with input</button><div id="viewer-actions"></div></div>
+  <details id="photo-details"><summary>Photo details</summary><dl id="photo-metadata"></dl><div id="photo-text"></div></details>
+  <button id="viewer-job" class="ghost" type="button">Open job details / run again</button>
 </dialog>
 <script src="/mobile-tools.js" defer></script>
 <script src="/app.js" defer></script>

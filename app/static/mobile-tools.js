@@ -5,7 +5,7 @@
     const { workflow_id, prompt, images, seed, stage, review, ...settings } = p;
     return { id: record.id, workflow: record.workflow, created: record.created * 1000,
       prompt: prompt ?? record.prompt ?? '', workflowId: workflow_id, images: images || [], seed,
-      stage: stage || 'render', review, controls: settings,
+      stage: stage || 'render', review, controls: settings, details: record.details || null,
       finished: !['pending', 'unknown'].includes(record.status), done: record.status === 'success' };
   }
   function mergeHistory(local, remote) {
@@ -36,7 +36,30 @@
     job.caption = structuredClone(choices.caption || {});
     return job;
   }
-  const api = { nasJob, mergeHistory, captionText, presetJob };
+  function preferredWorkflows(workflows) {
+    const synced = new Map(workflows.filter(w => w.id.startsWith('synced/')).map(w => [w.name, w]));
+    return workflows.filter(w => w.id.startsWith('synced/') || !synced.get(w.name)?.runnable)
+      .map(w => !w.id.startsWith('synced/') && w.runnable && synced.has(w.name) ? { ...w, bundled_fallback: true } : w);
+  }
+  function photoDetails(job, item, resolution) {
+    const details = job.details || {}, settings = job.controls || {};
+    const models = details.models?.map(m => `${m.value} (node ${m.node})`).join('\n')
+      || Object.values(settings.models || {}).join('\n');
+    const loras = details.loras?.map(l => `${l.value} · ${l.strength}`).join('\n')
+      || [...Object.values(settings.loras || {}), ...(settings.extra_loras || [])].map(l => `${l.name} · ${l.strength}`).join('\n');
+    const sampling = details.samplers?.map(s => `Node ${s.node}: ${JSON.stringify(s.values)}`).join('\n')
+      || Object.entries(settings.sampling || {}).map(([key, value]) => `Node ${key}: ${JSON.stringify(value)}`).join('\n');
+    return [['Workflow', job.workflow || job.workflowId || 'Not recorded'],
+      ['Created', job.created ? new Date(job.created).toLocaleString() : 'Not recorded'],
+      ['Seed', job.seed == null ? 'Not recorded' : String(job.seed)],
+      ['File', item?.filename || 'Loading…'], ['Resolution', resolution || 'Loading…'],
+      ['Prompt', job.review?.positive || job.prompt || 'No typed prompt recorded'],
+      ['Negative prompt', job.review?.negative ?? 'Not recorded'],
+      ['Models', models || 'Not recorded'], ['LoRAs', loras || 'Not recorded'], ['Sampling', sampling || 'Not recorded'],
+      ['Output fit', settings.fit ? `${settings.fit.width} × ${settings.fit.height}` : 'Workflow default'],
+      ['Job ID', job.id || 'Not recorded']];
+  }
+  const api = { nasJob, mergeHistory, captionText, presetJob, preferredWorkflows, photoDetails };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.MobileTools = api;
 })(globalThis);

@@ -63,10 +63,10 @@ class JobStore:
         write_atomic(self.path, json.dumps(self.jobs).encode())
 
     @synchronized
-    def add(self, job_id: str, workflow: str, prompt: str, params: dict | None = None) -> None:
+    def add(self, job_id: str, workflow: str, prompt: str, params: dict | None = None, details: dict | None = None) -> None:
         if not self.enabled or not JOB_ID.fullmatch(job_id):
             return
-        self.jobs[job_id] = {"workflow": workflow[:200], "prompt": prompt[:300], "created": int(time.time()), "summary": None, "params": copy.deepcopy(params)}
+        self.jobs[job_id] = {"workflow": workflow[:200], "prompt": prompt[:300], "created": int(time.time()), "summary": None, "params": copy.deepcopy(params), "details": copy.deepcopy(details)}
         for old in sorted(self.jobs, key=lambda k: self.jobs[k]["created"])[:-MAX_JOBS]:
             del self.jobs[old]
             self.thumb_path(old).unlink(missing_ok=True)
@@ -105,6 +105,7 @@ class JobStore:
             items.append({'id': key, 'workflow': job.get('workflow', 'Workflow'),
                           'prompt': job.get('prompt', ''), 'created': job.get('created', 0),
                           'params': copy.deepcopy(job.get('params')),
+                          'details': copy.deepcopy(job.get('details')),
                           'status': (job.get('summary') or {}).get('status', 'pending')})
         return {'items': items, 'offset': offset, 'limit': limit, 'total': len(ordered),
                 'has_more': offset + limit < len(ordered)}
