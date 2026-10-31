@@ -100,6 +100,7 @@
         </div>
       </div>
       <p class="status" style="margin:4px 0 0">Leave seed empty for a random seed each run. With a fixed seed, runs use seed, seed+1, …</p>
+      <label><input type="checkbox" id="check-settings" checked> Check settings before generating</label>
       <details class="controls" id="adviser-box">
         <summary>AI settings review</summary>
         <p class="status">Ask your selected AI to review this workflow. Suggestions are optional and require your approval.</p>
@@ -180,6 +181,14 @@
 </nav>
 
 <script src="/presets.js" defer></script>
+<dialog id="check-dialog" aria-labelledby="check-title">
+  <form method="dialog">
+    <h2 id="check-title">Check these settings</h2>
+    <p class="status">Built-in rules for the selected models. Ticked fixes are applied before generating.</p>
+    <ul id="check-list"></ul>
+    <div class="row"><button class="primary" id="check-fix" value="fix">Fix &amp; generate</button><button class="secondary" value="anyway">Generate anyway</button><button class="ghost" value="cancel">Cancel</button></div>
+  </form>
+</dialog>
 <dialog id="image-viewer" aria-labelledby="viewer-title">
   <div class="row between"><h2 id="viewer-title">Image viewer</h2><button id="viewer-close" class="secondary" type="button">Close</button></div>
   <div class="row between" id="viewer-paging"><button id="viewer-previous" class="secondary" type="button">Previous</button><span id="viewer-count" class="status"></span><button id="viewer-next" class="secondary" type="button">Next</button></div>

@@ -122,6 +122,30 @@ def _saves(graph):
             if node["class_type"] in SAVE_CLASSES and isinstance(node["inputs"].get("images"), list)]
 
 
+DETAILERS = ("FaceDetailer", "FaceDetailerPipe")
+
+
+def _detailers(graph):
+    """Detailers whose only used output is the refined image, so skipping one can pass its input image through."""
+    found = []
+    for node_id, node in graph.items():
+        if node["class_type"] not in DETAILERS or not isinstance(node["inputs"].get("image"), list):
+            continue
+        used = {v[1] for n in graph.values() for v in n["inputs"].values() if isinstance(v, list) and len(v) == 2 and v[0] == node_id}
+        if used <= {0}:
+            found.append(node_id)
+    return sorted(found)
+
+
+def _skip_detailers(graph, found):
+    for node_id in found["detailers"]:
+        source = graph.pop(node_id)["inputs"]["image"]
+        for node in graph.values():
+            for field, value in node["inputs"].items():
+                if value == [node_id, 0]:
+                    node["inputs"][field] = source
+
+
 def _captions(graph, object_info):
     found = []
     for node_id, node in graph.items():
@@ -153,7 +177,7 @@ def find_controls(graph: dict, object_info: dict) -> dict:
     return {"models": models, "loras": loras, "lora_options": _options(object_info, "LoraLoaderModelOnly", "lora_name"),
             "can_add_lora": _lora_anchor(graph, models) is not None,
             "samplers": _samplers(graph), "size": size, "size_from_photo": from_photo, "captions": _captions(graph, object_info),
-            "can_fit": bool(_saves(graph)) and "ImageScale" in object_info,
+            "can_fit": bool(_saves(graph)) and "ImageScale" in object_info, "detailers": _detailers(graph),
             "upscale_options": _options(object_info, "UpscaleModelLoader", "model_name"),
             "sampler_options": _options(object_info, "KSampler", "sampler_name"),
             "scheduler_options": _options(object_info, "KSampler", "scheduler")}
@@ -255,11 +279,16 @@ def _apply_fit(graph, found, fit):
 
 def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, extra_loras: list,
                    sampling: dict | None = None, size: dict | None = None, caption: dict | None = None,
-                   fit: dict | None = None) -> None:
+                   fit: dict | None = None, skip_detailers: bool = False) -> None:
     """Apply phone choices in place. Only nodes and options found by find_controls are accepted."""
-    if not (models or loras or extra_loras or sampling or size or caption or fit):
+    if not (models or loras or extra_loras or sampling or size or caption or fit or skip_detailers):
         return
     found = find_controls(graph, object_info)
+    if skip_detailers:
+        if not found["detailers"]:
+            raise ControlError("This workflow has no face detailer to skip")
+        _skip_detailers(graph, found)
+        found = find_controls(graph, object_info)
     if fit:
         _apply_fit(graph, found, fit)
     if sampling:

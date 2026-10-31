@@ -664,3 +664,9 @@ nav button[aria-current="page"] {
 .photo-meta-row dt { color: var(--muted); }
 .photo-meta-row dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .photo-captured-text p { white-space: pre-wrap; overflow-wrap: anywhere; }
+#check-dialog { box-sizing: border-box; width: min(92vw, 520px); color: var(--text); background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--radius-md); padding: 16px; }
+#check-dialog::backdrop { background: rgba(0,0,0,.7); }
+#check-list { padding-left: 18px; }
+#check-list li { margin: 8px 0; }
+#check-list li.warn::marker { color: var(--err); }
+#check-list li.tip::marker { color: var(--muted); }

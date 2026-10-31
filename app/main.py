@@ -23,6 +23,7 @@ try:
     from wake import WakePC, WakeError
     from push import Push, PushError
     from progress import ProgressTracker, listen
+    from settings_check import check as check_settings
 except ImportError:
     from app.adviser import Adviser, fingerprint
     from app.adviser_ai import AI, AIError
@@ -37,6 +38,7 @@ except ImportError:
     from app.wake import WakePC, WakeError
     from app.push import Push, PushError
     from app.progress import ProgressTracker, listen
+    from app.settings_check import check as check_settings
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
@@ -362,6 +364,7 @@ class Job(BaseModel):
     size: dict[str,int] | None = None
     caption: dict[str,dict[str,bool|str]] = Field(default_factory=dict,max_length=4)
     fit: FitChoice | None = None
+    skip_detailers: bool = False
 
 async def prepare_job(job: Job):
     try:
@@ -381,7 +384,7 @@ async def prepare_job(job: Job):
     # Only the {{prompt}} placeholder is replaced, so negative prompts and instructions are never rewritten.
     try:
         apply_controls(graph,info,job.models,{k:v.model_dump() for k,v in job.loras.items()},[v.model_dump() for v in job.extra_loras],job.sampling,job.size,job.caption,
-                       job.fit.model_dump() if job.fit else None)
+                       job.fit.model_dump() if job.fit else None, job.skip_detailers)
         applied=apply_job(graph,job.prompt,job.images,job.seed)
         if job.stage == 'caption':
             if job.review: raise CaptionError('Caption preview cannot include approved text')
@@ -414,6 +417,13 @@ async def jobs(job: Job, authorization: str | None = Header(default=None)):
         except OSError:
             log.exception('Could not record job')
     return {'prompt_id':result.get('prompt_id'),'node_errors':result.get('node_errors',{}),'details':details,**applied}
+
+@app.post('/api/jobs/check')
+async def check_job(job: Job, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    if job.stage != 'render': return {'issues': []}
+    graph, info, *_ = await prepare_job(job)
+    return {'issues': check_settings(graph, find_controls(graph, info))}
 
 def job_intent(job):
     return hashlib.sha256(json.dumps(job.model_dump(exclude={'adviser_token','adviser_index'}),sort_keys=True,separators=(',',':')).encode()).hexdigest()
@@ -764,7 +774,7 @@ async def validate_preset(preset_id: str, authorization: str | None = Header(def
         if not check['runnable']: return {'valid': False, 'errors': check['errors']}
         apply_controls(graph, info, job.models, {k: v.model_dump() for k, v in job.loras.items()},
                        [v.model_dump() for v in job.extra_loras], job.sampling, job.size, job.caption,
-                       job.fit.model_dump() if job.fit else None)
+                       job.fit.model_dump() if job.fit else None, job.skip_detailers)
         return {'valid': True, 'errors': [], 'preset': preset}
     except (ValueError, OSError, ConversionError, ControlError) as exc:
         return {'valid': False, 'errors': [str(exc)]}

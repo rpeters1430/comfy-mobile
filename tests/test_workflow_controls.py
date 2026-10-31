@@ -216,5 +216,29 @@ class ControlTests(unittest.TestCase):
                            fit={"width": 1080, "height": 2400})
 
 
+class DetailerTests(unittest.TestCase):
+    def graph(self):
+        return {
+            "8": {"class_type": "VAEDecode", "inputs": {"samples": ["7", 0], "vae": ["1", 2]}},
+            "23": {"class_type": "UltralyticsDetectorProvider", "inputs": {"model_name": "bbox/face_yolov8m.pt"}},
+            "24": {"class_type": "FaceDetailer", "inputs": {"image": ["8", 0], "bbox_detector": ["23", 0], "steps": 20}},
+            "9": {"class_type": "SaveImage", "inputs": {"images": ["24", 0], "filename_prefix": "x"}},
+        }
+
+    def test_skip_wires_the_detailer_input_to_its_consumers(self):
+        graph = self.graph()
+        self.assertEqual(find_controls(graph, INFO)["detailers"], ["24"])
+        apply_controls(graph, INFO, {}, {}, [], skip_detailers=True)
+        self.assertNotIn("24", graph)
+        self.assertEqual(graph["9"]["inputs"]["images"], ["8", 0])
+
+    def test_detailer_with_other_used_outputs_is_not_offered(self):
+        graph = self.graph()
+        graph["10"] = {"class_type": "PreviewImage", "inputs": {"images": ["24", 1]}}
+        self.assertEqual(find_controls(graph, INFO)["detailers"], [])
+        with self.assertRaises(ControlError):
+            apply_controls(graph, INFO, {}, {}, [], skip_detailers=True)
+
+
 if __name__ == "__main__":
     unittest.main()

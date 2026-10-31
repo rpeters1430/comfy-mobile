@@ -362,7 +362,7 @@ async function loadControls(wf, restored = null) {
   controls = found;
   const saved = restored || savedControls()[wf.id] || {};
   const loraOk = name => controls.lora_options.includes(name);
-  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', preset: '', upscaler: '', cinematic: saved.cinematic !== false, caption: {} };
+  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', preset: '', upscaler: '', cinematic: saved.cinematic !== false, caption: {}, skipDetailers: !!saved.skipDetailers };
   for (const m of controls.models) choices.models[m.node] = m.options.includes(saved.models?.[m.node]) ? saved.models[m.node] : m.value;
   for (const l of controls.loras) {
     const s = saved.loras?.[l.node];
@@ -475,6 +475,12 @@ function renderControls() {
     rows.push(samplerSection(smp, title, () => { saveControls(); renderSummary(); }));
   }
   for (const cap of controls.captions) rows.push(captionSection(cap, () => { saveControls(); renderSummary(); }));
+  if (controls.detailers?.length) {
+    const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(!!choices.skipDetailers) }, '⚡ Skip face detailer');
+    chip.onclick = () => { choices.skipDetailers = !choices.skipDetailers; chip.setAttribute('aria-pressed', String(choices.skipDetailers)); saveControls(); renderSummary(); };
+    rows.push(el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, 'Speed'), el('div', { class: 'aspects' }, chip),
+      el('small', { class: 'status', style: 'display:block;margin-top:2px' }, 'Face detailing re-renders every detected face, about 1–2 minutes each. Skip it for a quick run.')));
+  }
 
   const reset = el('button', { class: 'ghost', type: 'button', style: 'margin-top:12px;width:100%' }, 'Reset settings to defaults');
   reset.onclick = () => {
@@ -666,6 +672,7 @@ function controlsText(c) {
   const size = fitSize(c) || chosenSize(c);
   if (size && c.aspect) parts.push(`${size.width}×${size.height}`);
   if (cinematicOn(c)) parts.push('Cinematic');
+  if (c.skipDetailers && controls?.detailers?.length) parts.push('No face detailer');
   const base = controls?.samplers.find(smp => smp.role === 'base');
   const v = base && c.sampling?.[base.node];
   if (v && 'steps' in v) parts.push(`${v.steps} steps` + ('cfg' in v ? ` · CFG ${v.cfg}` : ''));
@@ -697,6 +704,7 @@ function controlsPayload(c) {
   const fit = fitSize(c);
   return {
     models, loras, extra_loras: c.extra.map(x => ({ name: x.name, strength: x.strength })), sampling, caption,
+    ...(c.skipDetailers && controls.detailers?.length ? { skip_detailers: true } : {}),
     ...(size && (size.width !== controls.size.width || size.height !== controls.size.height) ? { size } : {}),
     ...(fit ? { fit: { ...fit, ...(c.upscaler ? { upscaler: c.upscaler } : {}) } } : {})
   };
@@ -732,6 +740,11 @@ $('form').onsubmit = async event => {
   };
   $('generate').disabled = true;
   try {
+    if (!approval && stage === 'render' && $('check-settings').checked) {
+      if (!await checkSettings({ ...params, seed: base })) return;
+      params.controls = controlsPayload(choices);
+      params.controlsText = [style?.label, controlsText(choices)].filter(Boolean).join(' · ');
+    }
     for (let i = 0; i < (stage === 'caption' ? 1 : runs); i++) {
       await submitJob({ ...params, seed: approval ? approval.seeds[i] : base === null ? randomSeed() : base + i, adviserToken: approval?.token || null, adviserIndex: i }, i === 0);
     }
@@ -742,11 +755,38 @@ $('form').onsubmit = async event => {
   }
 };
 
+function jobBody(params) {
+  return { ...(params.controls || {}), workflow_id: params.workflowId, prompt: params.prompt, images: params.images, seed: params.seed, stage: params.stage || 'render', review: params.review || null, adviser_token: params.adviserToken || null, adviser_index: params.adviserIndex || 0 };
+}
+
+/* Settings check: built-in server rules shown before Generate. Advice only; a failed check never blocks a job. */
+const CHECK_KEY = 'image-studio-mobile:check-settings:v1';
+$('check-settings').checked = load(CHECK_KEY) !== '0';
+$('check-settings').onchange = () => store(CHECK_KEY, $('check-settings').checked ? '1' : '0');
+
+async function checkSettings(params) {
+  let issues;
+  try { ({ issues } = await api('/jobs/check', { method: 'POST', json: jobBody(params) })); } catch (e) { return true; }
+  if (!issues?.length) return true;
+  const dialog = $('check-dialog');
+  $('check-list').replaceChildren(...issues.map((issue, i) => el('li', { class: issue.level }, issue.changes.length
+    ? el('label', {}, el('input', { type: 'checkbox', checked: true, 'data-issue': i }), ' ', issue.message)
+    : issue.message)));
+  $('check-fix').classList.toggle('hide', !issues.some(i => i.changes.length));
+  dialog.returnValue = '';
+  dialog.showModal();
+  const choice = await new Promise(resolve => { dialog.onclose = () => resolve(dialog.returnValue); });
+  if (choice === 'fix') {
+    for (const box of $('check-list').querySelectorAll('input:checked'))
+      for (const { node, field, value } of issues[box.dataset.issue].changes)
+        (choices.sampling[node] || (choices.sampling[node] = {}))[field] = value;
+    renderControls(); renderSummary(); saveControls();
+  }
+  return choice === 'fix' || choice === 'anyway';
+}
+
 async function submitJob(params, focus) {
-  const r = await api('/jobs', {
-    method: 'POST',
-    json: { ...(params.controls || {}), workflow_id: params.workflowId, prompt: params.prompt, images: params.images, seed: params.seed, stage: params.stage || 'render', review: params.review || null, adviser_token: params.adviserToken || null, adviser_index: params.adviserIndex || 0 }
-  });
+  const r = await api('/jobs', { method: 'POST', json: jobBody(params) });
   if (!r.prompt_id) throw Error('ComfyUI did not return a job ID');
   const { adviserToken, adviserIndex, ...recorded } = params;
   const job = { ...recorded, details: r.details || null, id: r.prompt_id, created: Date.now() };
