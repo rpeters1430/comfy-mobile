@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A mobile-first FastAPI dashboard ("Image Studio Mobile") that runs in Docker on a NAS and proxies a ComfyUI instance on another machine. The phone UI is a single static page (`app/static/index.html`, inline CSS/JS); all ComfyUI access goes through the backend, which never exposes ComfyUI directly to the browser.
+A mobile-first FastAPI dashboard ("Image Studio Mobile") that runs in Docker on a NAS and proxies a ComfyUI instance on another machine. The phone UI is a static page (`app/static/index.html` + `style.css` + `app.js`; visual rules in `DESIGN.md`); all ComfyUI access goes through the backend, which never exposes ComfyUI directly to the browser.
 
 ## Commands
 

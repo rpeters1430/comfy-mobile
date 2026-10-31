@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0c1017">
+<meta name="theme-color" content="#121318">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="/style.css">
 <title>Image Studio Mobile</title>
@@ -17,7 +17,7 @@
       <h1>✦ Image Studio <span class="header-badge">Mobile</span></h1>
       <small id="status" role="status">Not connected</small>
     </div>
-    <button class="secondary" id="refresh" type="button">↻ Refresh</button>
+    <button class="secondary" id="refresh" type="button"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg>Refresh</button>
   </header>
 
   <!-- Tab: Create -->
@@ -27,13 +27,13 @@
         <strong id="shared-title">Shared photo ready</strong>
         <button class="ghost" id="shared-dismiss" type="button" aria-label="Discard shared photos">✕</button>
       </div>
-      <div class="slots" id="shared-previews" style="grid-template-columns:repeat(auto-fill,minmax(70px,1fr))"></div>
+      <div class="slots shared-previews" id="shared-previews"></div>
       <p class="status" id="shared-hint" style="margin-top:8px">Pick a workflow below and the photos fill its image slots in order.</p>
     </div>
 
     <div class="panel">
       <div class="wf-search-wrap">
-        <span class="wf-search-icon">🔍</span>
+        <span class="wf-search-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
         <input type="search" id="wf-search" placeholder="Search workflows or nodes…" autocomplete="off">
       </div>
       <div class="chips" role="group" aria-label="Filter workflows">
@@ -84,25 +84,25 @@
         <div id="controls"></div>
       </details>
       <div id="caption-review-box" class="hide">
-        <label><input type="checkbox" id="review-before"> Review caption before rendering</label>
+        <label class="switch"><input type="checkbox" id="review-before"> Review caption before rendering</label>
         <p id="caption-review-hint" class="status">Preview the caption, edit it, then generate.</p>
       </div>
       <p id="caption-draft" class="status hide" role="status"></p>
       <button type="button" class="ghost hide" id="caption-draft-clear">Clear edited caption</button>
-      <div class="row" style="align-items:flex-end;margin-top:6px">
-        <div style="flex:2">
+      <div class="row seed-row">
+        <div>
           <label for="seed">Seed</label>
           <input id="seed" type="number" min="0" inputmode="numeric" placeholder="Random each run">
         </div>
-        <div style="flex:1">
+        <div>
           <label for="runs">Runs</label>
           <select id="runs"><option>1</option><option>2</option><option>4</option><option>8</option></select>
         </div>
       </div>
       <p class="status" style="margin:4px 0 0">Leave seed empty for a random seed each run. With a fixed seed, runs use seed, seed+1, …</p>
-      <label><input type="checkbox" id="check-settings" checked> Check settings before generating</label>
+      <label class="switch"><input type="checkbox" id="check-settings" checked> Check settings before generating</label>
       <div id="auto-loras-row" class="hide">
-        <label><input type="checkbox" id="auto-loras"> Auto-add matching LoRAs</label>
+        <label class="switch"><input type="checkbox" id="auto-loras"> Auto-add matching LoRAs</label>
         <p class="status" style="margin:0">Adds up to two LoRAs whose training tags match your prompt or reviewed caption, plus their trigger words. For photo workflows, use caption review so there is a description to match.</p>
       </div>
       <details class="controls" id="adviser-box">
@@ -118,13 +118,13 @@
           <div class="row"><button type="button" class="secondary" id="ai-load-models">Load models</button><button type="button" class="secondary" id="ai-test-save">Test &amp; save connection</button></div>
           <p id="ai-connection-status" class="status" role="status" aria-live="polite">Keys are stored on the NAS and are never returned to this screen.</p>
         </details>
-        <label><input type="checkbox" id="adviser-web"> Add published guidance from web research (optional)</label>
-        <label><input type="checkbox" id="adviser-refresh"> Refresh saved research</label>
+        <label class="switch"><input type="checkbox" id="adviser-web"> Add published guidance from web research (optional)</label>
+        <label class="switch"><input type="checkbox" id="adviser-refresh"> Refresh saved research</label>
         <div class="row"><button type="button" class="secondary" id="adviser-start">Review with AI</button><button type="button" class="ghost hide" id="adviser-cancel">Cancel research</button></div>
         <p class="status" id="adviser-status" role="status" aria-live="polite"></p>
         <div id="adviser-results"></div>
       </details>
-      <button class="primary" id="generate" type="submit">✨ Generate</button>
+      <button class="primary" id="generate" type="submit"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.1 6.9L21 12l-6.9 2.1L12 21l-2.1-6.9L3 12l6.9-2.1z"/></svg>Generate</button>
       <p id="form-error" class="status error" role="alert" style="margin-top:8px"></p>
     </form>
 
@@ -179,9 +179,9 @@
 </main>
 
 <nav aria-label="Sections">
-  <button data-tab="create" aria-current="page" type="button">✨ Create</button>
-  <button data-tab="gallery" type="button">▦ Gallery</button>
-  <button data-tab="settings" type="button">⚙ Settings</button>
+  <button data-tab="create" aria-current="page" type="button"><span class="nav-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.1 6.9L21 12l-6.9 2.1L12 21l-2.1-6.9L3 12l6.9-2.1z"/></svg></span>Create</button>
+  <button data-tab="gallery" type="button"><span class="nav-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span>Gallery</button>
+  <button data-tab="settings" type="button"><span class="nav-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></span>Settings</button>
 </nav>
 
 <script src="/presets.js" defer></script>
