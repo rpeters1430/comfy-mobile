@@ -1,6 +1,6 @@
 services:
   image-studio-mobile:
-    image: ghcr.io/rpeters1430/comfy-mobile:latest@sha256:9b01650cfd046eb2389185ba0f0e8be5d042fd948978435f8984faf4787eacae
+    image: ghcr.io/rpeters1430/comfy-mobile:latest@sha256:41d9ba0d2ac7064e4fa46d49a44cac44c0c53b1a606fefcdb3f519ee5f1d5395
     pull_policy: always
     container_name: image-studio-mobile
     restart: unless-stopped
