@@ -13,7 +13,8 @@ import aiohttp
 PREVIEW_IMAGE = 1
 FORMATS = {1: "image/jpeg", 2: "image/png"}
 MAX_PREVIEW = 2_000_000
-KEEP = 8  # jobs whose progress is remembered
+# Jobs whose progress is remembered, counting queued ones: more than the adviser's batch of 8 plus a running job.
+KEEP = 64
 SAMPLERS = {"KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"}
 
 log = logging.getLogger("image-studio")
@@ -52,6 +53,9 @@ class ProgressTracker:
             self.current = prompt_id if data.get("node") is not None else None
             if data.get("node") is not None:
                 self._job(prompt_id)["node"] = data["node"]
+            elif prompt_id in self.jobs:
+                # The phone shows the outputs now; dropping the frame keeps KEEP entries cheap.
+                self.jobs[prompt_id]["preview"] = None
         elif kind == "progress" and isinstance(data.get("value"), int) and isinstance(data.get("max"), int):
             job = self._job(prompt_id)
             node = data.get("node", job["node"])

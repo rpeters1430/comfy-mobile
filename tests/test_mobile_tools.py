@@ -76,6 +76,27 @@ class LibraryTests(unittest.TestCase):
             self.assertFalse(result.json()['valid'])
             self.assertTrue(result.json()['errors'])
 
+    def test_preset_outside_current_job_limits_reports_error(self):
+        from app.preset_store import PresetStore
+        presets = PresetStore(self.root)
+        # Saved by an older release with looser limits.
+        saved = presets.save('Old', {'workflow_id': 'one.json', 'extra_loras': [{'name': 'x', 'strength': 1}] * 9}, {})
+        with patch.object(main, 'preset_store', presets):
+            result = self.client.post('/api/presets/' + saved['id'] + '/validate', headers=AUTH)
+            self.assertEqual(200, result.status_code)
+            self.assertFalse(result.json()['valid'])
+
+    def test_catalog_rechecks_runnable_after_object_info_refresh(self):
+        (self.root / 'one.json').write_text(json.dumps({'1': {'class_type': 'NewNode', 'inputs': {}}}))
+        infos = iter([{}, {'NewNode': {'input': {'required': {}}}}])
+        async def fetch(*args, **kwargs): return next(infos)
+        with patch.object(main, 'WF_DIR', self.root), patch.object(main, 'SYNC_DIR', self.root / 'none'), \
+             patch.object(main, 'request', fetch), patch.object(main, '_catalog_inspect_cache', {}), \
+             patch.dict(main._object_info_cache, {'data': None, 'expires_at': 0.0}):
+            self.assertFalse(self.client.get('/api/catalog', headers=AUTH).json()['workflows'][0]['runnable'])
+            main._object_info_cache['expires_at'] = 0.0  # the 60 s object_info cache ran out
+            self.assertTrue(self.client.get('/api/catalog', headers=AUTH).json()['workflows'][0]['runnable'])
+
 
 class WakeAndInputTests(unittest.TestCase):
     def test_magic_packet_and_cooldown(self):

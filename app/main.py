@@ -123,9 +123,16 @@ async def get_object_info(force_refresh: bool = False) -> dict:
     data = await request('GET', '/object_info')
     _object_info_cache["data"] = data
     _object_info_cache["expires_at"] = now + 60.0
+    # Runnable flags depend on ComfyUI's nodes and models, so they go stale with the old object_info.
+    _catalog_inspect_cache.clear()
     return data
 
 _catalog_inspect_cache: dict = {}
+
+def load_named_workflow(workflow_id: str):
+    '''Synced workflow ids carry a synced/ prefix; everything else is bundled. Returns (graph, name).'''
+    root, name = (SYNC_DIR, workflow_id[7:]) if workflow_id.startswith('synced/') else (WF_DIR, workflow_id)
+    return load_workflow(root, name), name
 
 def signed(prompt_id: str, summary: dict) -> dict:
     return {**summary, 'outputs': [o if o['kind'] == 'text' else {**o, 'url': f'/api/jobs/{prompt_id}/view?' + urlencode(view_query(TOKEN, prompt_id, o))}
@@ -181,26 +188,17 @@ def auth(authorization: str | None):
 @app.get('/')
 def home(): return FileResponse(STATIC/'index.html')
 
-@app.get('/style.css')
-def style(): return FileResponse(STATIC/'style.css', media_type='text/css', headers={'Cache-Control':'no-cache'})
+# Revalidated on every load, so a phone never mixes scripts from two releases.
+STATIC_FILES = {'style.css': 'text/css', 'presets.js': 'text/javascript', 'mobile-tools.js': 'text/javascript',
+                'adviser.js': 'text/javascript', 'app.js': 'text/javascript', 'sw.js': 'text/javascript',
+                'manifest.webmanifest': 'application/manifest+json'}
 
-@app.get('/presets.js')
-def presets_js(): return FileResponse(STATIC/'presets.js', media_type='text/javascript', headers={'Cache-Control':'no-cache'})
+def static_route(name, media_type):
+    def serve(): return FileResponse(STATIC/name, media_type=media_type, headers={'Cache-Control':'no-cache'})
+    app.get('/' + name)(serve)
 
-@app.get('/mobile-tools.js')
-def mobile_tools_js(): return FileResponse(STATIC/'mobile-tools.js', media_type='text/javascript', headers={'Cache-Control':'no-cache'})
-
-@app.get('/adviser.js')
-def adviser_js(): return FileResponse(STATIC/'adviser.js',media_type='text/javascript')
-
-@app.get('/app.js')
-def app_js(): return FileResponse(STATIC/'app.js', media_type='text/javascript', headers={'Cache-Control':'no-cache'})
-
-@app.get('/manifest.webmanifest')
-def manifest(): return FileResponse(STATIC/'manifest.webmanifest',media_type='application/manifest+json')
-
-@app.get('/sw.js')
-def service_worker(): return FileResponse(STATIC/'sw.js',media_type='text/javascript',headers={'Cache-Control':'no-cache'})
+for _name, _media_type in STATIC_FILES.items():
+    static_route(_name, _media_type)
 
 @app.get('/icon-{size}.png')
 def icon(size: int):
@@ -272,8 +270,7 @@ async def catalog(authorization: str | None = Header(default=None)):
 async def validate_workflow(workflow_id: str, authorization: str | None = Header(default=None)):
     auth(authorization)
     try:
-        root, name = (SYNC_DIR, workflow_id[7:]) if workflow_id.startswith('synced/') else (WF_DIR, workflow_id)
-        graph = load_workflow(root, name)
+        graph, _ = load_named_workflow(workflow_id)
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         raise HTTPException(400, str(exc)) from exc
     info = await get_object_info()
@@ -368,8 +365,7 @@ class Job(BaseModel):
 
 async def prepare_job(job: Job):
     try:
-        root, name = (SYNC_DIR, job.workflow_id[7:]) if job.workflow_id.startswith('synced/') else (WF_DIR, job.workflow_id)
-        graph = load_workflow(root, name)
+        graph, name = load_named_workflow(job.workflow_id)
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         raise HTTPException(400, str(exc)) from exc
     source_hash = hashlib.sha256(json.dumps(graph,sort_keys=True,separators=(',',':')).encode()).hexdigest()
@@ -477,8 +473,7 @@ async def create_adviser_review(body: ReviewRequest, authorization: str | None =
     job=body.job.model_copy(update={'seed':body.seeds[0], 'adviser_token':None})
     graph,info,_,_,source_hash=await prepare_job(job)
     try:
-        return adviser.start(adviser_owner(),graph,find_controls(graph,info),source_hash,
-                             job.model_dump(exclude={'adviser_token','adviser_index'}),body.seeds,body.refresh,body.web_research)
+        return adviser.start(adviser_owner(),graph,find_controls(graph,info),source_hash,body.seeds,body.refresh,body.web_research)
     except (ValueError,OSError) as exc:
         raise HTTPException(400,'Cannot start research: queue full or DATA_DIR unavailable') from exc
 
@@ -529,8 +524,6 @@ async def apply_adviser_review(review_id: str, body: ApplySettingsRequest, autho
 async def upload(req: Request, authorization: str | None = Header(default=None)):
     '''Raw image body (PNG/JPEG/WebP) -> ComfyUI input folder under a server-chosen name.'''
     auth(authorization)
-    if int(req.headers.get('content-length') or 0) > MAX_UPLOAD:
-        raise HTTPException(413,'Image too large')
     body=bytearray()
     async for chunk in req.stream():
         body+=chunk
@@ -643,14 +636,17 @@ async def job_view(prompt_id: str, filename: str, expires: int, sig: str, subfol
     params={'filename':filename,'subfolder':subfolder,'type':type}
     # ComfyUI re-encodes the image as WebP: a fraction of a full PNG, for cards and the gallery.
     if thumb and not filename.lower().endswith(VIDEO_EXT): params['preview']='webp;80'
-    client=httpx.AsyncClient(timeout=httpx.Timeout(60.0,connect=4.0))
+    # Reuse the pooled client, so a gallery page doesn't open one connection per image.
+    client=_http_client or httpx.AsyncClient()
+    async def close_client():
+        if client is not _http_client: await client.aclose()
     try:
-        upstream=await client.send(client.build_request('GET',f'{COMFY}/view',params=params,
+        upstream=await client.send(client.build_request('GET',f'{COMFY}/view',params=params,timeout=httpx.Timeout(60.0,connect=4.0),
                                                         headers={'Range':range} if range else {}),stream=True)
     except httpx.HTTPError as exc:
-        await client.aclose(); raise HTTPException(502,'ComfyUI could not serve the file') from exc
+        await close_client(); raise HTTPException(502,'ComfyUI could not serve the file') from exc
     async def close():
-        await upstream.aclose(); await client.aclose()
+        await upstream.aclose(); await close_client()
     if upstream.status_code not in (200,206):
         await close(); raise HTTPException(502,'ComfyUI could not serve the file')
     # A custom node may emit arbitrary files; never execute upstream HTML/SVG
@@ -758,10 +754,10 @@ async def validate_preset(preset_id: str, authorization: str | None = Header(def
     auth(authorization); presets_ready()
     preset = preset_store.get(preset_id)
     if not preset: raise HTTPException(404, 'Preset not found')
-    job = Job(**preset['job'])
     try:
-        root, name = (SYNC_DIR, job.workflow_id[7:]) if job.workflow_id.startswith('synced/') else (WF_DIR, job.workflow_id)
-        graph = load_workflow(root, name)
+        # A preset saved by an older release may no longer fit the Job limits; ValidationError is a ValueError.
+        job = Job(**preset['job'])
+        graph, _ = load_named_workflow(job.workflow_id)
         info = await get_object_info(force_refresh=True)
         if isinstance(graph.get('nodes'), list): graph = convert_ui(graph, info)
         check = inspect_workflow(graph, info)
@@ -775,9 +771,13 @@ async def validate_preset(preset_id: str, authorization: str | None = Header(def
 
 
 async def fetch_webp(params):
+    timeout = httpx.Timeout(12, connect=4)
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(12, connect=4)) as client:
-            data = await bounded_get(client, f'{COMFY}/view', params={**params, 'preview': 'webp;80'})
+        if _http_client is not None:
+            data = await bounded_get(_http_client, f'{COMFY}/view', params={**params, 'preview': 'webp;80'}, timeout=timeout)
+        else:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                data = await bounded_get(client, f'{COMFY}/view', params={**params, 'preview': 'webp;80'})
         if data[:4] != b'RIFF' or data[8:12] != b'WEBP':
             raise ValueError('Not a WebP preview')
         return data

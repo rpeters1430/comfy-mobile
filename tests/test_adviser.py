@@ -59,16 +59,16 @@ class TaskTests(unittest.IsolatedAsyncioTestCase):
                 self.fail('background review did not finish')
             gather=AsyncMock(return_value=([source],[{'phase':'search','results':1}]))
             with patch('app.adviser.Research.gather',gather),patch.dict('os.environ',{'ADVISER_MODEL':'local','OLLAMA_URL':'http://pc:11434'}),patch('app.adviser.AI.review',AsyncMock(return_value={'summary':'AI reviewed','changes':[]})),patch('app.adviser.AI.extract',AsyncMock(return_value=[])):
-                one=adviser.start('owner',GRAPH,CONTROLS,'source',{},[42],web_research=True)
+                one=adviser.start('owner',GRAPH,CONTROLS,'source',[42],web_research=True)
                 await finish()
                 row=adviser.get(one['id'],'owner')
                 self.assertEqual('done',row['status'])
                 self.assertEqual(1,len(row['proposals']))
-                two=adviser.start('owner',GRAPH,CONTROLS,'source',{},[43],web_research=True)
+                two=adviser.start('owner',GRAPH,CONTROLS,'source',[43],web_research=True)
                 await finish()
                 self.assertTrue(adviser.get(two['id'],'owner')['cards'][0]['cached'])
                 self.assertEqual(1,gather.await_count)
-                three=adviser.start('owner',GRAPH,CONTROLS,'source',{},[44])
+                three=adviser.start('owner',GRAPH,CONTROLS,'source',[44])
                 adviser.cancel(three['id'],'owner')
                 await finish()
                 self.assertEqual('cancelled',adviser.get(three['id'],'owner')['status'])
@@ -107,7 +107,7 @@ class RealAIRegressionTests(unittest.IsolatedAsyncioTestCase):
         from app.adviser import Adviser
         with tempfile.TemporaryDirectory() as folder,patch.dict('os.environ',{'ADVISER_MODEL':'','ADVISER_BASE_URL':'','OLLAMA_URL':''}):
             adviser=Adviser(Path(folder))
-            row=adviser.start('owner',GRAPH,CONTROLS,'source',{},[42])
+            row=adviser.start('owner',GRAPH,CONTROLS,'source',[42])
             for _ in range(100):
                 await asyncio.sleep(.001)
                 if not adviser.tasks:break
@@ -122,7 +122,7 @@ class RealAIRegressionTests(unittest.IsolatedAsyncioTestCase):
         from app.adviser import Adviser
         reply={'summary':'AI assessed the actual workflow','changes':[{'node':'2','field':'steps','value':'25','reason':'Trial setting, not an author recommendation.'}]}
         with tempfile.TemporaryDirectory() as folder,patch.dict('os.environ',{'ADVISER_MODEL':'local','OLLAMA_URL':'http://pc:11434'}),patch('app.adviser.AI.review',AsyncMock(return_value=reply)) as review:
-            adviser=Adviser(Path(folder)); row=adviser.start('owner',GRAPH,CONTROLS,'source',{},[42])
+            adviser=Adviser(Path(folder)); row=adviser.start('owner',GRAPH,CONTROLS,'source',[42])
             for _ in range(100):
                 await asyncio.sleep(.001)
                 if not adviser.tasks:break

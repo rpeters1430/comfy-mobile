@@ -61,6 +61,15 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(KEEP, len(t.jobs))
         self.assertIsNone(t.status("0"))
 
+    def test_finished_job_drops_its_preview_frame(self):
+        t = ProgressTracker()
+        t.handle_text({"type": "executing", "data": {"prompt_id": "a", "node": "3"}})
+        t.handle_binary(struct.pack(">II", 1, 1) + b"jpeg")
+        self.assertEqual(b"jpeg", t.jobs["a"]["preview"])
+        t.handle_text({"type": "executing", "data": {"prompt_id": "a", "node": None}})
+        self.assertIsNone(t.jobs["a"]["preview"])
+        self.assertEqual(1, t.status("a")["frame"])
+
 
 if __name__ == "__main__":
     unittest.main()

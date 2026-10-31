@@ -222,13 +222,13 @@ class Adviser:
         return row
 
     def public(self,row):
-        return {k:v for k,v in row.items() if k not in ('owner','graph','controls','source_hash','hashes','approved_hashes','job')}
+        return {k:v for k,v in row.items() if k not in ('owner','graph','controls','source_hash','hashes')}
 
-    def start(self,owner,graph,controls,source_hash,job,seeds,refresh=False,web_research=False):
+    def start(self,owner,graph,controls,source_hash,seeds,refresh=False,web_research=False):
         if len(self.tasks)>=3: raise ValueError('Research queue is full; cancel a review or wait')
         key=secrets.token_urlsafe(24)
         row={'id':key,'owner':owner,'status':'queued','created':time.time(),'expires':time.time()+600,
-             'graph':graph,'controls':controls,'source_hash':source_hash,'job':job,'seeds':seeds,
+             'graph':graph,'controls':controls,'source_hash':source_hash,'seeds':seeds,
              'cards':[],'proposals':[],'notes':[],'ai_called':False,'web_research':web_research}
         self.store.put('review',key,row)
         self.tasks[key]=asyncio.create_task(self._run(key,owner,refresh))
