@@ -21,7 +21,7 @@ class ApiTests(unittest.TestCase):
         # Style & App assets
         r = self.client.get("/style.css")
         self.assertEqual(r.status_code, 200)
-        self.assertIn("var(--accent)", r.text)
+        self.assertIn("var(--md-primary)", r.text)
 
         r = self.client.get("/presets.js")
         self.assertIn("WALLPAPER_PRESETS", r.text)
