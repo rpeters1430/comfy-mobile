@@ -18,7 +18,7 @@ node --test 'tests/*.test.js'                   # front-end helpers in static/pr
 docker build -t comfy-mobile .
 ```
 
-`tests/test_bundled_workflows.py` is a bare pytest-style function, so `unittest discover` does not collect it. Run it with `python -m pytest tests/test_bundled_workflows.py` (pytest is not in requirements). It asserts there are exactly 31 files in `workflows/`, so update the count if you add or remove one.
+`tests/test_bundled_workflows.py` is a bare pytest-style function, so `unittest discover` does not collect it. Run it with `python -m pytest tests/test_bundled_workflows.py` (pytest is not in requirements). It asserts there are exactly 32 files in `workflows/`, so update the count if you add or remove one.
 
 Running locally: `app/main.py` uses flat imports (`from workflow_sync import ...`) and serves `/app/static/index.html` by absolute path, because the Dockerfile copies `app/` to `/app` and runs `uvicorn main:app` from there. Tests import the modules as `app.workflow_*`. Nothing imports `main.py` in tests, so keep logic in the `workflow_*` modules where it can be tested. Running outside Docker: `cd app` and set the env vars plus `STATIC_DIR=static` (it defaults to the Docker path `/app/static`).
 
@@ -48,7 +48,7 @@ Configuration is env-only: `COMFYUI_URL`, `STUDIO_TOKEN` (required, or every end
 - Keep security posture conservative. The service is meant for a trusted LAN or Tailscale network only, and new endpoints should be authenticated and must not leak ComfyUI user-data beyond workflow `.json` names.
 - The version string lives in `VERSION` in `main.py` (used by FastAPI and `/api/health`); the README title repeats it.
 - `.env` lives on the NAS and must never be committed. Pushes to `main` publish `ghcr.io/rpeters1430/comfy-mobile:latest` and `v*` tags are published too. Renovate manages pinned dependencies, the action SHAs and the base image digest.
-- `python tools/check_workflows.py` converts every workflow against `fixtures/object_info.local.json` (gitignored; refresh with `curl -o fixtures/object_info.local.json http://100.77.144.56:8188/object_info` over Tailscale). All 31 bundled workflows pass. A `LoraLoaderModelOnly` left on `None` is bypassed (mode 4) in the files rather than special-cased in the converter.
+- `python tools/check_workflows.py` converts every workflow against `fixtures/object_info.local.json` (gitignored; refresh with `curl -o fixtures/object_info.local.json http://100.77.144.56:8188/object_info` over Tailscale). All 32 bundled workflows pass. A `LoraLoaderModelOnly` left on `None` is bypassed (mode 4) in the files rather than special-cased in the converter.
 
 
 ## Mobile workflow tools (v0.5.0)
