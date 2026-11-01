@@ -22,10 +22,14 @@ class PresetStore:
 
     @contextmanager
     def connection(self):
-        if not self.enabled:
+        if not self.enabled or self.path.is_symlink():
             raise OSError('Presets need a writable DATA_DIR')
-        fd = os.open(self.path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        fd = os.open(self.path, os.O_CREAT | os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0), 0o600)
         os.close(fd)
+        try:
+            os.chmod(self.path, 0o600)
+        except OSError:
+            pass
         connection = sqlite3.connect(self.path, timeout=5)
         try:
             connection.execute('CREATE TABLE IF NOT EXISTS presets (id TEXT PRIMARY KEY, data TEXT NOT NULL)')

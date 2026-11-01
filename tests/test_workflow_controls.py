@@ -212,6 +212,8 @@ class ControlTests(unittest.TestCase):
         # A hires pass saves a bigger image than the latent, so the crop is computed from the image at run time.
         info = {**self.FIT_INFO, "GetImageSize": {}, "ComfyMathExpression": {}, "ImageCrop": {}}
         graph = self.saved()
+        self.assertTrue(find_controls(graph, info)["can_crop"])
+        self.assertFalse(find_controls(graph, self.FIT_INFO)["can_crop"])
         apply_controls(graph, info, {}, {}, [], fit={"aspect": [9, 20]})
         self.assertEqual(["mobile_crop_1", 0], graph["9"]["inputs"]["images"])
         self.assertEqual({"image": ["8", 0]}, graph["mobile_crop_size_1"]["inputs"])

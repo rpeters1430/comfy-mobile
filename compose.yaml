@@ -26,5 +26,11 @@ services:
       # Job records, gallery thumbnails and push keys. Must be writable by uid 1000.
       - ./data:/data
     mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     security_opt:
       - no-new-privileges:true

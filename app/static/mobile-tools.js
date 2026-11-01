@@ -89,7 +89,23 @@
       items: groups.get(f).sort((a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }))
     }));
   }
-  const api = { nasJob, mergeHistory, captionText, presetJob, preferredWorkflows, photoDetails, modelGroups };
+  function choicesFromJob(job) {
+    const c = job?.controls || {};
+    const loras = Object.fromEntries(Object.entries(c.loras || {}).map(([node, l]) => [
+      node, { name: l.name, strength: l.strength || 1, on: l.on !== undefined ? l.on : l.strength !== 0 }
+    ]));
+    return {
+      models: { ...(c.models || {}) },
+      loras,
+      extra: [...(c.extra || c.extra_loras || [])],
+      sampling: structuredClone(c.sampling || {}),
+      caption: structuredClone(c.caption || {}),
+      ...(c.size ? { adviserSize: { ...c.size } } : {}),
+      upscaler: c.fit?.upscaler || '',
+      skipDetailers: Boolean(c.skipDetailers ?? c.skip_detailers)
+    };
+  }
+  const api = { nasJob, mergeHistory, captionText, presetJob, preferredWorkflows, photoDetails, modelGroups, choicesFromJob };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.MobileTools = api;
 })(globalThis);

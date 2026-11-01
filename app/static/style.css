@@ -471,8 +471,8 @@ details.unavailable summary { font: var(--type-label-l); color: var(--md-on-surf
   position: absolute;
   left: 8px;
   bottom: 8px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #fff;
+  background: var(--md-scrim);
+  color: var(--md-on-surface);
   border-radius: var(--shape-full);
   padding: 2px 10px;
   font: var(--type-label-m);
@@ -482,8 +482,8 @@ details.unavailable summary { font: var(--type-label-l); color: var(--md-on-surf
   position: absolute;
   top: 6px;
   right: 6px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #fff;
+  background: var(--md-scrim);
+  color: var(--md-on-surface);
   border: 0;
   width: 36px;
   height: 36px;
@@ -572,7 +572,7 @@ details.controls details { border-top: 1px solid var(--md-outline-variant); }
 .results img, .results video {
   width: 100%;
   border-radius: var(--shape-lg-inc);
-  background: #000;
+  background: var(--md-surface-container-lowest);
   display: block;
 }
 .result { margin: 0; }

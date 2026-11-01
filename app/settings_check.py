@@ -66,7 +66,7 @@ def check(graph, controls):
 
     families = set()
     for node_id, node in graph.items():
-        if node['class_type'] not in ('KSampler', 'KSamplerAdvanced'):
+        if node['class_type'] not in ('KSampler', 'KSamplerAdvanced', 'CFGGuider', 'BasicGuider', 'SamplerCustom'):
             continue
         model, loras = _chain(graph, node_id)
         if model is None:

@@ -80,6 +80,16 @@ class SettingsCheckTests(unittest.TestCase):
         self.assertEqual(check(graph(ckpt=pony, text="score_9, a fox"), CONTROLS), [])
         self.assertEqual(check(graph(ckpt=pony, text=["9", 0]), CONTROLS), [])
 
+    def test_guider_workflows_check_lora_family_and_duplicates(self):
+        g = {
+            "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "Flux\\flux1-dev.safetensors"}},
+            "2": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["1", 0], "lora_name": "SDXL\\faces.safetensors", "strength_model": 0.8}},
+            "3": {"class_type": "CFGGuider", "inputs": {"model": ["2", 0], "cfg": 1.0}},
+        }
+        issues = check(g, {"samplers": []})
+        self.assertEqual(len(issues), 1)
+        self.assertIn("made for SDXL, but the model is Flux", issues[0]["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

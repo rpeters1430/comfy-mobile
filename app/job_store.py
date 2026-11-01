@@ -85,8 +85,11 @@ class JobStore:
         for job_id, job in self.jobs.items():
             if job["summary"] is None:
                 (lost if now - job["created"] > WATCH_FOR else waiting).append(job_id)
-        for job_id in lost:
-            self.finish(job_id, {"status": "lost", "completed": False, "outputs": [], "interrupted": False, "errors": []})
+        if lost:
+            lost_summary = {"status": "lost", "completed": False, "outputs": [], "interrupted": False, "errors": []}
+            for job_id in lost:
+                self.jobs[job_id]["summary"] = copy.deepcopy(lost_summary)
+            self._save()
         return waiting
 
     @synchronized

@@ -13,13 +13,15 @@ class Store:
 
     @contextmanager
     def connect(self):
-        if not self.path.parent.is_dir():
+        if not self.path.parent.is_dir() or self.path.is_symlink():
             raise ValueError('Adviser needs a writable DATA_DIR')
         try:
+            fd=os.open(self.path,os.O_CREAT|os.O_RDWR|getattr(os,'O_NOFOLLOW',0),0o600)
+            os.close(fd)
             conn=sqlite3.connect(self.path,timeout=3)
             os.chmod(self.path,0o600)
             conn.execute('CREATE TABLE IF NOT EXISTS records (kind TEXT, id TEXT, expires REAL, body TEXT, PRIMARY KEY(kind,id))')
-        except sqlite3.Error as exc:
+        except (sqlite3.Error,OSError) as exc:
             raise ValueError('Adviser storage is unavailable') from exc
         try:
             with conn: yield conn

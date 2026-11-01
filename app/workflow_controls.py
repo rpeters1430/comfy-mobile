@@ -2,10 +2,10 @@
 import math
 import re
 
-try:
+if __package__:
     from app.settings_check import LABELS, family
     from app.workflow_conversion import _enum_options
-except ImportError:  # flat imports inside the Docker image
+else:  # flat imports inside the Docker image
     from settings_check import LABELS, family
     from workflow_conversion import _enum_options
 
@@ -176,14 +176,17 @@ def find_controls(graph: dict, object_info: dict) -> dict:
                           "strength": node["inputs"].get("strength_model", 1.0)})
     latents = _latents(graph)
     size, from_photo = _base_size(graph, latents[0]) if latents else (None, False)
-    lora_options = _options(object_info, "LoraLoaderModelOnly", "lora_name")
+    lora_options = _options(object_info, "LoraLoaderModelOnly", "lora_name") or _options(object_info, "LoraLoader", "lora_name")
     # Same family rules as the settings check, so the phone's grouping and its warnings agree.
     names = {name for m in models for name in m["options"]} | set(lora_options)
     families = {name: LABELS[fam] for name in names if (fam := family(name))}
+    saves = bool(_saves(graph))
     return {"models": models, "loras": loras, "lora_options": lora_options, "families": families,
             "can_add_lora": _lora_anchor(graph, models) is not None,
             "samplers": _samplers(graph), "size": size, "size_from_photo": from_photo, "captions": _captions(graph, object_info),
-            "can_fit": bool(_saves(graph)) and "ImageScale" in object_info, "detailers": _detailers(graph),
+            "can_fit": saves and "ImageScale" in object_info,
+            "can_crop": saves and all(node in object_info for node in CROP_NODES),
+            "detailers": _detailers(graph),
             "upscale_options": _options(object_info, "UpscaleModelLoader", "model_name"),
             "sampler_options": _options(object_info, "KSampler", "sampler_name"),
             "scheduler_options": _options(object_info, "KSampler", "scheduler")}

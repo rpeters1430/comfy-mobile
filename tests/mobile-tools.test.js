@@ -90,3 +90,25 @@ test('model groups put the base family first, drop root duplicates and label odd
   // The current value survives deduplication even when it is the root copy.
   assert.equal(modelGroups(options, families, 'SDXL', 'juggernaut.safetensors')[0].items[1].value, 'juggernaut.safetensors');
 });
+
+test('choicesFromJob restores form choices from recorded job controls', () => {
+  const { choicesFromJob } = require('../app/static/mobile-tools.js');
+  const restored = choicesFromJob({
+    controls: {
+      models: { '1': 'SDXL/a.safetensors' },
+      loras: { '2': { name: 'SDXL/l1.safetensors', strength: 0 }, '3': { name: 'SDXL/l2.safetensors', strength: 0.8 } },
+      extra_loras: [{ name: 'SDXL/extra.safetensors', strength: 0.6 }],
+      sampling: { '7': { steps: 24 } },
+      size: { width: 832, height: 1216 },
+      fit: { width: 1080, height: 2400, upscaler: '4x-UltraSharp.pth' },
+      skip_detailers: true
+    }
+  });
+  assert.deepEqual(restored.models, { '1': 'SDXL/a.safetensors' });
+  assert.deepEqual(restored.loras['2'], { name: 'SDXL/l1.safetensors', strength: 1, on: false });
+  assert.deepEqual(restored.loras['3'], { name: 'SDXL/l2.safetensors', strength: 0.8, on: true });
+  assert.deepEqual(restored.extra, [{ name: 'SDXL/extra.safetensors', strength: 0.6 }]);
+  assert.deepEqual(restored.adviserSize, { width: 832, height: 1216 });
+  assert.equal(restored.upscaler, '4x-UltraSharp.pth');
+  assert.equal(restored.skipDetailers, true);
+});

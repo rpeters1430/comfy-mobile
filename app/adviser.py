@@ -8,11 +8,11 @@ import os
 import secrets
 import time
 
-try:
+if __package__:
     from .research import Research, candidates, verify_facts, VARIANT
     from .adviser_ai import AI, AIError, AIConfig, DEFAULT_URLS
     from .adviser_store import Store
-except ImportError:
+else:
     from research import Research, candidates, verify_facts, VARIANT
     from adviser_ai import AI, AIError, AIConfig, DEFAULT_URLS
     from adviser_store import Store
@@ -237,6 +237,8 @@ class Adviser:
 
     async def _run(self,key,owner,refresh):
         try:
+            if self.lock.locked():
+                row=self.get(key,owner); row['phase']='Waiting for active review to finish…'; self.store.put('review',key,row)
             async with self.lock:
                 async with asyncio.timeout(180):
                     row=self.get(key,owner); row['status']='researching'; self.store.put('review',key,row)

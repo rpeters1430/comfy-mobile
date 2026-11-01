@@ -24,13 +24,21 @@ class SecurityTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp) / 'workflows'
             root.mkdir()
-            (Path(tmp) / 'secret.json').write_text(graph)
-            (root / 'escape.json').symlink_to(Path(tmp) / 'secret.json')
+            secret_file = Path(tmp) / 'secret.json'
+            secret_file.write_text(graph)
+            escape = root / 'escape.json'
+            try:
+                escape.symlink_to(secret_file)
+                symlink_patch = patch.object(main, 'TOKEN', 'secret')
+            except OSError:
+                escape.write_text(graph)
+                orig_is_symlink = Path.is_symlink
+                symlink_patch = patch.object(Path, 'is_symlink', lambda p: p == escape or orig_is_symlink(p))
             (root / 'huge.json').write_text(graph + ' ' * MAX_BYTES)
             (root / 'ok.json').write_text(graph)
             async def info():
                 return {'SaveImage': {'input': {'required': {}}}}
-            with patch.object(main, 'TOKEN', 'secret'), patch.object(main, 'WF_DIR', root), \
+            with symlink_patch, patch.object(main, 'TOKEN', 'secret'), patch.object(main, 'WF_DIR', root), \
                  patch.object(main, 'SYNC_DIR', Path(tmp) / 'absent'), \
                  patch.object(main, 'get_object_info', info), patch.object(main, '_catalog_inspect_cache', {}):
                 response = TestClient(main.app).get('/api/catalog', headers={'Authorization': 'Bearer secret'})
@@ -41,8 +49,15 @@ class SecurityTests(unittest.TestCase):
             root = Path(tmp)
             victim = root / 'victim'
             victim.write_bytes(b'untouched')
-            (root / 'jobs.json.partial').symlink_to(victim)
-            write_atomic(root / 'jobs.json', b'new')
+            partial = root / 'jobs.json.partial'
+            try:
+                partial.symlink_to(victim)
+                write_atomic(root / 'jobs.json', b'new')
+            except OSError:
+                partial.write_bytes(b'untouched')
+                orig_is_symlink = Path.is_symlink
+                with patch.object(Path, 'is_symlink', lambda p: p == partial or orig_is_symlink(p)):
+                    write_atomic(root / 'jobs.json', b'new')
             self.assertEqual(b'untouched', victim.read_bytes())
             self.assertEqual(b'new', (root / 'jobs.json').read_bytes())
 
@@ -54,7 +69,9 @@ class SecurityTests(unittest.TestCase):
                 write_atomic(path, b'private-key')
             finally:
                 os.umask(old)
-            self.assertEqual(0o600, stat.S_IMODE(path.stat().st_mode))
+            self.assertEqual(b'private-key', path.read_bytes())
+            if os.name != 'nt':
+                self.assertEqual(0o600, stat.S_IMODE(path.stat().st_mode))
 
     def test_active_and_escaping_outputs_are_not_signed(self):
         items = [{'filename': name, 'subfolder': sub, 'type': 'output'} for name, sub in

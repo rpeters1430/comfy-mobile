@@ -9,7 +9,24 @@ from fastapi.responses import FileResponse, RedirectResponse, Response, Streamin
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
-try:
+if __package__:
+    from .adviser import Adviser, fingerprint
+    from .adviser_ai import AI, AIError
+    from .workflow_validation import inspect_workflow, load_workflow
+    from .workflow_sync import WorkflowSync, bounded_get
+    from .workflow_conversion import convert_ui, ConversionError
+    from .workflow_controls import ControlError, MAX_EXTRA_LORAS, _options, apply_controls, find_controls, run_details
+    from .workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, view_query
+    from .job_store import JobStore
+    from .preset_store import PresetStore
+    from .caption_review import CaptionError, capability, caption_graph, apply_review
+    from .wake import WakePC, WakeError
+    from .push import Push, PushError
+    from .progress import ProgressTracker, listen
+    from .settings_check import check as check_settings
+    from .settings_check import LABELS, SPEED, family
+    from . import lora_suggest
+else:
     from adviser import Adviser, fingerprint
     from adviser_ai import AI, AIError
     from workflow_validation import inspect_workflow, load_workflow
@@ -26,23 +43,6 @@ try:
     from settings_check import check as check_settings
     from settings_check import LABELS, SPEED, family
     import lora_suggest
-except ImportError:
-    from app.adviser import Adviser, fingerprint
-    from app.adviser_ai import AI, AIError
-    from app.workflow_validation import inspect_workflow, load_workflow
-    from app.workflow_sync import WorkflowSync, bounded_get
-    from app.workflow_conversion import convert_ui, ConversionError
-    from app.workflow_controls import ControlError, MAX_EXTRA_LORAS, _options, apply_controls, find_controls, run_details
-    from app.workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, view_query
-    from app.job_store import JobStore
-    from app.preset_store import PresetStore
-    from app.caption_review import CaptionError, capability, caption_graph, apply_review
-    from app.wake import WakePC, WakeError
-    from app.push import Push, PushError
-    from app.progress import ProgressTracker, listen
-    from app.settings_check import check as check_settings
-    from app.settings_check import LABELS, SPEED, family
-    from app import lora_suggest
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
@@ -67,6 +67,10 @@ _http_client: httpx.AsyncClient | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _http_client
+    if not TOKEN:
+        log.warning('STUDIO_TOKEN is empty; all /api/* requests will be rejected with 401')
+    elif len(TOKEN) < 16:
+        log.warning('STUDIO_TOKEN is shorter than 16 characters; use a strong random token in production')
     if DATA_DIR.is_dir():
         try: adviser.store.interrupt()
         except (ValueError,OSError): log.warning('Adviser store unavailable; manual generation remains enabled')
@@ -178,7 +182,18 @@ async def watch_jobs():
     while True:
         await asyncio.sleep(3)
         try:
-            for job_id in job_store.watching():
+            watching = job_store.watching()
+            if not watching:
+                continue
+            queued = set()
+            if len(watching) > 1:
+                q = await request('GET', '/queue')
+                if isinstance(q, dict):
+                    queued = {item[1] for key in ('queue_pending', 'queue_running')
+                              for item in q.get(key, []) if isinstance(item, list) and len(item) > 1}
+            for job_id in watching:
+                if job_id in queued:
+                    continue
                 data = await request('GET', f'/history/{job_id}')
                 if job_id in data:
                     await finish_job(job_id, data[job_id])
@@ -190,6 +205,10 @@ async def watch_jobs():
 def auth(authorization: str | None):
     if not TOKEN or not authorization or not secrets.compare_digest(authorization, f'Bearer {TOKEN}'):
         raise HTTPException(401,'Valid studio token required')
+
+@app.get('/healthz')
+def healthz():
+    return {'status': 'ok', 'version': VERSION}
 
 @app.get('/')
 def home(): return FileResponse(STATIC/'index.html')

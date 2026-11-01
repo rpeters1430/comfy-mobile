@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app.settings_check import check as check_settings
 from app.workflow_conversion import convert_ui, ConversionError
 from app.workflow_validation import inspect_workflow
 
@@ -22,8 +23,9 @@ def check(path, info):
         except ConversionError as exc:
             return False, f"conversion: {exc}"
     result = inspect_workflow(data, info)
-    problems = result["errors"] + result["warnings"]
-    return result["runnable"], problems[0] if problems else ""
+    settings_issues = [f"settings_check: {i['text']}" for i in check_settings(data, {})]
+    problems = result["errors"] + result["warnings"] + settings_issues
+    return result["runnable"] and not settings_issues, problems[0] if problems else ""
 
 
 def main():

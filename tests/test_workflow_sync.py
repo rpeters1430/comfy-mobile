@@ -12,9 +12,26 @@ from app.workflow_sync import WorkflowSync, SAFE_NAME
 class WorkflowSyncTests(unittest.TestCase):
     def test_filename_filter(self):
         assert SAFE_NAME.fullmatch("01_SDXL_Text_to_Image.json")
+        assert SAFE_NAME.fullmatch("My Workflow (1).json")
         assert not SAFE_NAME.fullmatch("../secret.json")
         assert not SAFE_NAME.fullmatch("nested/file.json")
         assert not SAFE_NAME.fullmatch("workflow.png")
+
+    def test_unsafe_entry_does_not_abort_valid_workflows(self):
+        workflow = {"nodes": [{"id": 1, "type": "SaveImage"}]}
+        factory = httpx.AsyncClient
+        def handler(request):
+            if request.url.path == "/userdata":
+                return httpx.Response(200, json=["nested/skip.json", {"name": "Copy (1).json"}, "../bad.json"])
+            return httpx.Response(200, json=workflow)
+        def client(**kwargs):
+            return factory(transport=httpx.MockTransport(handler), **kwargs)
+        with TemporaryDirectory() as tmp, patch("app.workflow_sync.httpx.AsyncClient", client):
+            result = asyncio.run(WorkflowSync("http://localhost:8188", Path(tmp)).sync())
+            self.assertEqual(result["status"], "partial")
+            self.assertEqual(result["downloaded"], 1)
+            self.assertEqual(result["failed"], 2)
+            self.assertTrue((Path(tmp) / "Copy (1).json").exists())
 
 
     def test_sync_download_and_skip(self):

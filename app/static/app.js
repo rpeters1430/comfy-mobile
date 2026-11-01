@@ -235,8 +235,9 @@ function renderSlots() {
 }
 
 async function prepareImage(file) {
+  let bitmap;
   try {
-    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
     const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(bitmap.width * scale);
@@ -247,6 +248,8 @@ async function prepareImage(file) {
   } catch (e) {
     if (['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) return file;
     throw Error('This image format is not supported by your browser');
+  } finally {
+    bitmap?.close?.();
   }
 }
 
@@ -425,7 +428,7 @@ function strengthRow(choice, onChange) {
 function fitSize(c) {
   if (!controls?.can_fit) return null;
   const native = WALLPAPER_PRESETS.find(p => p.id === c?.preset)?.native;
-  const aspect = !native && c?.aspect && cropAspect(c.aspect);
+  const aspect = !native && controls?.can_crop !== false && c?.aspect && cropAspect(c.aspect);
   return native || (aspect ? { aspect } : null);
 }
 
@@ -766,6 +769,9 @@ $('form').onsubmit = async event => {
   };
   $('generate').disabled = true;
   try {
+    if (approval && stage === 'render' && $('auto-loras').checked) {
+      showToast('Using exact approved Adviser settings (Auto-LoRAs skipped)');
+    }
     const auto = stage === 'render' && !approval ? await suggestLoras(params.review?.positive || params.prompt, params.controls) : null;
     if (auto) {
       params.controls = withAutoLoras(params.controls, auto);
@@ -780,6 +786,11 @@ $('form').onsubmit = async event => {
     params.controlsText = [style?.label, controlsText(choices), auto?.label].filter(Boolean).join(' · ');
     for (let i = 0; i < (stage === 'caption' ? 1 : runs); i++) {
       await submitJob({ ...params, seed: approval ? approval.seeds[i] : base === null ? randomSeed() : base + i, adviserToken: approval?.token || null, adviserIndex: i }, i === 0);
+    }
+    if (stage === 'render' && captionDraft) {
+      captionDraft = null;
+      $('caption-draft').classList.add('hide');
+      $('caption-draft-clear').classList.add('hide');
     }
   } catch (e) {
     $('form-error').textContent = e.message;
@@ -1040,8 +1051,23 @@ function showActions(job, entry) {
   if (job.workflowId) {
     buttons.push(el('button', { class: 'secondary', type: 'button', onclick: () => runAgain(job, randomSeed()) }, '↻ Run again'));
     if (job.seed != null) buttons.push(el('button', { class: 'ghost', type: 'button', onclick: () => runAgain(job, job.seed) }, 'Same seed'));
+    buttons.push(el('button', { class: 'ghost', type: 'button', onclick: () => loadJobIntoForm(job) }, 'Load settings'));
   }
   entry.actions.replaceChildren(...buttons);
+}
+
+async function loadJobIntoForm(job) {
+  if (!job?.workflowId) return;
+  if (!catalog) await refresh();
+  const wf = catalog?.workflows.find(w => w.id === job.workflowId && w.runnable);
+  if (!wf) return void showToast('Workflow is unavailable in the current catalog');
+  switchView('create');
+  await selectWorkflow(wf, MobileTools.choicesFromJob(job));
+  if (selected !== wf || !controlsReady) return;
+  $('prompt').value = job.prompt || '';
+  $('seed').value = job.seed ?? '';
+  saveControls();
+  showToast(wf.image_inputs ? 'Settings loaded — add input image(s) to generate' : 'Settings loaded into form');
 }
 
 async function runAgain(job, seed) {
@@ -1465,7 +1491,7 @@ function captionEditor(job, outputs) {
   positive.value = text.positive; negative.value = text.negative;
   const runs = el('select', { 'aria-label': 'Render count' }, [1, 2, 4, 8].map(n => new Option(String(n), String(n))));
   const status = el('p', { class: 'status', role: 'status' });
-  const generate = el('button', { class: 'primary', type: 'button' }, 'Generate with edited caption');
+  const generate = el('button', { class: 'secondary', type: 'button' }, 'Generate with edited caption');
   generate.onclick = async () => {
     if (!positive.value.trim()) { status.textContent = 'Enter a positive caption.'; return; }
     generate.disabled = true;
@@ -1559,9 +1585,19 @@ function updateComparison() {
 }
 $('compare-range').oninput = updateComparison;
 $('viewer-zoom').oninput = () => {
+  const scroller = $('viewer-scroll'), stage = $('viewer-stage');
+  const prevW = stage.offsetWidth || 1, prevH = stage.offsetHeight || 1;
+  const centerX = (scroller.scrollLeft + scroller.clientWidth / 2) / prevW;
+  const centerY = (scroller.scrollTop + scroller.clientHeight / 2) / prevH;
   const zoom = Number($('viewer-zoom').value);
-  $('viewer-stage').style.width = `${zoom * 100}%`;
-  $('viewer-stage').style.height = `${zoom * 55}dvh`;
+  stage.style.width = `${zoom * 100}%`;
+  stage.style.height = `${zoom * 55}dvh`;
+  if (scroller.clientWidth && stage.offsetWidth) {
+    scroller.scrollTo(
+      Math.max(0, centerX * stage.offsetWidth - scroller.clientWidth / 2),
+      Math.max(0, centerY * stage.offsetHeight - scroller.clientHeight / 2)
+    );
+  }
 };
 function clearViewerMedia() {
   viewerItemRevision++;

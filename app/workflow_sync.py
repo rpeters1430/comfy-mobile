@@ -15,7 +15,7 @@ except ImportError:
 
 MAX_WORKFLOWS = 200
 MAX_BYTES = 2_000_000
-SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_. -]{0,239}\.json$", re.I)
+SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_. ()-]{0,239}\.json$", re.I)
 
 
 async def bounded_get(client, url, **kwargs) -> bytes:
@@ -54,12 +54,17 @@ class WorkflowSync:
         self.destination.mkdir(parents=True, exist_ok=True)
         counts = {"downloaded": 0, "unchanged": 0, "failed": 0}
         async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=5.0), follow_redirects=False) as client:
-            names = json.loads(await bounded_get(client, f"{self.comfy_url}/userdata", params={"dir": "workflows"}))
-            if not isinstance(names, list) or len(names) > MAX_WORKFLOWS:
+            entries = json.loads(await bounded_get(client, f"{self.comfy_url}/userdata", params={"dir": "workflows"}))
+            if not isinstance(entries, list) or len(entries) > MAX_WORKFLOWS:
                 raise ValueError("Unexpected workflow listing")
-            if any(not isinstance(name, str) or not SAFE_NAME.fullmatch(name) or name in (".json", "..json") for name in names):
-                raise ValueError("Unsafe workflow filename in listing")
-            for name in sorted(set(names)):
+            valid_names = []
+            for item in entries:
+                name = item if isinstance(item, str) else item.get("name") if isinstance(item, dict) else None
+                if isinstance(name, str) and SAFE_NAME.fullmatch(name) and name not in (".json", "..json"):
+                    valid_names.append(name)
+                else:
+                    counts["failed"] += 1
+            for name in sorted(set(valid_names)):
                 try:
                     # ComfyUI uses one encoded path parameter: workflows%2Ffilename.json
                     path = "workflows/" + name
@@ -81,4 +86,4 @@ class WorkflowSync:
                     counts["downloaded"] += 1
                 except (httpx.HTTPError, ValueError, OSError, json.JSONDecodeError):
                     counts["failed"] += 1
-        return {"status": "ok" if not counts["failed"] else "partial", **counts, "remote_count": len(names)}
+        return {"status": "ok" if not counts["failed"] else "partial", **counts, "remote_count": len(entries)}
