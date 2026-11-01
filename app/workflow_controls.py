@@ -255,19 +255,51 @@ def _apply_size(graph, size):
         graph[node_id]["inputs"]["width"], graph[node_id]["inputs"]["height"] = width, height
 
 
-def _apply_fit(graph, found, fit):
-    """Resize every saved image to an exact screen size: optional model upscale, then lanczos with a center crop.
+CROP_NODES = ("GetImageSize", "ComfyMathExpression", "ImageCrop")
 
+
+def _apply_crop(graph, aspect):
+    """Center-crop every saved image to an aspect ratio, trimming only the long side, at whatever size the
+    workflow produced (a hires pass makes it bigger than the latent, so the crop is computed at run time)."""
+    a, b = aspect
+    for i, save in enumerate(_saves(graph), 1):
+        source = graph[save]["inputs"]["images"]
+        size, w, h = f"mobile_crop_size_{i}", [f"mobile_crop_size_{i}", 0], [f"mobile_crop_size_{i}", 1]
+        graph[size] = {"class_type": "GetImageSize", "inputs": {"image": source}}
+        for name, expression, values in (("w", f"min(a, b * {a} // {b})", (w, h)), ("h", f"min(b, a * {b} // {a})", (w, h)),
+                                         ("x", "(a - b) // 2", (w, [f"mobile_crop_w_{i}", 1])),
+                                         ("y", "(a - b) // 2", (h, [f"mobile_crop_h_{i}", 1]))):
+            graph[f"mobile_crop_{name}_{i}"] = {"class_type": "ComfyMathExpression", "inputs": {
+                "expression": expression, "values.a": values[0], "values.b": values[1]}}
+        graph[f"mobile_crop_{i}"] = {"class_type": "ImageCrop", "inputs": {"image": source,
+            **{key: [f"mobile_crop_{key[0]}_{i}", 1] for key in ("width", "height", "x", "y")}}}
+        graph[save]["inputs"]["images"] = [f"mobile_crop_{i}", 0]
+
+
+def _apply_fit(graph, found, fit, object_info):
+    """Fit every saved image to a phone screen.
+
+    {"width", "height"}: optional model upscale, then lanczos scale-to-fill with a center crop, to an exact size.
+    {"aspect": [w, h]}: center crop to that shape at the image's own size.
     The workflow still renders near its own pixel count, which is what the model was trained for; rendering a
     2.6 MP phone screen in one pass tends to duplicate subjects."""
+    if not found["can_fit"]:
+        raise ControlError("This workflow has no image output to fit to a screen")
+    if "aspect" in fit:
+        aspect = fit["aspect"]
+        if (not isinstance(aspect, (list, tuple)) or len(aspect) != 2 or fit.get("width") or fit.get("height")
+                or any(isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= 100 for n in aspect)
+                or not 0.25 <= aspect[0] / aspect[1] <= 4):
+            raise ControlError("Crop aspect must be two whole numbers between 1:4 and 4:1")
+        if any(node not in object_info for node in CROP_NODES):
+            raise ControlError("This ComfyUI is too old to crop to a screen shape")
+        return _apply_crop(graph, aspect)
     width, height, upscaler = fit.get("width"), fit.get("height"), fit.get("upscaler")
     for side in (width, height):
         if isinstance(side, bool) or not isinstance(side, int) or not 256 <= side <= FIT_MAX_SIDE:
             raise ControlError(f"Screen width and height must be between 256 and {FIT_MAX_SIDE}")
     if width * height > FIT_MAX_PIXELS:
         raise ControlError("Screen size is too large")
-    if not found["can_fit"]:
-        raise ControlError("This workflow has no image output to fit to a screen")
     if upscaler is not None and upscaler not in found["upscale_options"]:
         raise ControlError(f"Upscale model not found in ComfyUI: {upscaler}")
     if upscaler is not None:
@@ -296,7 +328,7 @@ def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, ex
         _skip_detailers(graph, found)
         found = find_controls(graph, object_info)
     if fit:
-        _apply_fit(graph, found, fit)
+        _apply_fit(graph, found, fit, object_info)
     if sampling:
         _apply_sampling(graph, found, sampling)
     if caption:

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  STYLE_PRESETS, STYLE_TAIL, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt
+  STYLE_PRESETS, STYLE_TAIL, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropAspect
 } = require('../app/static/presets.js');
 
 test('styledPrompt sends the prompt as written without a style', () => {
@@ -27,13 +27,28 @@ test('aspectSize keeps the pixel budget in multiples of 64', () => {
   assert.deepEqual(aspectSize('9:19.5', { width: 1024, height: 1024 }), { width: 704, height: 1536 });
 });
 
-test('every exact-resolution preset renders within 3% of its screen shape and near the workflow budget', () => {
+test('phone presets never render taller than 9:16, the shape SD models handle without duplicating subjects', () => {
   const base = { width: 1024, height: 1024 };
-  for (const p of WALLPAPER_PRESETS.filter(p => p.native)) {
-    const size = aspectSize(presetAspect(p), base);
-    const drift = Math.abs(size.width / size.height - p.native.width / p.native.height) / (p.native.width / p.native.height);
-    assert.ok(drift < 0.03, `${p.id} drifts ${drift}`);
+  for (const p of WALLPAPER_PRESETS) {
+    const size = aspectSize(renderAspect(presetAspect(p)), base);
+    assert.ok(size.height / size.width <= 16 / 9 + 0.01, `${p.id} renders ${size.width}x${size.height}`);
     assert.ok(Math.abs(size.width * size.height / (base.width * base.height) - 1) < 0.1, `${p.id} budget`);
+  }
+  assert.deepEqual(aspectSize(renderAspect('9:20'), base), { width: 768, height: 1344 });
+  assert.equal(renderAspect('9:16'), '9:16');
+  assert.equal(renderAspect('2:3'), '2:3');
+});
+
+test('tall presets send a whole-number crop shape; 9:16 and wider shapes need no crop', () => {
+  assert.deepEqual(cropAspect('9:20'), [9, 20]);
+  assert.deepEqual(cropAspect('9:19.5'), [18, 39]);
+  assert.equal(cropAspect('9:16'), null);
+  assert.equal(cropAspect('2:3'), null);
+  for (const p of WALLPAPER_PRESETS.filter(p => !p.native && p.aspect !== '9:16')) {
+    const [a, b] = p.aspect.split(':').map(Number);
+    const [ca, cb] = cropAspect(p.aspect);
+    assert.ok(Number.isInteger(ca) && Number.isInteger(cb) && cb <= 100, p.id);
+    assert.ok(Math.abs(ca / cb - a / b) < 1e-9, `${p.id} keeps its shape`);
   }
 });
 
