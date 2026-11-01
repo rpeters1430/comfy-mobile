@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  STYLE_PRESETS, STYLE_TAIL, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropTarget
+  STYLE_PRESETS, STYLE_TAIL, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropAspect
 } = require('../app/static/presets.js');
 
 test('styledPrompt sends the prompt as written without a style', () => {
@@ -39,15 +39,16 @@ test('phone presets never render taller than 9:16, the shape SD models handle wi
   assert.equal(renderAspect('2:3'), '2:3');
 });
 
-test('tall presets are center-cropped from the 9:16 render to their real shape', () => {
-  const render = { width: 768, height: 1344 };
-  assert.deepEqual(cropTarget('9:20', render), { width: 608, height: 1344 });
-  assert.equal(cropTarget('9:16', render), null);
+test('tall presets send a whole-number crop shape; 9:16 and wider shapes need no crop', () => {
+  assert.deepEqual(cropAspect('9:20'), [9, 20]);
+  assert.deepEqual(cropAspect('9:19.5'), [18, 39]);
+  assert.equal(cropAspect('9:16'), null);
+  assert.equal(cropAspect('2:3'), null);
   for (const p of WALLPAPER_PRESETS.filter(p => !p.native && p.aspect !== '9:16')) {
     const [a, b] = p.aspect.split(':').map(Number);
-    const crop = cropTarget(p.aspect, render);
-    assert.ok(Math.abs(crop.width / crop.height - a / b) / (a / b) < 0.02, `${p.id} crop shape`);
-    assert.ok(crop.width <= render.width && crop.height === render.height, `${p.id} crops, never enlarges`);
+    const [ca, cb] = cropAspect(p.aspect);
+    assert.ok(Number.isInteger(ca) && Number.isInteger(cb) && cb <= 100, p.id);
+    assert.ok(Math.abs(ca / cb - a / b) < 1e-9, `${p.id} keeps its shape`);
   }
 });
 

@@ -69,13 +69,15 @@ function renderAspect(aspect) {
   return b / a > MAX_STRETCH ? '9:16' : a / b > MAX_STRETCH ? '16:9' : aspect;
 }
 
-function cropTarget(aspect, render) {
+// The server crops each saved image at its own size (a hires pass saves larger than the render), so the
+// phone sends only the shape, in whole numbers: 9:19.5 -> [18, 39].
+function cropAspect(aspect) {
   if (renderAspect(aspect) === aspect) return null;
-  const [a, b] = aspect.split(':').map(Number);
-  return b > a ? { width: Math.round(render.height * a / b / 8) * 8, height: render.height }
-    : { width: render.width, height: Math.round(render.width * b / a / 8) * 8 };
+  let [a, b] = aspect.split(':').map(Number);
+  while (!(Number.isInteger(a) && Number.isInteger(b)) && b < 100) { a *= 2; b *= 2; }
+  return [Math.round(a), Math.round(b)];
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { STYLE_PRESETS, STYLE_TAIL, ASPECTS, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropTarget };
+  module.exports = { STYLE_PRESETS, STYLE_TAIL, ASPECTS, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropAspect };
 }

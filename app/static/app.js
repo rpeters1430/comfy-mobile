@@ -421,9 +421,12 @@ function strengthRow(choice, onChange) {
   return [range, out];
 }
 
+// An exact screen size for native presets, or a crop shape for tall aspect presets (see presets.js).
 function fitSize(c) {
-  if (!controls?.can_fit || c?.adviserSize) return null;
-  return WALLPAPER_PRESETS.find(p => p.id === c?.preset)?.native || (c?.aspect && cropTarget(c.aspect, chosenSize(c))) || null;
+  if (!controls?.can_fit) return null;
+  const native = WALLPAPER_PRESETS.find(p => p.id === c?.preset)?.native;
+  const aspect = !native && c?.aspect && cropAspect(c.aspect);
+  return native || (aspect ? { aspect } : null);
 }
 
 function chosenSize(c) {
@@ -528,8 +531,9 @@ function sizeSection(changed) {
       desc = `Aspect ratio ${choices.aspect} (preserving workflow pixel budget)`;
     }
     const fit = fitSize(choices);
-    const enlarged = fit && fit.width * fit.height > size.width * size.height;
-    note.textContent = fit ? `${fit.width} × ${fit.height} px (rendered at ${size.width} × ${size.height}, then ${enlarged ? 'upscaled and ' : ''}center-cropped)`
+    const enlarged = !!fit?.width && fit.width * fit.height > size.width * size.height;
+    note.textContent = fit?.aspect ? `${size.width} × ${size.height} px, center-cropped to ${choices.aspect}`
+      : fit ? `${fit.width} × ${fit.height} px (rendered at ${size.width} × ${size.height}, then ${enlarged ? 'upscaled and ' : ''}center-cropped)`
       : `${size.width} × ${size.height} px`;
     hint.textContent = desc;
     upscaleRow.classList.toggle('hide', !enlarged);
@@ -691,8 +695,8 @@ function controlsText(c) {
   const parts = Object.values(c.models || {}).map(fileLabel);
   const loras = [...Object.values(c.loras || {}).filter(l => l.on), ...(c.extra || [])];
   if (loras.length) parts.push(loras.map(l => `${fileLabel(l.name)} ${Number(l.strength).toFixed(2)}`).join(', '));
-  const size = fitSize(c) || chosenSize(c);
-  if (size && c.aspect) parts.push(`${size.width}×${size.height}`);
+  const fit = fitSize(c), size = fit?.width ? fit : chosenSize(c);
+  if (size && c.aspect) parts.push(`${size.width}×${size.height}` + (fit?.aspect ? ` cropped to ${c.aspect}` : ''));
   if (cinematicOn(c)) parts.push('Cinematic');
   if (c.skipDetailers && controls?.detailers?.length) parts.push('No face detailer');
   const base = controls?.samplers.find(smp => smp.role === 'base');
@@ -728,7 +732,7 @@ function controlsPayload(c) {
     models, loras, extra_loras: c.extra.map(x => ({ name: x.name, strength: x.strength })), sampling, caption,
     ...(c.skipDetailers && controls.detailers?.length ? { skip_detailers: true } : {}),
     ...(size && (size.width !== controls.size.width || size.height !== controls.size.height) ? { size } : {}),
-    ...(fit ? { fit: { ...fit, ...(c.upscaler && upscaleWorthIt(chosenSize(c), fit) ? { upscaler: c.upscaler } : {}) } } : {})
+    ...(fit ? { fit: { ...fit, ...(fit.width && c.upscaler && upscaleWorthIt(chosenSize(c), fit) ? { upscaler: c.upscaler } : {}) } } : {})
   };
 }
 

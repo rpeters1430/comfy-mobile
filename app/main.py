@@ -344,8 +344,10 @@ class LoraChoice(BaseModel):
     strength: float
 
 class FitChoice(BaseModel):
-    width: int
-    height: int
+    # Either an exact screen size, or an aspect to center-crop to (see workflow_controls._apply_fit).
+    width: int | None = None
+    height: int | None = None
+    aspect: list[int] | None = Field(default=None, min_length=2, max_length=2)
     upscaler: str | None = Field(default=None,max_length=300)
 
 class CaptionReview(BaseModel):
@@ -389,7 +391,7 @@ async def prepare_job(job: Job):
     # Only the {{prompt}} placeholder is replaced, so negative prompts and instructions are never rewritten.
     try:
         apply_controls(graph,info,job.models,{k:v.model_dump() for k,v in job.loras.items()},[v.model_dump() for v in job.extra_loras],job.sampling,job.size,job.caption,
-                       job.fit.model_dump() if job.fit else None, job.skip_detailers)
+                       job.fit.model_dump(exclude_none=True) if job.fit else None, job.skip_detailers)
         applied=apply_job(graph,job.prompt,job.images,job.seed)
         if job.stage == 'caption':
             if job.review: raise CaptionError('Caption preview cannot include approved text')
@@ -812,7 +814,7 @@ async def validate_preset(preset_id: str, authorization: str | None = Header(def
         if not check['runnable']: return {'valid': False, 'errors': check['errors']}
         apply_controls(graph, info, job.models, {k: v.model_dump() for k, v in job.loras.items()},
                        [v.model_dump() for v in job.extra_loras], job.sampling, job.size, job.caption,
-                       job.fit.model_dump() if job.fit else None, job.skip_detailers)
+                       job.fit.model_dump(exclude_none=True) if job.fit else None, job.skip_detailers)
         return {'valid': True, 'errors': [], 'preset': preset}
     except (ValueError, OSError, ConversionError, ControlError) as exc:
         return {'valid': False, 'errors': [str(exc)]}

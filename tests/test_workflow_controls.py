@@ -208,6 +208,22 @@ class ControlTests(unittest.TestCase):
         self.assertEqual({"upscale_model": ["mobile_upscale_model", 0], "image": ["8", 0]}, graph["mobile_upscale_1"]["inputs"])
         self.assertEqual(["mobile_upscale_1", 0], graph["mobile_fit_1"]["inputs"]["image"])
 
+    def test_aspect_fit_crops_at_the_saved_image_size(self):
+        # A hires pass saves a bigger image than the latent, so the crop is computed from the image at run time.
+        info = {**self.FIT_INFO, "GetImageSize": {}, "ComfyMathExpression": {}, "ImageCrop": {}}
+        graph = self.saved()
+        apply_controls(graph, info, {}, {}, [], fit={"aspect": [9, 20]})
+        self.assertEqual(["mobile_crop_1", 0], graph["9"]["inputs"]["images"])
+        self.assertEqual({"image": ["8", 0]}, graph["mobile_crop_size_1"]["inputs"])
+        self.assertEqual("min(a, b * 9 // 20)", graph["mobile_crop_w_1"]["inputs"]["expression"])
+        self.assertEqual({"image": ["8", 0], "width": ["mobile_crop_w_1", 1], "height": ["mobile_crop_h_1", 1],
+                          "x": ["mobile_crop_x_1", 1], "y": ["mobile_crop_y_1", 1]}, graph["mobile_crop_1"]["inputs"])
+        for fit in ({"aspect": [9]}, {"aspect": [1, 9]}, {"aspect": [9, True]}, {"aspect": [9, 20], "width": 1080}):
+            with self.subTest(fit=fit), self.assertRaises(ControlError):
+                apply_controls(self.saved(), info, {}, {}, [], fit=fit)
+        with self.assertRaises(ControlError):  # ComfyUI without the crop nodes
+            apply_controls(self.saved(), self.FIT_INFO, {}, {}, [], fit={"aspect": [9, 20]})
+
     def test_rejects_bad_fit(self):
         for info, fit in ((self.FIT_INFO, {"width": 1080, "height": 9000}), (self.FIT_INFO, {"width": 1080, "height": 2400, "upscaler": "other.pth"}),
                           (INFO, {"width": 1080, "height": 2400})):
