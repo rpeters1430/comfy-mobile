@@ -421,11 +421,14 @@ function strengthRow(choice, onChange) {
   return [range, out];
 }
 
-function fitSize(c) { return (controls?.can_fit && WALLPAPER_PRESETS.find(p => p.id === c?.preset)?.native) || null; }
+function fitSize(c) {
+  if (!controls?.can_fit || c?.adviserSize) return null;
+  return WALLPAPER_PRESETS.find(p => p.id === c?.preset)?.native || (c?.aspect && cropTarget(c.aspect, chosenSize(c))) || null;
+}
 
 function chosenSize(c) {
   if (c?.adviserSize) return c.adviserSize;
-  return controls?.size && c?.aspect ? aspectSize(c.aspect, controls.size) : controls?.size || null;
+  return controls?.size && c?.aspect ? aspectSize(renderAspect(c.aspect), controls.size) : controls?.size || null;
 }
 
 function renderControls() {
@@ -525,11 +528,12 @@ function sizeSection(changed) {
       desc = `Aspect ratio ${choices.aspect} (preserving workflow pixel budget)`;
     }
     const fit = fitSize(choices);
-    note.textContent = fit ? `${fit.width} × ${fit.height} px (rendered at ${size.width} × ${size.height}, then upscaled)`
+    const enlarged = fit && fit.width * fit.height > size.width * size.height;
+    note.textContent = fit ? `${fit.width} × ${fit.height} px (rendered at ${size.width} × ${size.height}, then ${enlarged ? 'upscaled and ' : ''}center-cropped)`
       : `${size.width} × ${size.height} px`;
     hint.textContent = desc;
-    upscaleRow.classList.toggle('hide', !fit);
-    upscaleSkip.classList.toggle('hide', !fit || !controls.upscale_options.length || upscaleWorthIt(size, fit));
+    upscaleRow.classList.toggle('hide', !enlarged);
+    upscaleSkip.classList.toggle('hide', !enlarged || !controls.upscale_options.length || upscaleWorthIt(size, fit));
   }
 
   const wpChips = WALLPAPER_PRESETS.map(preset => {

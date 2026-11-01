@@ -59,6 +59,23 @@ function upscaleWorthIt(render, target) {
 
 function presetAspect(p) { return p.native ? `${p.native.width}:${p.native.height}` : p.aspect; }
 
+// SD 1.5/SDXL-family models duplicate the subject (a second torso, stacked faces) when asked for a canvas
+// much taller or wider than 16:9. Phone screens are ~9:20, so those presets render at 9:16 and the saved
+// image is center-cropped to the screen shape, trimming only the sides.
+const MAX_STRETCH = 16 / 9;
+
+function renderAspect(aspect) {
+  const [a, b] = aspect.split(':').map(Number);
+  return b / a > MAX_STRETCH ? '9:16' : a / b > MAX_STRETCH ? '16:9' : aspect;
+}
+
+function cropTarget(aspect, render) {
+  if (renderAspect(aspect) === aspect) return null;
+  const [a, b] = aspect.split(':').map(Number);
+  return b > a ? { width: Math.round(render.height * a / b / 8) * 8, height: render.height }
+    : { width: render.width, height: Math.round(render.width * b / a / 8) * 8 };
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { STYLE_PRESETS, STYLE_TAIL, ASPECTS, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt };
+  module.exports = { STYLE_PRESETS, STYLE_TAIL, ASPECTS, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropTarget };
 }
