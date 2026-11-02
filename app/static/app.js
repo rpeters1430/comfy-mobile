@@ -439,7 +439,7 @@ async function loadControls(wf, restored = null) {
   controls = found;
   const saved = restored || savedControls()[wf.id] || {};
   const loraOk = name => controls.lora_options.includes(name);
-  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', preset: '', upscaler: '', cinematic: saved.cinematic !== false, caption: {}, skipDetailers: !!saved.skipDetailers };
+  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', preset: '', upscaler: '', cinematic: saved.cinematic !== false, cinematicMargin: cinematicMargin(saved.cinematicMargin ?? DEFAULT_CINEMATIC_MARGIN), caption: {}, skipDetailers: !!saved.skipDetailers };
   for (const m of controls.models) choices.models[m.node] = m.options.includes(saved.models?.[m.node]) ? saved.models[m.node] : m.value;
   for (const l of controls.loras) {
     const s = saved.loras?.[l.node];
@@ -491,13 +491,13 @@ function strengthRow(choice, onChange) {
 function fitSize(c) {
   if (!controls?.can_fit) return null;
   const native = WALLPAPER_PRESETS.find(p => p.id === c?.preset)?.native;
-  const aspect = !native && controls?.can_crop !== false && c?.aspect && cropAspect(c.aspect);
+  const aspect = !native && !cinematicOn(c) && controls?.can_crop !== false && c?.aspect && cropAspect(c.aspect);
   return native || (aspect ? { aspect } : null);
 }
 
 function chosenSize(c) {
   if (c?.adviserSize) return c.adviserSize;
-  return controls?.size && c?.aspect ? aspectSize(renderAspect(c.aspect), controls.size) : controls?.size || null;
+  return controls?.size && c?.aspect ? aspectSize(renderAspect(c.aspect, cinematicOn(c)), controls.size) : controls?.size || null;
 }
 
 function renderControls() {
@@ -654,8 +654,15 @@ function sizeSection(changed) {
   const cinematicChip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(!!choices.cinematic) }, '🎞️ Cinematic-ready');
   const cinematicHint = el('small', { class: 'status', style: 'display:block;margin-top:2px' },
     'Composes for Pixel’s Cinematic wallpaper effect: one clear subject, layered depth, clean background. ' +
-    'Turn on the Cinematic effect when you set the image as your wallpaper.');
-  const cinematicRow = el('div', {}, el('div', { class: 'aspects' }, cinematicChip), cinematicHint);
+    'Keeps a wider composition to tolerate Pixel’s automatic zoom (not a guaranteed crop). Turn on the effect in Wallpaper & style.');
+  const cinematicMarginLabel = el('label', { style: 'display:block;margin-top:8px' }, 'Subject safety margin: ' + choices.cinematicMargin + '%');
+  const cinematicMarginSlider = el('input', { type: 'range', min: '0', max: '20', step: '1', value: String(choices.cinematicMargin), 'aria-label': 'Cinematic subject safety margin' });
+  cinematicMarginSlider.oninput = () => {
+    choices.cinematicMargin = cinematicMargin(cinematicMarginSlider.value);
+    cinematicMarginLabel.textContent = 'Subject safety margin: ' + choices.cinematicMargin + '%';
+    changed();
+  };
+  const cinematicRow = el('div', {}, el('div', { class: 'aspects' }, cinematicChip), cinematicHint, cinematicMarginLabel, cinematicMarginSlider);
   cinematicChip.onclick = () => {
     choices.cinematic = !choices.cinematic;
     cinematicChip.setAttribute('aria-pressed', String(choices.cinematic));
@@ -832,7 +839,7 @@ $('form').onsubmit = async event => {
   const stage = $('review-before').checked ? 'caption' : 'render';
   const params = {
     workflowId: selected.id, workflow: prettyName(selected.name), takesPrompt: selected.takes_prompt,
-    prompt: selected.takes_prompt ? styledPrompt(prompt, style, cinematicOn(choices)) : '',
+    prompt: selected.takes_prompt ? styledPrompt(prompt, style, cinematicOn(choices), choices.cinematicMargin) : '',
     images: slots.map(s => s.name), stage, review: activeCaptionDraft(),
     controls: controlsPayload(choices), controlsText: [style?.label, controlsText(choices)].filter(Boolean).join(' · ')
   };
@@ -1847,7 +1854,7 @@ function adviserForm() {
   if (selected.takes_prompt && !prompt) throw Error('Enter a prompt first.');
   return {
     job: { ...controlsPayload(choices), workflow_id: selected.id,
-      prompt: selected.takes_prompt ? styledPrompt(prompt, currentStyle(), cinematicOn(choices)) : '',
+      prompt: selected.takes_prompt ? styledPrompt(prompt, currentStyle(), cinematicOn(choices), choices.cinematicMargin) : '',
       images: slots.map(s => s.name), seed: $('seed').value === '' ? null : Number($('seed').value),
       stage: $('review-before').checked ? 'caption' : 'render', review: activeCaptionDraft() },
     runs: Number($('runs').value) || 1
