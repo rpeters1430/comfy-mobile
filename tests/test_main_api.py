@@ -30,6 +30,19 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn("Image Studio Mobile", r.text)
 
+        # Regression: scripts added to the HTML must be registered as real
+        # FastAPI routes, not silently 404 on mobile browsers.
+        import re
+        homepage = self.client.get("/").text
+        for path in re.findall(r'<script\\s+src="(/[a-z0-9-]+\\.js)"', homepage):
+            with self.subTest(asset=path):
+                asset = self.client.get(path)
+                self.assertEqual(asset.status_code, 200)
+                self.assertIn("javascript", asset.headers.get("content-type", ""))
+
+        self.assertIn("LoraCompatibility", self.client.get("/lora-compat.js").text)
+        self.assertIn("WallpaperExport", self.client.get("/wallpaper-export.js").text)
+
         # Manifest & SW
         r = self.client.get("/manifest.webmanifest")
         self.assertEqual(r.status_code, 200)
