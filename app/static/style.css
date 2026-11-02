@@ -799,3 +799,27 @@ dialog::backdrop { background: var(--md-scrim); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Padded Pixel wallpaper export from output gallery */
+.wallpaper-export-dialog {
+  width: min(94vw, 560px);
+  max-height: 94dvh;
+  overflow: auto;
+  border: 0;
+  border-radius: var(--shape-lg-inc);
+  background: var(--md-surface);
+  color: var(--md-on-surface);
+  padding: 18px;
+}
+.wallpaper-export-dialog::backdrop { background: rgba(0,0,0,.8); }
+.wallpaper-export-dialog label { display: block; margin-top: 10px; }
+.wallpaper-export-dialog input[type="range"] { width: 100%; }
+.wallpaper-export-preview {
+  display: block;
+  height: min(43dvh, 380px);
+  width: auto;
+  max-width: 100%;
+  margin: 10px auto;
+  border-radius: 14px;
+}
+.wallpaper-export-dialog .row { flex-wrap: wrap; }
