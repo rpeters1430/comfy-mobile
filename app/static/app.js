@@ -340,9 +340,10 @@ function modelSelect(options, value, base, label, only = false) {
 
 // A warning line under a LoRA picker (the pickers re-render when the pick changes).
 function loraFamilyNote(name, base) {
-  const f = familyOf(name);
-  return el('small', { class: 'status', style: 'display:block' },
-    base && f && f !== base ? `⚠ Made for ${f}, so it won't work with this ${base} checkpoint.` : '');
+  const checkpoint = controls?.models?.length === 1 ? choices?.models?.[controls.models[0].node] : '';
+  const info = loraInfo[name] || {};
+  const advice = LoraCompatibility.compatibility(checkpoint, name, info, base, familyOf(name));
+  return el('small', { class: 'status', style: 'display:block' }, advice?.text || '');
 }
 
 /* LoRA trigger words and strengths: Civitai data via ModelHarbor (GET /api/loras/info), else a trigger guessed
@@ -355,11 +356,18 @@ function rememberStrength(name, strength) { store(STRENGTH_KEY, JSON.stringify({
 function defaultStrength(name) { return rememberedStrengths()[name] ?? loraInfo[name]?.weight ?? 1.0; }
 
 async function loadLoraInfo(wf) {
-  try { loraInfo = (await api('/loras/info')).loras || {}; } catch (e) { return; }
+  let latest;
+  try { latest = (await api('/loras/info')).loras || {}; } catch (e) { return; }
+  // A stale request from a previous workflow must not change the current pickers.
   if (selected !== wf || !controls) return;
-  // Civitai's base model fills in families that folder and file name don't give.
+  loraInfo = latest;
+  // Verified base-model metadata takes priority over filename/folder inference.
+  // Preserve the original family when metadata is absent.
   controls.families = controls.families || {};
-  for (const [name, x] of Object.entries(loraInfo)) if (x.family && !controls.families[name]) controls.families[name] = x.family;
+  for (const [name, x] of Object.entries(loraInfo)) {
+    if (x.family && x.source === 'civitai') controls.families[name] = x.family;
+    else if (x.family && !controls.families[name]) controls.families[name] = x.family;
+  }
   renderControls();
 }
 
@@ -392,7 +400,8 @@ function loraHints(choice) {
   if (!x) return null;
   const line = text => el('small', { class: 'status', style: 'display:block' }, text);
   const rows = [];
-  if (x.weight != null) rows.push(line(`Recommended strength ${x.weight} (the creator's Civitai examples)`));
+  if (x.source === 'civitai' && x.base_model) rows.push(line(`ModelHarbor identified training base: ${x.base_model}`));
+  if (x.weight != null) rows.push(line(`Suggested strength ${x.weight} (median of available Civitai example settings, not a guaranteed optimal weight)`));
   const typed = selected?.takes_prompt || $('review-before').checked;
   if (x.triggers.length === 1) {
     const guess = x.guessed ? ' (guessed from its training tags)' : '';

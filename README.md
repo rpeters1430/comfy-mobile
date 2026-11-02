@@ -78,7 +78,7 @@ MODELHARBOR_URL=http://192.168.8.137:8099
 MODELHARBOR_TOKEN=<ModelHarbor's MODELHARBOR_AGENT_TOKEN>
 ```
 
-LoRA pickers then list only LoRAs for the chosen checkpoint's family. A LoRA with one trigger word has it added to your prompt when you generate; one with several shows them as chips to tap into the prompt. Picking a LoRA sets the strength you last used it at, else the creator's recommended strength. Without ModelHarbor, a trigger word guessed from the LoRA's training tags is used where there is one.
+LoRA pickers group LoRAs by the selected checkpoint's broad model family and show compatibility guidance. Civitai-verified ModelHarbor training-base metadata takes priority over filename guesses; **Pony, Illustrious, and NoobAI LoRAs may all use SDXL architecture but still behave differently**, so the picker shows a non-blocking notice for verified cross-variant pairings. Unknown compatibility is shown as unverified rather than guaranteeing success. A LoRA with one trigger word has it added to your prompt when you generate; one with several shows them as chips to tap into the prompt. Picking a LoRA sets the strength you last used it at, else the median strength seen in available Civitai examples (which is a suggestion, not a guarantee). Without ModelHarbor, a trigger word guessed from the LoRA's training tags is used where there is one.
 
 ## UGREEN NAS
 
