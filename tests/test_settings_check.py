@@ -59,6 +59,33 @@ class SettingsCheckTests(unittest.TestCase):
         g["7"]["inputs"]["denoise"] = 0.4
         self.assertEqual(check(g, CONTROLS), [])
 
+    def test_speed_model_does_not_rewrite_image_to_image_refinement(self):
+        g = graph(loras=[("SDXL\\\\sdxl_lightning_4step_lora.safetensors", 1.0)], steps=30, cfg=6)
+        g["7"]["inputs"]["denoise"] = 0.35
+        self.assertEqual([], check(g, CONTROLS))
+
+    def test_unknown_distilled_schedule_never_assumes_eight_steps(self):
+        g = graph(ckpt="SDXL\\\\customTurbo.safetensors", steps=30, cfg=1.0)
+        issues = check(g, CONTROLS)
+        self.assertTrue(any("exact schedule is unknown" in i["message"] for i in issues))
+        self.assertEqual([], [x for issue in issues for x in issue["changes"]])
+
+    def test_regular_30step_checkpoint_does_not_trigger_speed_warnings(self):
+        g = graph(ckpt="SDXL\\\\Custom_30steps.safetensors", steps=30, cfg=5.5)
+        self.assertEqual([], check(g, CONTROLS))
+
+    def test_wan_speed_variant_does_not_get_generic_sdxl_cfg_fix(self):
+        g = graph(ckpt="Wan\\\\wan2_lightning_4step.safetensors", steps=30, cfg=7)
+        issues = check(g, CONTROLS)
+        self.assertTrue(any(c["field"] == "steps" for i in issues for c in i["changes"]))
+        self.assertFalse(any(c["field"] == "cfg" for i in issues for c in i["changes"]))
+
+    def test_advanced_partial_schedule_does_not_receive_step_fixes(self):
+        g = graph(loras=[("SDXL\\\\sdxl_lightning_4step_lora.safetensors", 1.0)], steps=30, cfg=6)
+        g["7"]["class_type"] = "KSamplerAdvanced"
+        g["7"]["inputs"].update(add_noise="disable", start_at_step=12)
+        self.assertEqual([], check(g, CONTROLS))
+
     def test_no_fix_offered_for_nodes_the_phone_cannot_edit(self):
         issues = check(graph(steps=8), {"samplers": []})
         self.assertEqual(len(issues), 1)
