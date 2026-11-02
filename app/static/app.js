@@ -359,7 +359,7 @@ async function loadLoraInfo(wf) {
   let latest;
   try { latest = (await api('/loras/info')).loras || {}; } catch (e) { return; }
   // A stale request from a previous workflow must not change the current pickers.
-  if (selected !== wf || !controls) return;
+  if (selected !== wf || !controls || !choices || !controlsReady) return;
   loraInfo = latest;
   // Verified base-model metadata takes priority over filename/folder inference.
   // Preserve the original family when metadata is absent.
@@ -480,8 +480,9 @@ async function loadControls(wf, restored = null) {
     settingsLoadError('No editable settings were detected for this workflow.', wf);
     return;
   }
-  controls = found;
-  const saved = restored || savedControls()[wf.id] || {};
+  try {
+    controls = found;
+    const saved = restored || savedControls()[wf.id] || {};
   const loraOk = name => controls.lora_options.includes(name);
   choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', preset: '', upscaler: '', cinematic: saved.cinematic !== false, cinematicMargin: cinematicMargin(saved.cinematicMargin ?? DEFAULT_CINEMATIC_MARGIN), caption: {}, skipDetailers: !!saved.skipDetailers };
   for (const m of controls.models) choices.models[m.node] = m.options.includes(saved.models?.[m.node]) ? saved.models[m.node] : m.value;
@@ -530,6 +531,10 @@ async function loadControls(wf, restored = null) {
   $('controls-retry').classList.add('hide');
   $('auto-loras-row').classList.toggle('hide', !controls.can_add_lora);
   if (controls.loras.length || controls.can_add_lora) loadLoraInfo(wf);
+  } catch (e) {
+    console.error('Failed to initialize workflow settings', e);
+    settingsLoadError(e.message || 'Invalid saved control settings.', wf);
+  }
 }
 
 function strengthRow(choice, onChange) {
