@@ -1,4 +1,7 @@
-"""One-way ComfyUI user-data workflow sync. Remote files never overwrite bundled files."""
+"""ComfyUI user-data workflow sync. Remote files never overwrite bundled files.
+
+Bundled workflows are also pushed to the PC when they are new there or the PC copy is still the one
+last pushed (unedited); a copy edited or deleted on the PC is left alone."""
 import asyncio
 import hashlib
 import json
@@ -33,9 +36,11 @@ async def bounded_get(client, url, **kwargs) -> bytes:
 
 
 class WorkflowSync:
-    def __init__(self, comfy_url: str, destination: Path):
+    def __init__(self, comfy_url: str, destination: Path, bundled: Path | None = None, state: Path | None = None):
         self.comfy_url = comfy_url.rstrip("/")
         self.destination = destination
+        self.bundled = bundled
+        self.state = state  # name -> sha256 of the copy last pushed to the PC
         self.lock = asyncio.Lock()
         self.last_result = None
 
@@ -52,7 +57,7 @@ class WorkflowSync:
 
     async def _sync(self):
         self.destination.mkdir(parents=True, exist_ok=True)
-        counts = {"downloaded": 0, "unchanged": 0, "failed": 0}
+        counts = {"pushed": 0, "downloaded": 0, "unchanged": 0, "failed": 0}
         async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=5.0), follow_redirects=False) as client:
             entries = json.loads(await bounded_get(client, f"{self.comfy_url}/userdata", params={"dir": "workflows"}))
             if not isinstance(entries, list) or len(entries) > MAX_WORKFLOWS:
@@ -64,7 +69,10 @@ class WorkflowSync:
                     valid_names.append(name)
                 else:
                     counts["failed"] += 1
-            for name in sorted(set(valid_names)):
+            valid_names = set(valid_names)
+            if self.bundled and self.state and self.state.parent.is_dir():
+                await self._push(client, valid_names, counts)
+            for name in sorted(valid_names):
                 try:
                     # ComfyUI uses one encoded path parameter: workflows%2Ffilename.json
                     path = "workflows/" + name
@@ -87,3 +95,39 @@ class WorkflowSync:
                 except (httpx.HTTPError, ValueError, OSError, json.JSONDecodeError):
                     counts["failed"] += 1
         return {"status": "ok" if not counts["failed"] else "partial", **counts, "remote_count": len(entries)}
+
+    def _url(self, name):
+        # ComfyUI uses one encoded path parameter: workflows%2Ffilename.json
+        return f"{self.comfy_url}/userdata/{quote('workflows/' + name, safe='')}"
+
+    async def _push(self, client, remote_names, counts):
+        try:
+            record = json.loads(self.state.read_bytes()) if self.state.exists() else {}
+        except (OSError, json.JSONDecodeError):
+            record = {}
+        for path in sorted(self.bundled.glob("*.json")):
+            name = path.name
+            if not SAFE_NAME.fullmatch(name) or path.is_symlink():
+                continue
+            try:
+                body = path.read_bytes()
+                if len(body) > MAX_BYTES:
+                    raise ValueError("Workflow exceeds size limit")
+                digest = hashlib.sha256(body).hexdigest()
+                if name in remote_names:
+                    remote = hashlib.sha256(await bounded_get(client, self._url(name))).hexdigest()
+                    if remote == digest:
+                        record[name] = digest
+                        continue
+                    if record.get(name) != remote:
+                        continue  # edited on the PC, or a copy this app never pushed
+                elif name in record:
+                    continue  # deleted on the PC after a push
+                response = await client.post(self._url(name), params={"overwrite": "true"}, content=body)
+                response.raise_for_status()
+                record[name] = digest
+                remote_names.add(name)
+                counts["pushed"] += 1
+            except (httpx.HTTPError, ValueError, OSError):
+                counts["failed"] += 1
+        write_atomic(self.state, json.dumps(record, sort_keys=True).encode())

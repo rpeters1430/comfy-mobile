@@ -55,3 +55,39 @@ class WorkflowSyncTests(unittest.TestCase):
             assert first["downloaded"] == 1
             assert second["unchanged"] == 1
             assert (tmp_path / "one.json").exists()
+
+
+class WorkflowPushTests(unittest.TestCase):
+    def test_push_new_and_unedited_but_never_edited_or_deleted(self):
+        old, new, edited = b'{"nodes": [1]}', b'{"nodes": [2]}', b'{"nodes": [9]}'
+        remote = {"same.json": new, "stale.json": old, "edited.json": edited}
+        posts = []
+        factory = httpx.AsyncClient
+        def handler(request):
+            name = request.url.path.rsplit("/", 1)[-1]
+            if request.url.path == "/userdata":
+                return httpx.Response(200, json=sorted(remote))
+            if request.method == "POST":
+                posts.append(name)
+                remote[name] = request.content
+                return httpx.Response(200, json={})
+            return httpx.Response(200, content=remote[name])
+        def client(**kwargs):
+            return factory(transport=httpx.MockTransport(handler), **kwargs)
+        with TemporaryDirectory() as tmp:
+            bundled, data = Path(tmp) / "bundled", Path(tmp) / "data"
+            bundled.mkdir(); data.mkdir()
+            for name in ("same.json", "stale.json", "edited.json", "new.json", "deleted.json"):
+                (bundled / name).write_bytes(new)
+            import hashlib
+            h = lambda b: hashlib.sha256(b).hexdigest()
+            (data / "push.json").write_text(json.dumps({"stale.json": h(old), "edited.json": h(old), "deleted.json": h(old)}))
+            sync = WorkflowSync("http://localhost:8188", Path(tmp) / "sync", bundled, data / "push.json")
+            with patch("app.workflow_sync.httpx.AsyncClient", client):
+                result = asyncio.run(sync.sync())
+            self.assertEqual(sorted(posts), ["new.json", "stale.json"])
+            self.assertEqual((result["pushed"], result["failed"]), (2, 0))
+            self.assertEqual(edited, remote["edited.json"])
+            self.assertTrue((Path(tmp) / "sync" / "new.json").exists())
+            record = json.loads((data / "push.json").read_text())
+            self.assertEqual((record["same.json"], record["new.json"]), (h(new), h(new)))
