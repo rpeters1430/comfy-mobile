@@ -123,7 +123,9 @@ def check(graph, controls):
         # share noise schedules with another sampler; automatic fixes here are unsafe.
         if _is_refinement(node):
             continue
-        speed = next((n for n in [model, *names] if SPEED.search(short(n))), None)
+        speed = next((n for n in [model, *names] if SPEED.search(short(n)) and
+                      (re.search(r'turbo|lightning|lightx2v|hyper|lcm|dmd|schnell|distill|flash', short(n), re.I)
+                       or _speed_steps(n) is not None)), None)
         if speed:
             target = _speed_steps(speed)
             if target is not None and steps > max(2 * target, 12):
