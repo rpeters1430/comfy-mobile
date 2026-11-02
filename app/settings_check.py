@@ -15,7 +15,7 @@ KEYWORDS = [('ponyv7', r'pony_?v7'), ('sd15', r'sd_?1\.?5|v1-5'), ('sdxl', r'sdx
             ('ltx', r'ltx'), ('sdxl', r'(?<![a-z])xl|xl(?![a-z])')]
 SPEED = re.compile(r'turbo|lightning|lightx2v|hyper|lcm|dmd|schnell|distill|flash|\d+[-_ ]?steps?', re.I)
 STEP_COUNT = re.compile(r'(\d+)[-_ ]?steps?', re.I)
-CFG_FAMILIES = {'sd15', 'sdxl', 'qwen', 'wan'}  # families sampled with real CFG, so speed LoRAs need it near 1
+CFG_FAMILIES = {'sd15', 'sdxl'}  # Generic 1–2 CFG advice is not safe for Qwen/Wan schedules.
 TYPICAL_CFG = {'sd15': 7.0, 'sdxl': 6.0}
 
 
@@ -61,6 +61,26 @@ def _number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def _is_refinement(node):
+    """Do not tune partial-noise or image-edit passes using text-to-image defaults."""
+    inputs = node.get('inputs', {})
+    denoise = inputs.get('denoise', 1)
+    if _number(denoise) and denoise < 0.99:
+        return True
+    if node.get('class_type') == 'KSamplerAdvanced':
+        return inputs.get('add_noise') == 'disable' or inputs.get('start_at_step', 0) != 0
+    return False
+
+
+def _speed_steps(name):
+    """Only a declared numeric count justifies a concrete step-count fix."""
+    match = STEP_COUNT.search(short(name))
+    if match:
+        count = int(match.group(1))
+        return count if 1 <= count <= 16 else None
+    return None
+
+
 def check(graph, controls):
     """Return [{level: 'warn'|'tip', message, changes: [{node, field, value}]}] for the graph about to run."""
     editable = {c['node']: c['values'] for c in controls.get('samplers', [])}
@@ -99,16 +119,25 @@ def check(graph, controls):
         steps, cfg, denoise = inputs.get('steps'), inputs.get('cfg'), inputs.get('denoise', 1)
         if not (_number(steps) and _number(cfg)):
             continue
-        speed = next((n for n in [model, *names] if SPEED.search(short(n))), None)
+        # A denoising/refinement pass is not a fresh latent. It may intentionally
+        # share noise schedules with another sampler; automatic fixes here are unsafe.
+        if _is_refinement(node):
+            continue
+        speed = next((n for n in [model, *names] if SPEED.search(short(n)) and
+                      (re.search(r'turbo|lightning|lightx2v|hyper|lcm|dmd|schnell|distill|flash', short(n), re.I)
+                       or _speed_steps(n) is not None)), None)
         if speed:
-            count = STEP_COUNT.search(short(speed))
-            target = int(count.group(1)) if count else 8
-            if steps > max(2 * target, 12):
-                add('warn', f'“{short(speed)}” is a speed model made for about {target} steps. {steps} steps is much slower '
-                            'and can over-sharpen.', node_id, steps=target)
+            target = _speed_steps(speed)
+            if target is not None and steps > max(2 * target, 12):
+                add('warn', f'“{short(speed)}” indicates a {target}-step variant, but this pass uses {steps} steps. '
+                            'Check the model author’s recommended schedule.', node_id, steps=target)
+            elif target is None and steps > 20:
+                add('tip', f'“{short(speed)}” appears to be a speed/distilled model, but its exact schedule is unknown. '
+                           'Confirm the author’s step count before changing settings.')
             if fam in CFG_FAMILIES and cfg > 2.5:
-                add('warn', f'Speed models like “{short(speed)}” need CFG around 1–2. CFG {cfg:g} usually burns the image.',
-                    node_id, cfg=1.5 if fam in TYPICAL_CFG else 1.0)
+                add('warn', f'“{short(speed)}” is a speed variant; CFG {cfg:g} may be too high for this {LABELS[fam]} pass. '
+                            'Check its author guidance before applying a lower CFG.',
+                    node_id, cfg=1.5)
         elif fam in TYPICAL_CFG and _number(denoise) and denoise >= 0.99:
             label = LABELS[fam]
             if steps < 15:

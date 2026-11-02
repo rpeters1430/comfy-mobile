@@ -101,6 +101,8 @@
       </div>
       <p class="status" style="margin:4px 0 0">Leave seed empty for a random seed each run. With a fixed seed, runs use seed, seed+1, …</p>
       <label class="switch"><input type="checkbox" id="check-settings" checked> Check settings before generating</label>
+      <button type="button" class="ghost" id="preview-model-guidance">Preview model-aware guidance</button>
+      <div id="model-guidance-results" class="status" role="status" aria-live="polite"></div>
       <div id="auto-loras-row" class="hide">
         <label class="switch"><input type="checkbox" id="auto-loras"> Auto-add matching LoRAs</label>
         <p class="status" style="margin:0">Adds up to two LoRAs whose training tags match your prompt or reviewed caption, plus their trigger words. For photo workflows, use caption review so there is a description to match.</p>

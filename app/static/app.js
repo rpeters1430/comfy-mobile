@@ -1972,6 +1972,37 @@ function adviserForm() {
     runs: Number($('runs').value) || 1
   };
 }
+$('preview-model-guidance').onclick = async () => {
+  const button = $('preview-model-guidance'), target = $('model-guidance-results');
+  target.replaceChildren();
+  if (!selected || !controlsReady) {
+    target.textContent = 'Select a runnable workflow and load its settings first.';
+    return;
+  }
+  let job;
+  try { ({ job } = adviserForm()); }
+  catch (e) { target.textContent = e.message; return; }
+  if (job.stage !== 'render') {
+    target.textContent = 'Finish caption review first, then preview rendering guidance.';
+    return;
+  }
+  button.disabled = true;
+  target.textContent = 'Inspecting the current checkpoint, LoRAs and sampler graph…';
+  try {
+    const result = await api('/jobs/check', { method: 'POST', json: job });
+    const issues = result.issues || [];
+    if (!issues.length) {
+      target.textContent = 'No rule-based issues identified. This does not verify unknown model-specific settings.';
+    } else {
+      target.replaceChildren(...issues.map(issue => el('p', { class: 'status' },
+        (issue.level === 'warn' ? '⚠ ' : 'ℹ ') + issue.message +
+        (issue.changes?.length ? ' · Optional change: ' +
+        issue.changes.map(x => x.field + ' → ' + x.value).join(', ') : ''))));
+    }
+  } catch (e) { target.textContent = 'Could not inspect settings: ' + e.message; }
+  finally { button.disabled = false; }
+};
+
 const adviserUI = SettingsAdviser.mount({ api, el, getForm: adviserForm, random: randomSeed, apply: result => {
   for (const [node, fields] of Object.entries(result.sampling || {})) Object.assign(choices.sampling[node] || (choices.sampling[node] = {}), fields);
   if (result.size) choices.adviserSize = result.size;
