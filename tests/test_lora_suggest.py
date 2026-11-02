@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from app.lora_suggest import profile, suggest, unique
+from app.lora_suggest import profile, suggest, unique, enrich
 
 
 def meta(*tags):
@@ -38,6 +38,23 @@ class SuggestTests(unittest.TestCase):
     def test_whole_words_only_and_limit(self):
         self.assertEqual([], suggest('a hoodie', PROFILES[:1] + PROFILES[4:]))
         self.assertEqual(1, len(suggest('techwear in a cyberpunk city', PROFILES, limit=1)))
+
+    def test_modelharbor_enrichment_prefers_exact_strength_and_trigger(self):
+        original = [{'name': 'SDXL/a.safetensors', 'strength': 0.7, 'trigger': 'guess', 'matched': ['dress']}]
+        entries = {'SDXL/a.safetensors': {'weight': 0.55, 'triggers': ['unique'], 'base_model': 'Illustrious'}}
+        results = enrich(original, entries)
+        self.assertEqual(0.55, results[0]['strength'])
+        self.assertEqual('unique', results[0]['trigger'])
+        self.assertEqual('Illustrious', results[0]['base_model'])
+        self.assertEqual('guess', original[0]['trigger'])  # no mutation
+
+    def test_multiple_triggers_are_not_auto_injected(self):
+        original = [{'name': 'a.safetensors', 'strength': 0.7, 'trigger': 'guess', 'matched': []}]
+        entry = {'a.safetensors': {'triggers': ['pose_a', 'pose_b'], 'weight': None}}
+        result = enrich(original, entry)[0]
+        self.assertIsNone(result['trigger'])
+        self.assertEqual(['pose_a', 'pose_b'], result['trigger_options'])
+        self.assertEqual(0.7, result['strength'])
 
     def test_unique_prefers_the_folder_copy(self):
         self.assertEqual(['SDXL\\fv.safetensors', 'other.safetensors'],
