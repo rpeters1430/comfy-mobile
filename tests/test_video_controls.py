@@ -49,7 +49,8 @@ class VideoControlTests(unittest.TestCase):
 
     def test_out_of_range_or_unavailable_fails(self):
         for g, video in ((ltx(), {'seconds': 0}), (ltx(), {'seconds': 2.5}), (ltx(), {'width': 1281, 'height': 720}),
-                         (ltx(), {'megapixels': 0.5}), (wan(), {'width': 512, 'height': 512}), (wan(), {'megapixels': 3})):
+                         (ltx(), {'megapixels': 0.5}), (wan(), {'width': 512, 'height': 512}), (wan(), {'megapixels': 3}),
+                         (ltx(), {'fps': 30}), (ltx(), {'seconds': float('nan')}), (ltx(), {'width': float('inf'), 'height': 720})):
             with self.subTest(video=video), self.assertRaises(ControlError):
                 apply_controls(g, {}, {}, {}, [], video=video)
         self.assertIsNone(find_controls({}, {})['video'])

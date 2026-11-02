@@ -36,6 +36,8 @@ test('named presets snapshot current defaults and exclude images', () => {
  assert.equal(job.sampling['3'].steps, 20);
  assert.equal(job.caption['4'].model, 'vlm');
  assert.equal('images' in job, false);
+ const video = presetJob('v.json', '', 1, { models: [], loras: [], samplers: [], captions: [], video: { seconds: 5 } }, { models: {}, loras: {}, video: { seconds: 5 } }, {});
+ assert.deepEqual(video.video, { seconds: 5 });
 });
 
 test('legacy NAS metadata does not erase richer local rerun settings', () => {

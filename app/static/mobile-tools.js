@@ -34,6 +34,8 @@
     }));
     job.sampling = structuredClone(choices.sampling || {});
     job.caption = structuredClone(choices.caption || {});
+    // Every exposed video value, so validation checks what loading the preset restores.
+    if (controls.video && choices.video && Object.keys(choices.video).length) job.video = { ...choices.video };
     return job;
   }
   function preferredWorkflows(workflows) {

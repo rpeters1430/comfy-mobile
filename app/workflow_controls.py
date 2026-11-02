@@ -172,7 +172,7 @@ MAX_SECONDS = 20
 
 
 def _numeric(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def _primitive(graph, value):
@@ -225,6 +225,9 @@ def _apply_video(graph, found, video):
     control = found["video"]
     if not control:
         raise ControlError("This workflow has no video length or size to change")
+    editable = {key for key in ("seconds", "width", "height", "megapixels") if key + "_at" in control}
+    if set(video) - editable:
+        raise ControlError(f"This workflow's video can't change: {', '.join(sorted(set(video) - editable))}")
 
     def put(key, value):
         node_id, field = control[key + "_at"]
