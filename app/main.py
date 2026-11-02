@@ -501,8 +501,9 @@ async def suggest_loras(body: LoraSuggestRequest, authorization: str | None = He
     if not profiles:
         return {'suggestions': [], 'method': 'semantic'}
     # Prefer distinct tags and names, not generic gender/solo tokens.
+    candidates = lora_suggest.shortlist(body.text, profiles, 40)
     catalog = []
-    for p in profiles[:40]:
+    for p in candidates:
         catalog.append({'label': lora_suggest.filename(p['name']).rsplit('.', 1)[0],
                         'tags': p.get('terms', [])[:12],
                         'base_model': verified.get(p['name'], {}).get('base_model')})
@@ -512,7 +513,7 @@ async def suggest_loras(body: LoraSuggestRequest, authorization: str | None = He
         raise HTTPException(503, 'AI suggestions unavailable: ' + str(exc)) from exc
     picks = []
     for item in indices:
-        p = profiles[item['index']]
+        p = candidates[item['index']]
         picks.append({'name': p['name'], 'strength': 0.7, 'trigger': p.get('trigger'),
                       'matched': [], 'reason': item['reason']})
     return {'suggestions': lora_suggest.enrich(picks, verified),
