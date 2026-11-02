@@ -459,6 +459,7 @@ class LoraSuggestRequest(BaseModel):
     base: str = Field(max_length=40)
     exclude: list[str] = Field(default_factory=list, max_length=16)
     limit: int = Field(default=2, ge=1, le=MAX_EXTRA_LORAS)
+    semantic: bool = False
 
 _lora_profiles: dict = {}
 
@@ -490,8 +491,33 @@ async def suggest_loras(body: LoraSuggestRequest, authorization: str | None = He
              and not SPEED.search(n) and lora_suggest.filename(n) not in used]
     gate = asyncio.Semaphore(8)
     profiles = await asyncio.gather(*(lora_profile(n, gate) for n in names))
-    picks = lora_suggest.suggest(body.text, profiles, body.limit)
-    return {'suggestions': lora_suggest.enrich(picks, verified)}
+    if not body.semantic:
+        picks = lora_suggest.suggest(body.text, profiles, body.limit)
+        return {'suggestions': lora_suggest.enrich(picks, verified), 'method': 'tags'}
+    # The client calls this mode only after an explicit semantic-AI opt-in.
+    # Keep the provider payload bounded: cap candidates and caption length.
+    if len(body.text) > 3000:
+        raise HTTPException(422, 'Semantic caption must be 3000 characters or less')
+    if not profiles:
+        return {'suggestions': [], 'method': 'semantic'}
+    # Prefer distinct tags and names, not generic gender/solo tokens.
+    catalog = []
+    for p in profiles[:40]:
+        catalog.append({'label': lora_suggest.filename(p['name']).rsplit('.', 1)[0],
+                        'tags': p.get('terms', [])[:12],
+                        'base_model': verified.get(p['name'], {}).get('base_model')})
+    try:
+        indices = await adviser.ai().rank_loras(body.text, catalog, body.limit)
+    except AIError as exc:
+        raise HTTPException(503, 'AI suggestions unavailable: ' + str(exc)) from exc
+    picks = []
+    for item in indices:
+        p = profiles[item['index']]
+        picks.append({'name': p['name'], 'strength': 0.7, 'trigger': p.get('trigger'),
+                      'matched': [], 'reason': item['reason']})
+    return {'suggestions': lora_suggest.enrich(picks, verified),
+            'method': 'semantic', 'candidate_count': len(catalog),
+            'truncated': len(profiles) > len(catalog)}
 
 _harbor_cache = {'at': 0.0, 'records': []}
 HARBOR_TTL = 300
