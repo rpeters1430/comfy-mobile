@@ -666,6 +666,7 @@ function sizeSection(changed) {
   cinematicChip.onclick = () => {
     choices.cinematic = !choices.cinematic;
     cinematicChip.setAttribute('aria-pressed', String(choices.cinematic));
+    updateDisplay();
     changed();
   };
 
