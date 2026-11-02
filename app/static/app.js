@@ -342,8 +342,12 @@ function modelSelect(options, value, base, label, only = false) {
 function loraFamilyNote(name, base) {
   const checkpoint = controls?.models?.length === 1 ? choices?.models?.[controls.models[0].node] : '';
   const info = loraInfo[name] || {};
-  const advice = LoraCompatibility.compatibility(checkpoint, name, info, base, familyOf(name));
-  return el('small', { class: 'status', style: 'display:block' }, advice?.text || '');
+  // The model picker must stay usable if an optional helper script fails to load.
+  const helper = typeof LoraCompatibility !== 'undefined' ? LoraCompatibility : null;
+  const advice = helper?.compatibility(checkpoint, name, info, base, familyOf(name));
+  const fallback = base && familyOf(name) && familyOf(name) !== base
+    ? `⚠ Made for ${familyOf(name)}, selected checkpoint is ${base}.` : '';
+  return el('small', { class: 'status', style: 'display:block' }, advice?.text || fallback);
 }
 
 /* LoRA trigger words and strengths: Civitai data via ModelHarbor (GET /api/loras/info), else a trigger guessed

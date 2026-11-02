@@ -219,6 +219,7 @@ def home(): return FileResponse(STATIC/'index.html')
 # Revalidated on every load, so a phone never mixes scripts from two releases.
 STATIC_FILES = {'style.css': 'text/css', 'presets.js': 'text/javascript', 'mobile-tools.js': 'text/javascript',
                 'adviser.js': 'text/javascript', 'app.js': 'text/javascript', 'sw.js': 'text/javascript',
+                'lora-compat.js': 'text/javascript', 'wallpaper-export.js': 'text/javascript',
                 'manifest.webmanifest': 'application/manifest+json'}
 
 def static_route(name, media_type):
