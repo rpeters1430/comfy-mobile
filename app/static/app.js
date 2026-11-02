@@ -388,7 +388,8 @@ function activeLoras(c) {
 function pickedTriggers(text) {
   if (!controls || !choices) return [];
   const lower = text.toLowerCase();
-  const words = activeLoras(choices).map(x => loraInfo[x.name]?.triggers).filter(t => t?.length === 1).map(t => t[0]);
+  const lists = activeLoras(choices).map(x => loraInfo[x.name]?.triggers || []);
+  const words = [...lists.filter(t => t.length === 1).map(t => t[0]), ...lists.flat().filter(t => choices.triggers.includes(t))];
   return [...new Set(words)].filter(t => !lower.includes(t.toLowerCase()));
 }
 function withPickedTriggers(text) { const t = pickedTriggers(text); return t.length ? [text, ...t].join(', ') : text; }
@@ -408,20 +409,28 @@ function loraHints(choice) {
   if (!x) return null;
   const line = text => el('small', { class: 'status', style: 'display:block' }, text);
   const rows = [];
-  if (x.source === 'civitai' && x.base_model) rows.push(line(`ModelHarbor identified training base: ${x.base_model}`));
   if (x.weight != null) rows.push(line(`Suggested strength ${x.weight} (median of available Civitai example settings, not a guaranteed optimal weight)`));
-  const typed = selected?.takes_prompt || $('review-before').checked;
-  if (x.triggers.length === 1) {
+  const typed = selected?.takes_prompt;
+  const where = typed ? 'your prompt' : 'the caption';
+  if (!typed && !captionCapability?.supported && x.triggers.length) {
+    rows.push(line(`Trigger words: ${x.triggers.join(', ')}. This workflow's caption can't be changed, so they can't be added.`));
+  } else if (x.triggers.length === 1) {
     const guess = x.guessed ? ' (guessed from its training tags)' : '';
-    rows.push(line(typed ? `Trigger “${x.triggers[0]}”${guess} is added to your prompt when you generate.`
-      : `Trigger “${x.triggers[0]}”${guess}: this workflow writes its own prompt, so tick “Review caption before rendering” to have it added.`));
+    rows.push(line(`Trigger “${x.triggers[0]}”${guess} is added to ${where} when you generate.`));
   } else if (x.triggers.length > 1) {
-    rows.push(line(selected?.takes_prompt ? 'Trigger words: tap the ones you want in your prompt.'
-      : 'Trigger words (this workflow writes its own prompt; type the ones you want into the reviewed caption):'));
+    rows.push(line(`Trigger words: tap the ones you want added to ${where}.`));
     rows.push(el('div', { class: 'aspects' }, x.triggers.map(word => {
-      const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(promptHas(word)) }, word);
-      if (selected?.takes_prompt) chip.onclick = () => { togglePromptWord(word); chip.setAttribute('aria-pressed', String(promptHas(word))); };
-      else chip.disabled = true;
+      const on = () => typed ? promptHas(word) : choices.triggers.includes(word);
+      const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(on()) }, word);
+      chip.onclick = () => {
+        if (typed) togglePromptWord(word);
+        else {
+          // Chips tapped for a workflow that writes its own prompt; saved with its settings and presets.
+          choices.triggers = on() ? choices.triggers.filter(t => t !== word) : [...choices.triggers, word];
+          saveControls();
+        }
+        chip.setAttribute('aria-pressed', String(on()));
+      };
       return chip;
     })));
   }
@@ -491,7 +500,8 @@ async function loadControls(wf, restored = null) {
     controls = found;
     const saved = restored || savedControls()[wf.id] || {};
   const loraOk = name => controls.lora_options.includes(name);
-  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', preset: '', upscaler: '', cinematic: saved.cinematic !== false, caption: {}, skipDetailers: !!saved.skipDetailers };
+  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', preset: '', upscaler: '', cinematic: saved.cinematic !== false, caption: {}, skipDetailers: !!saved.skipDetailers,
+    triggers: Array.isArray(saved.triggers) ? saved.triggers.filter(t => typeof t === 'string') : [] };
   for (const m of controls.models) choices.models[m.node] = m.options.includes(saved.models?.[m.node]) ? saved.models[m.node] : m.value;
   for (const l of controls.loras) {
     const s = saved.loras?.[l.node];
@@ -922,6 +932,11 @@ $('form').onsubmit = async event => {
     if (!approval && stage === 'render' && $('check-settings').checked) {
       if (!await checkSettings({ ...params, seed: base })) return;
       params.controls = withAutoLoras(controlsPayload(choices), auto);
+    }
+    // A workflow that writes its own prompt gets the trigger words joined onto its caption inside ComfyUI.
+    if (stage === 'render' && !approval && !params.review && !selected.takes_prompt && captionCapability?.supported) {
+      const words = pickedTriggers('');
+      if (words.length) params.controls = { ...params.controls, caption_suffix: words.join(', ') };
     }
     params.controlsText = [style?.label, controlsText(choices), auto?.label].filter(Boolean).join(' · ');
     for (let i = 0; i < (stage === 'caption' ? 1 : runs); i++) {

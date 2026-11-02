@@ -19,7 +19,7 @@ if __package__:
     from .workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, view_query
     from .job_store import JobStore
     from .preset_store import PresetStore
-    from .caption_review import CaptionError, capability, caption_graph, apply_review
+    from .caption_review import CaptionError, capability, caption_graph, apply_review, append_caption
     from .wake import WakePC, WakeError
     from .push import Push, PushError
     from .progress import ProgressTracker, listen
@@ -36,7 +36,7 @@ else:
     from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, view_query
     from job_store import JobStore
     from preset_store import PresetStore
-    from caption_review import CaptionError, capability, caption_graph, apply_review
+    from caption_review import CaptionError, capability, caption_graph, apply_review, append_caption
     from wake import WakePC, WakeError
     from push import Push, PushError
     from progress import ProgressTracker, listen
@@ -391,6 +391,7 @@ class Job(BaseModel):
     adviser_index: int = Field(default=0, ge=0, le=7)
     stage: Literal['render', 'caption'] = 'render'
     review: CaptionReview | None = None
+    caption_suffix: str = Field(default='', max_length=1000)  # LoRA trigger words joined onto an unreviewed auto-caption
     workflow_id: str = Field(max_length=240)
     prompt: str = Field(default='',max_length=10000)
     images: list[str] = Field(default_factory=list,max_length=8)
@@ -431,6 +432,8 @@ async def prepare_job(job: Job):
         elif job.review:
             if not job.review.positive.strip(): raise CaptionError('Enter a positive caption')
             graph = apply_review(graph, info, job.review.positive, job.review.negative)
+        elif job.caption_suffix.strip():
+            append_caption(graph, info, job.caption_suffix.strip())
         final_check = inspect_workflow(graph, info)
         if not final_check['runnable']: raise JobError('; '.join(final_check['errors']))
     except (ControlError, JobError, CaptionError) as exc:

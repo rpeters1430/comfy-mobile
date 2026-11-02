@@ -62,6 +62,22 @@ def caption_graph(graph, info):
     return result
 
 
+def append_caption(graph, info, suffix):
+    """Join LoRA trigger words onto the auto-caption inside ComfyUI, so they apply without a review step."""
+    cap = capability(graph, info)
+    if not cap['supported']:
+        raise CaptionError(cap['reason'])
+    if 'StringConcatenate' not in info:
+        raise CaptionError('Adding trigger words needs the StringConcatenate node on ComfyUI')
+    key = 'mobile_caption_triggers'
+    if key in graph: raise CaptionError('Reserved caption node ID is already used')
+    for node in graph.values():
+        for field, value in node['inputs'].items():
+            if link(value) and value == [cap['node'], 0]:
+                node['inputs'][field] = [key, 0]
+    graph[key] = {'class_type': 'StringConcatenate', 'inputs': {'string_a': [cap['node'], 0], 'string_b': suffix, 'delimiter': ', '}}
+
+
 def apply_review(graph, info, positive, negative):
     cap = capability(graph, info)
     if not cap['supported']:
