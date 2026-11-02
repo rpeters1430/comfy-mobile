@@ -1134,8 +1134,8 @@
    "id": 22,
    "type": "VAEDecode",
    "pos": [
-    2100,
-    740
+    2860,
+    140
    ],
    "size": [
     210,
@@ -1178,8 +1178,8 @@
    "id": 23,
    "type": "UpscaleModelLoader",
    "pos": [
-    2100,
-    830
+    2860,
+    256
    ],
    "size": [
     270,
@@ -1211,8 +1211,8 @@
    "id": 24,
    "type": "ImageUpscaleWithModel",
    "pos": [
-    2100,
-    930
+    2860,
+    386
    ],
    "size": [
     240,
@@ -1255,8 +1255,8 @@
    "id": 25,
    "type": "ImageScaleBy",
    "pos": [
-    2100,
-    1020
+    2860,
+    502
    ],
    "size": [
     270,
@@ -1296,8 +1296,8 @@
    "id": 26,
    "type": "VAEEncode",
    "pos": [
-    2100,
-    1140
+    2860,
+    654
    ],
    "size": [
     210,
@@ -1340,8 +1340,8 @@
    "id": 27,
    "type": "KSampler",
    "pos": [
-    2400,
-    740
+    2860,
+    770
    ],
    "size": [
     320,
@@ -1400,8 +1400,8 @@
    "id": 28,
    "type": "UltralyticsDetectorProvider",
    "pos": [
-    2310,
-    300
+    2860,
+    1102
    ],
    "size": [
     260,
@@ -1433,8 +1433,8 @@
    "id": 29,
    "type": "FaceDetailer",
    "pos": [
-    2310,
-    420
+    2860,
+    1252
    ],
    "size": [
     360,
@@ -1585,8 +1585,8 @@
    "id": 30,
    "type": "PerturbedAttentionGuidance",
    "pos": [
-    1740,
-    0
+    2860,
+    2002
    ],
    "size": [
     330,
