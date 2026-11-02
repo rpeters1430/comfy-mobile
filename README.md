@@ -6,6 +6,12 @@ Mobile-first ComfyUI dashboard running on a NAS, connecting to ComfyUI on anothe
 
 GitHub Actions builds and publishes `ghcr.io/rpeters1430/comfy-mobile:latest` on pushes to `main`. Version tags `v*` are also published. Bundled and synced LiteGraph UI-format workflows are converted automatically to ComfyUI API format upon execution.
 
+## Troubleshooting: Models & settings not loading
+
+When you select a workflow, the **Models & settings** section now opens with a loading message. The app only marks controls ready after successfully rendering the checkpoint, LoRA and sampler fields. If validation, saved choices or browser rendering fails, an inline error and **Retry loading settings** button appear instead of a silent, empty panel. The exact error is also logged to the browser console; the normal Generate action remains blocked until settings load. Workflows with no editable controls remain runnable.
+
+If the phone still shows an older version, reload the tab and check that the updated container image has been deployed. The service worker does not cache app JavaScript; reload should request the latest served script.
+
 ## Features
 
 - **Mobile-first PWA**: Standalone installable app with responsive design, instant workflow search, and Web Share Target (share photos directly from your phone's gallery into workflows).
