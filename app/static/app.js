@@ -1174,7 +1174,7 @@ function resultActions(item) {
   const share = el('button', { class: 'secondary', type: 'button' }, '↗ Share');
   const save = el('a', { class: 'button ghost', href: item.url, download: item.filename }, '⬇ Save');
   const wallpaper = el('button', { class: 'secondary', type: 'button' }, '📱 Pixel wallpaper');
-  if (!/\\.(png|jpe?g|webp)$/i.test(item.filename || '')) wallpaper.classList.add('hide');
+  if (!/\.(png|jpe?g|webp)$/i.test(item.filename || '')) wallpaper.classList.add('hide');
   wallpaper.onclick = async () => {
     wallpaper.disabled = true;
     try { await WallpaperExport.open(item); }
