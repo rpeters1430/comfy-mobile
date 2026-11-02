@@ -74,7 +74,7 @@ Configuration is env-only: `COMFYUI_URL`, `STUDIO_TOKEN` (required, or every end
 
 - `GET /api/loras/info` (`lora_info.py`) matches ModelHarbor's `/api/models` records (its Civitai matches, cached 5 min) to ComfyUI LoRA names by the path under `loras/`, then by a unique file name. Per LoRA it returns Civitai `triggers`, the recommended `weight` (median strength in the creator's example images, computed by ModelHarbor) and a `family` from Civitai's base model (`settings_check.civitai_family`). Without ModelHarbor, or for unmatched LoRAs, a trigger guessed from training tags (`lora_suggest.profile`) is returned with `guessed: true`.
 - The phone fills unknown families from it, and LoRA pickers list only the checkpoint's family plus unknown files (`modelGroups(..., only)`), keeping the current pick. Picking a LoRA sets its strength to the one last used for it on this device, else the recommended weight, else 1.
-- A LoRA with exactly one trigger has it appended to the prompt (or reviewed caption) on Generate; several triggers (one per concept) are tap-to-add chips. Nothing is added under an Adviser approval, as for Auto LoRAs.
+- A LoRA with exactly one trigger has it appended to the prompt (or reviewed caption) on Generate; several triggers (one per concept) are tap-to-add chips. Workflows that write their own prompt get the words without review: the job's `caption_suffix` makes `caption_review.append_caption` join them onto the VLM's positive caption with a `StringConcatenate` node (`mobile_caption_triggers`). Nothing is added under an Adviser approval, as for Auto LoRAs.
 - `SD 2.x` is a family (`SD2\` folder, `sd21`/`v2-1` names), so SD2 checkpoints no longer read as unknown.
 
 ## Skip face detailer

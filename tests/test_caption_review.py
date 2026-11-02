@@ -37,6 +37,14 @@ class CaptionTests(unittest.TestCase):
   self.assertNotIn('1', result)
   self.assertIn('6', result)
 
+ def test_trigger_words_join_unreviewed_caption(self):
+  g = graph()
+  review.append_caption(g, {**INFO, 'StringConcatenate': {}}, '4ng3l face')
+  self.assertEqual(['mobile_caption_triggers', 0], g['4']['inputs']['text'])
+  self.assertEqual({'string_a': ['2', 0], 'string_b': '4ng3l face', 'delimiter': ', '}, g['mobile_caption_triggers']['inputs'])
+  with self.assertRaises(review.CaptionError):
+   review.append_caption(graph(), INFO, 'x')
+
  def test_ambiguous_caption_and_non_text_consumers_fail_closed(self):
   for change in ('second', 'dimensions'):
    g = graph()
