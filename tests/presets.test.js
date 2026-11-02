@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  STYLE_PRESETS, STYLE_TAIL, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropAspect
+  STYLE_PRESETS, STYLE_TAIL, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, DEFAULT_CINEMATIC_MARGIN, cinematicMargin, cinematicFraming, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropAspect
 } = require('../app/static/presets.js');
 
 test('styledPrompt sends the prompt as written without a style', () => {
@@ -10,8 +10,8 @@ test('styledPrompt sends the prompt as written without a style', () => {
 
 test('styledPrompt appends the style, then Cinematic, then the no-text tail', () => {
   const amoled = STYLE_PRESETS.find(s => s.id === 'amoled');
-  assert.equal(styledPrompt('a fox', amoled, true), `a fox, ${amoled.suffix}, ${CINEMATIC_SUFFIX}, ${STYLE_TAIL}`);
-  assert.equal(styledPrompt('a fox', null, true), `a fox, ${CINEMATIC_SUFFIX}, ${STYLE_TAIL}`);
+  assert.equal(styledPrompt('a fox', amoled, true), `a fox, ${amoled.suffix}, ${CINEMATIC_SUFFIX}, ${cinematicFraming(DEFAULT_CINEMATIC_MARGIN)}, ${STYLE_TAIL}`);
+  assert.equal(styledPrompt('a fox', null, true), `a fox, ${CINEMATIC_SUFFIX}, ${cinematicFraming(DEFAULT_CINEMATIC_MARGIN)}, ${STYLE_TAIL}`);
 });
 
 test('Cinematic applies only to Pixel presets and only when switched on', () => {
@@ -63,4 +63,18 @@ test('upscale model runs only for at least 2x enlargement', () => {
   const pixel = WALLPAPER_PRESETS.find(p => p.id === 'pixel-native').native;
   assert.equal(upscaleWorthIt({ width: 832, height: 1216 }, pixel), false);  // SDXL ~1 MP
   assert.equal(upscaleWorthIt({ width: 512, height: 1152 }, pixel), true);   // SD1.5-sized render
+});
+
+test('Pixel 10 variants have distinct exact screen sizes', () => {
+  assert.deepEqual(WALLPAPER_PRESETS.find(p => p.id === 'pixel10').native, { width: 1080, height: 2424 });
+  assert.deepEqual(WALLPAPER_PRESETS.find(p => p.id === 'pixel10-pro').native, { width: 1280, height: 2856 });
+  assert.deepEqual(WALLPAPER_PRESETS.find(p => p.id === 'pixel10-pro-xl').native, { width: 1344, height: 2992 });
+});
+
+test('cinematic mode renders to the requested aspect instead of forcing 9:16 center crop', () => {
+  assert.equal(renderAspect('1344:2992', true), '1344:2992');
+  assert.equal(renderAspect('1344:2992'), '9:16');
+  assert.equal(cinematicMargin(999), 20);
+  assert.equal(cinematicMargin(-10), 0);
+  assert.match(styledPrompt('portrait', null, true, 15), /15% unobstructed background/);
 });
