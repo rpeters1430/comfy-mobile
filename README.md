@@ -16,7 +16,9 @@ GitHub Actions builds and publishes `ghcr.io/rpeters1430/comfy-mobile:latest` on
 - **Notifications and gallery**: The NAS watches each job and sends a push notification when it finishes, even with the app closed (needs HTTPS). Finished jobs and thumbnails are kept on the NAS, so the gallery survives ComfyUI restarts.
 - **Workflow Sync**: Safe, one-way pull of workflows directly from ComfyUI's user-data directory to your NAS.
 
-## New in v0.7.1
+## Pixel Cinematic-safe export
+
+The image result viewer includes **Pixel wallpaper** for PNG/JPEG/WebP files. It builds a second, exact-device-resolution PNG with configurable 0–20% framing padding and a feather-blended background, without modifying the original output. A yellow guide previews a user-adjustable *approximate* crop (Google's actual cinematic zoom is device-controlled and may differ). All processing is local to the phone browser; no image is uploaded to an external service. Pixel 10/10 Pro/10 Pro XL and legacy 1080×2400 presets are available. Large PNG exports can use phone memory; on older phones, use the original file if export fails.\n\n## New in v0.7.1
 
 Fixes from a code audit. Workflows greyed out for a missing model or node become runnable within about a minute of fixing it on the PC, with no container restart. Presets saved by older releases report as invalid instead of failing. Live progress stays visible for large batches. All app scripts are revalidated on load, so a phone never mixes two releases after an update. Gallery images reuse one connection to ComfyUI. Direct Python dependencies are now pinned.
 
