@@ -839,7 +839,7 @@ $('form').onsubmit = async event => {
   const stage = $('review-before').checked ? 'caption' : 'render';
   const params = {
     workflowId: selected.id, workflow: prettyName(selected.name), takesPrompt: selected.takes_prompt,
-    prompt: selected.takes_prompt ? styledPrompt(prompt, style, cinematicOn(choices), choices.cinematicMargin) : '',
+    prompt: selected.takes_prompt ? styledPrompt(prompt, style, cinematicOn(choices), choices?.cinematicMargin) : '',
     images: slots.map(s => s.name), stage, review: activeCaptionDraft(),
     controls: controlsPayload(choices), controlsText: [style?.label, controlsText(choices)].filter(Boolean).join(' · ')
   };
