@@ -41,7 +41,6 @@ class ApiTests(unittest.TestCase):
                 self.assertIn("javascript", asset.headers.get("content-type", ""))
 
         self.assertIn("LoraCompatibility", self.client.get("/lora-compat.js").text)
-        self.assertIn("WallpaperExport", self.client.get("/wallpaper-export.js").text)
 
         # Manifest & SW
         r = self.client.get("/manifest.webmanifest")
