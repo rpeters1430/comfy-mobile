@@ -491,20 +491,7 @@ async def suggest_loras(body: LoraSuggestRequest, authorization: str | None = He
     gate = asyncio.Semaphore(8)
     profiles = await asyncio.gather(*(lora_profile(n, gate) for n in names))
     picks = lora_suggest.suggest(body.text, profiles, body.limit)
-    for pick in picks:
-        entry = verified.get(pick['name']) or {}
-        triggers = entry.get('triggers') or []
-        if len(triggers) == 1:
-            pick['trigger'] = triggers[0]
-        elif len(triggers) > 1:
-            # Never inject every concept trigger automatically.
-            pick['trigger'] = None
-        if entry.get('weight') is not None:
-            pick['strength'] = entry['weight']
-        pick['base_model'] = entry.get('base_model')
-        pick['source'] = 'civitai' if entry else 'training tags'
-        pick['trigger_options'] = triggers[:10]
-    return {'suggestions': picks}
+    return {'suggestions': lora_suggest.enrich(picks, verified)}
 
 _harbor_cache = {'at': 0.0, 'records': []}
 HARBOR_TTL = 300
