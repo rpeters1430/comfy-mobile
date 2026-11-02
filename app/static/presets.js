@@ -16,8 +16,9 @@ const STYLE_PRESETS = [
 const STYLE_TAIL = 'no text, no watermark';
 
 
-function styledPrompt(text, style, cinematic) {
-  return [text, style?.suffix, cinematic ? CINEMATIC_SUFFIX : null, style || cinematic ? STYLE_TAIL : null].filter(Boolean).join(', ');
+function styledPrompt(text, style, cinematic, margin = DEFAULT_CINEMATIC_MARGIN) {
+  return [text, style?.suffix, cinematic ? CINEMATIC_SUFFIX : null,
+    cinematic ? cinematicFraming(margin) : null, style || cinematic ? STYLE_TAIL : null].filter(Boolean).join(', ');
 }
 
 const ASPECTS = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9'];
@@ -28,6 +29,9 @@ const WALLPAPER_PRESETS = [
   { id: 'samsung', label: '🌌 Galaxy (19.5:9)', aspect: '9:19.5', native: null, desc: 'Model-tuned for Galaxy S22–S25' },
   { id: 'story', label: '🎬 Story (9:16)', aspect: '9:16', native: null, desc: 'Model-tuned 9:16 vertical canvas' },
   { id: 'pixel-native', label: '📱 Pixel Native (1080×2400)', aspect: null, native: { width: 1080, height: 2400 }, cinematic: true, desc: 'Exact screen resolution for Pixel 7/8/9' },
+  { id: 'pixel10', label: '📱 Pixel 10 (1080×2424)', aspect: null, native: { width: 1080, height: 2424 }, cinematic: true, desc: 'Pixel 10 exact screen resolution' },
+  { id: 'pixel10-pro', label: '📱 Pixel 10 Pro (1280×2856)', aspect: null, native: { width: 1280, height: 2856 }, cinematic: true, desc: 'Pixel 10 Pro exact screen resolution' },
+  { id: 'pixel10-pro-xl', label: '📱 Pixel 10 Pro XL (1344×2992)', aspect: null, native: { width: 1344, height: 2992 }, cinematic: true, desc: 'Pixel 10 Pro XL exact screen resolution' },
   { id: 'iphone-native', label: '🍏 iPhone Native (1176×2552)', aspect: null, native: { width: 1176, height: 2552 }, desc: 'Exact screen resolution for iPhone 15/16 Pro' },
   { id: 'samsung-native', label: '🌌 Galaxy Native (1080×2344)', aspect: null, native: { width: 1080, height: 2344 }, desc: 'Exact screen resolution for Galaxy S23/S24' },
   { id: 'qhd-native', label: '🖥️ QHD 1440p (1440×2560)', aspect: null, native: { width: 1440, height: 2560 }, desc: 'Crisp Quad HD 16:9 vertical' },
@@ -36,9 +40,19 @@ const WALLPAPER_PRESETS = [
 // Pixel's Cinematic wallpaper cuts the main subject out of the background on-device and moves the layers
 // in 3D, so it works best with one clear subject, real depth and good contrast. The parallax also zooms in a
 // little, which crops the edges, and the lock-screen clock sits at the top, so the subject stays low and central.
-const CINEMATIC_SUFFIX = 'single clear main subject in the lower middle of the frame, subject sharply separated from the background, ' +
-  'strong sense of depth with distinct foreground and background layers, uncluttered background, good contrast, ' +
-  'open sky or space in the top third, nothing important near the edges';
+const CINEMATIC_SUFFIX = 'one clearly separated subject, full body including head and feet completely visible, ' +
+  'subject centered and smaller in the frame, generous natural background around all sides, ' +
+  'deep layered foreground and background, uncluttered scene, realistic depth cues, ' +
+  'no limbs, hair, clothing or footwear near the edges';
+const DEFAULT_CINEMATIC_MARGIN = 12;
+function cinematicMargin(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.min(20, Math.max(0, Math.round(n))) : DEFAULT_CINEMATIC_MARGIN;
+}
+function cinematicFraming(margin = DEFAULT_CINEMATIC_MARGIN) {
+  const m = cinematicMargin(margin);
+  return `cinematic wallpaper safe framing, leave approximately ${m}% unobstructed background inside every image edge, subject fully contained within central ${100 - 2 * m}% of frame, avoid close-up crops, keep feet visible`;
+}
 
 function cinematicOn(c) { return !!(c?.cinematic && WALLPAPER_PRESETS.find(p => p.id === c.preset)?.cinematic); }
 
@@ -64,7 +78,10 @@ function presetAspect(p) { return p.native ? `${p.native.width}:${p.native.heigh
 // image is center-cropped to the screen shape, trimming only the sides.
 const MAX_STRETCH = 16 / 9;
 
-function renderAspect(aspect) {
+function renderAspect(aspect, cinematic = false) {
+  // For Cinematic-ready exports, render close to the target shape to avoid the destructive
+  // 9:16 -> 9:20 center crop. Keep the older conservative behavior for standard wallpapers.
+  if (cinematic) return aspect;
   const [a, b] = aspect.split(':').map(Number);
   return b / a > MAX_STRETCH ? '9:16' : a / b > MAX_STRETCH ? '16:9' : aspect;
 }
@@ -79,5 +96,5 @@ function cropAspect(aspect) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { STYLE_PRESETS, STYLE_TAIL, ASPECTS, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropAspect };
+  module.exports = { STYLE_PRESETS, STYLE_TAIL, ASPECTS, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, DEFAULT_CINEMATIC_MARGIN, cinematicMargin, cinematicFraming, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropAspect };
 }
