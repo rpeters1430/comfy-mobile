@@ -69,6 +69,12 @@ The example broadcast is for `192.168.8.0/24`. Configure Wake-on-LAN on the PC's
 
 Docker bridge networking may block LAN broadcast. On a Linux NAS, if necessary use `network_mode: host` on the service and remove its `ports` mapping. Preserve the current `COMFYUI_URL`, `.env`, volumes and data. The app continues to listen on port 8095. Check your NAS firewall/network configuration before changing networking.
 
+## Optional AI semantic LoRA matching
+
+The reviewed-caption LoRA picker now has **Use AI semantic matching**, **off by default**. If selected, tapping Suggest sends only the edited caption (up to 3000 characters) and descriptions of up to 40 installed, broad-family-compatible LoRAs to the AI provider already configured under **AI connection setup** (Ollama/OpenAI/Gemini/OpenRouter). It **does not send the image**. If a hosted provider is selected, the caption leaves your local network, so enable this only when appropriate. The AI returns ranked indices and short rationales; the server validates them against the supplied catalog. It never downloads LoRAs, sets strengths or silently adds anything. Every suggested LoRA remains unchecked until explicitly selected.
+
+If AI is offline, misconfigured or returns invalid output, the existing local training-tag matcher is used instead. With very large LoRA libraries, a bounded shortlist of up to 40 candidates is chosen across the entire compatible inventory, prioritizing matching filenames and training tags and sampling the remainder; the UI reports when the catalog is truncated. ModelHarbor's hash-verified metadata continues to determine family compatibility, suggested strengths and trigger words; do not assume that shared SDXL architecture guarantees cross-variant Pony/Illustrious behavior.
+
 ## Reviewed-caption LoRA suggestions
 
 For Image → Prompt → Image workflows, select **Review caption before rendering**, generate the caption, and open the resulting caption editor. Tap **Suggest LoRAs for this caption** to check installed, architecture-compatible LoRAs against the edited positive caption. Matches use distinguishing local training tags and ModelHarbor's verified training family, activation words, and example-derived strengths when available. Suggested LoRAs start **unchecked**: choose them, adjust their 0–2 strengths and optional activation word, then generate. Changing the caption clears stale suggestions; no model is downloaded or replaced.

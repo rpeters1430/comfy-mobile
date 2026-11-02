@@ -1592,6 +1592,10 @@ function captionEditor(job, outputs) {
   const status = el('p', { class: 'status', role: 'status' });
   const recommendations = el('div', { class: 'lora' });
   const recommend = el('button', { class: 'secondary', type: 'button' }, 'Suggest LoRAs for this caption');
+  const semantic = el('input', { type: 'checkbox', 'aria-label': 'Use AI semantic LoRA matching' });
+  const semanticRow = el('label', { class: 'switch' }, semantic, ' Use AI semantic matching');
+  const semanticNotice = el('p', { class: 'status' },
+    'Off by default. When enabled and you tap Suggest, the caption and installed LoRA descriptions are sent to your configured AI adviser (which may be a hosted provider). No image is sent.');
   const recommendStatus = el('p', { class: 'status', role: 'status' },
     'Review suggestions before adding anything. ModelHarbor metadata is used when available.');
   let recommended = null;
@@ -1619,8 +1623,18 @@ function captionEditor(job, outputs) {
     recommend.disabled = true;
     recommendStatus.textContent = 'Matching caption against installed LoRAs…';
     try {
-      const { suggestions = [] } = await api('/loras/suggest', { method: 'POST',
-        json: { text: caption, base, exclude, limit } });
+      let response;
+      try {
+        response = await api('/loras/suggest', { method: 'POST',
+          json: { text: caption, base, exclude, limit, semantic: semantic.checked } });
+      } catch (e) {
+        if (!semantic.checked) throw e;
+        // The existing tag matcher remains available even with the adviser offline.
+        response = await api('/loras/suggest', { method: 'POST',
+          json: { text: caption, base, exclude, limit, semantic: false } });
+        response.fallback = true;
+      }
+      const { suggestions = [] } = response;
       if (requestRevision !== revision || selected?.id !== job.workflowId) return;
       recommended = { caption, rows: [] };
       if (!suggestions.length) {
@@ -1640,12 +1654,15 @@ function captionEditor(job, outputs) {
         recommendations.append(el('div', { class: 'lora' },
           el('label', {}, box, ' ' + fileLabel(s.name)),
           el('small', { class: 'status', style: 'display:block' },
-            'Matched: ' + (s.matched || []).join(', ') +
+            (s.reason ? 'AI rationale: ' + s.reason : 'Matched: ' + (s.matched || []).join(', ')) +
             (s.base_model ? ' · Trained for ' + s.base_model : ' · Training-base metadata unavailable')),
           el('label', {}, 'Strength'), weight,
           el('label', {}, 'Optional trigger word'), trigger));
       }
-      recommendStatus.textContent = 'Select the LoRAs you want, adjust strength or trigger, then generate. None are selected by default.';
+      recommendStatus.textContent = (response.fallback ? 'AI unavailable; used training-tag matching. ' :
+        response.method === 'semantic' ? 'AI ranked installed LoRA descriptions. ' : 'Training-tag matches. ') +
+        (response.truncated ? 'Only the first 40 compatible LoRAs were considered. ' : '') +
+        'Select LoRAs, adjust strength or trigger, then generate. None are selected by default.';
     } catch (e) {
       if (requestRevision === revision) recommendStatus.textContent = 'Suggestions unavailable: ' + e.message;
     } finally { recommend.disabled = false; }
@@ -1701,7 +1718,7 @@ function captionEditor(job, outputs) {
   };
   return el('div', { class: 'caption-editor' }, el('h3', {}, 'Review caption'),
     el('label', {}, 'Positive caption'), positive, el('label', {}, 'Negative caption'), negative,
-    el('label', {}, 'Runs'), runs, recommend, recommendStatus, recommendations, generate, research, status);
+    el('label', {}, 'Runs'), runs, semanticRow, semanticNotice, recommend, recommendStatus, recommendations, generate, research, status);
 }
 
 /* ---------- NAS job links and PC wake ---------- */

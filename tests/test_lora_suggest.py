@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from app.lora_suggest import profile, suggest, unique, enrich
+from app.lora_suggest import profile, suggest, unique, enrich, shortlist
 
 
 def meta(*tags):
@@ -55,6 +55,20 @@ class SuggestTests(unittest.TestCase):
         self.assertIsNone(result['trigger'])
         self.assertEqual(['pose_a', 'pose_b'], result['trigger_options'])
         self.assertEqual(0.7, result['strength'])
+
+    def test_semantic_shortlist_surfaces_matching_loras_beyond_first_forty(self):
+        collection = [profile(f'SDXL/ordinary_{i}.safetensors', {}) for i in range(100)]
+        collection[-1] = profile('SDXL/raincoat_design.safetensors', {})
+        selected = shortlist('person wearing a raincoat', collection, 40)
+        self.assertEqual(40, len(selected))
+        self.assertEqual('SDXL/raincoat_design.safetensors', selected[0]['name'])
+        self.assertEqual(len({p['name'] for p in selected}), 40)
+
+    def test_semantic_shortlist_no_matches_samples_entire_catalog(self):
+        collection = [profile(f'SDXL/ordinary_{i}.safetensors', {}) for i in range(120)]
+        selected = shortlist('unrelated description', collection, 20)
+        self.assertEqual(20, len(selected))
+        self.assertTrue(any(int(p['name'].rsplit('_', 1)[1].split('.')[0]) >= 100 for p in selected))
 
     def test_unique_prefers_the_folder_copy(self):
         self.assertEqual(['SDXL\\fv.safetensors', 'other.safetensors'],

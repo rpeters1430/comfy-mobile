@@ -45,3 +45,32 @@ class WorkflowReviewTests(unittest.IsolatedAsyncioTestCase):
         ai=AI(AIConfig(provider='ollama',model='local',base_url='http://pc:11434'),transport=httpx.MockTransport(respond))
         result=await ai.review({'models':['Example'],'capabilities':[{'node':'2','field':'steps','current':30}],'prompt':'secret prompt','images':['private.png']})
         self.assertEqual('Review completed',result['summary'])
+
+
+class LoraSemanticTests(unittest.IsolatedAsyncioTestCase):
+    async def test_semantic_opt_in_sends_only_caption_and_bounded_labels(self):
+        def respond(req):
+            body = json.loads(req.content)
+            prompt = json.loads(body['messages'][1]['content'])
+            self.assertEqual('a person in a red raincoat', prompt['caption'])
+            self.assertEqual(2, len(prompt['candidates']))
+            self.assertNotIn('C:/Users/', req.content.decode())
+            return httpx.Response(200, json={'done': True, 'message': {
+                'content': json.dumps({'choices': [
+                    {'index': 1, 'reason': 'Raincoat styling matches the scene.'},
+                    {'index': 1, 'reason': 'Duplicated choice is ignored.'},
+                    {'index': 30, 'reason': 'Invalid index is ignored.'}]})}})
+        ai = AI(AIConfig(provider='ollama', model='local', base_url='http://pc:11434'),
+                transport=httpx.MockTransport(respond))
+        picks = await ai.rank_loras('a person in a red raincoat', [
+            {'label': 'castle', 'tags': ['castle']},
+            {'label': 'raincoat', 'tags': ['raincoat']}
+        ], 2)
+        self.assertEqual([1], [p['index'] for p in picks])
+
+    async def test_semantic_rejects_excessive_caption_and_candidates(self):
+        ai = AI(AIConfig(provider='ollama', model='local', base_url='http://pc:11434'))
+        with self.assertRaises(AIError):
+            await ai.rank_loras('x' * 3001, [{'label': 'x'}])
+        with self.assertRaises(AIError):
+            await ai.rank_loras('caption', [{'label': 'x'}] * 41)
