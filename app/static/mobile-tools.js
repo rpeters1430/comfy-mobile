@@ -105,6 +105,7 @@
       ...(c.size ? { adviserSize: { ...c.size } } : {}),
       upscaler: c.fit?.upscaler || '',
       skipDetailers: Boolean(c.skipDetailers ?? c.skip_detailers),
+      ...(c.video ? { video: { ...c.video } } : {}),
       triggers: c.caption_suffix ? c.caption_suffix.split(',').map(t => t.trim()).filter(Boolean) : []
     };
   }
