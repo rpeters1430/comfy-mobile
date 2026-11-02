@@ -477,7 +477,10 @@ async function loadControls(wf, restored = null) {
     return;
   }
   if (!found.models.length && !found.loras.length && !found.samplers.length && !found.size && !found.captions.length) {
-    settingsLoadError('No editable settings were detected for this workflow.', wf);
+    // A runnable workflow without adjustable nodes is valid; do not block Generate.
+    controlsReady = true;
+    $('controls-box').classList.add('hide');
+    $('controls-state').textContent = '';
     return;
   }
   try {
