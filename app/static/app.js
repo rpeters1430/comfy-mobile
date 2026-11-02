@@ -330,23 +330,85 @@ function baseFamily() {
   return fams.size === 1 ? [...fams][0] : '';
 }
 
-function modelSelect(options, value, base, label) {
+function modelSelect(options, value, base, label, only = false) {
   const select = el('select', { 'aria-label': label });
-  select.append(...MobileTools.modelGroups(options, controls.families || {}, base, value)
+  select.append(...MobileTools.modelGroups(options, controls.families || {}, base, value, only)
     .map(g => el('optgroup', { label: g.label }, g.items.map(i => new Option(i.text, i.value)))));
   select.value = value;
   return select;
 }
 
-// A warning line under a LoRA picker, and the function that refreshes it when the pick changes.
+// A warning line under a LoRA picker (the pickers re-render when the pick changes).
 function loraFamilyNote(name, base) {
-  const note = el('small', { class: 'status', style: 'display:block' });
-  const set = n => {
-    const f = familyOf(n);
-    note.textContent = base && f && f !== base ? `⚠ Made for ${f}, so it won't work with this ${base} checkpoint.` : '';
-  };
-  set(name);
-  return [note, set];
+  const f = familyOf(name);
+  return el('small', { class: 'status', style: 'display:block' },
+    base && f && f !== base ? `⚠ Made for ${f}, so it won't work with this ${base} checkpoint.` : '');
+}
+
+/* LoRA trigger words and strengths: Civitai data via ModelHarbor (GET /api/loras/info), else a trigger guessed
+   from the LoRA's training tags. Optional: without it the pickers work as before. */
+const STRENGTH_KEY = 'image-studio-mobile:lora-strengths:v1';
+let loraInfo = {};
+function rememberedStrengths() { try { return JSON.parse(load(STRENGTH_KEY) || '{}'); } catch (e) { return {}; } }
+function rememberStrength(name, strength) { store(STRENGTH_KEY, JSON.stringify({ ...rememberedStrengths(), [name]: strength })); }
+// The strength you last used this LoRA at, else the creator's (median in its Civitai examples), else 1.
+function defaultStrength(name) { return rememberedStrengths()[name] ?? loraInfo[name]?.weight ?? 1.0; }
+
+async function loadLoraInfo(wf) {
+  try { loraInfo = (await api('/loras/info')).loras || {}; } catch (e) { return; }
+  if (selected !== wf || !controls) return;
+  // Civitai's base model fills in families that folder and file name don't give.
+  controls.families = controls.families || {};
+  for (const [name, x] of Object.entries(loraInfo)) if (x.family && !controls.families[name]) controls.families[name] = x.family;
+  renderControls();
+}
+
+function activeLoras(c) {
+  return [...controls.loras.map(l => c.loras[l.node]).filter(x => x?.on && x.strength > 0), ...c.extra];
+}
+
+// Trigger words of LoRAs in use that have exactly one and that the text lacks. LoRAs with several (one per
+// concept) get tap-to-add chips instead, since adding them all would mix every concept into the image.
+function pickedTriggers(text) {
+  if (!controls || !choices) return [];
+  const lower = text.toLowerCase();
+  const words = activeLoras(choices).map(x => loraInfo[x.name]?.triggers).filter(t => t?.length === 1).map(t => t[0]);
+  return [...new Set(words)].filter(t => !lower.includes(t.toLowerCase()));
+}
+function withPickedTriggers(text) { const t = pickedTriggers(text); return t.length ? [text, ...t].join(', ') : text; }
+
+function promptHas(word) { return $('prompt').value.toLowerCase().includes(word.toLowerCase()); }
+function togglePromptWord(word) {
+  const box = $('prompt');
+  if (promptHas(word)) {
+    const at = box.value.toLowerCase().indexOf(word.toLowerCase());
+    box.value = (box.value.slice(0, at) + box.value.slice(at + word.length)).replace(/\s*,\s*(,\s*)+/g, ', ').replace(/^\s*,\s*|\s*,\s*$/g, '');
+  } else box.value = box.value.trim() ? box.value.trim().replace(/,$/, '') + ', ' + word : word;
+}
+
+// Recommended strength and trigger words under a LoRA picker.
+function loraHints(choice) {
+  const x = loraInfo[choice.name];
+  if (!x) return null;
+  const line = text => el('small', { class: 'status', style: 'display:block' }, text);
+  const rows = [];
+  if (x.weight != null) rows.push(line(`Recommended strength ${x.weight} (the creator's Civitai examples)`));
+  const typed = selected?.takes_prompt || $('review-before').checked;
+  if (x.triggers.length === 1) {
+    const guess = x.guessed ? ' (guessed from its training tags)' : '';
+    rows.push(line(typed ? `Trigger “${x.triggers[0]}”${guess} is added to your prompt when you generate.`
+      : `Trigger “${x.triggers[0]}”${guess}: this workflow writes its own prompt, so tick “Review caption before rendering” to have it added.`));
+  } else if (x.triggers.length > 1) {
+    rows.push(line(selected?.takes_prompt ? 'Trigger words: tap the ones you want in your prompt.'
+      : 'Trigger words (this workflow writes its own prompt; type the ones you want into the reviewed caption):'));
+    rows.push(el('div', { class: 'aspects' }, x.triggers.map(word => {
+      const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(promptHas(word)) }, word);
+      if (selected?.takes_prompt) chip.onclick = () => { togglePromptWord(word); chip.setAttribute('aria-pressed', String(promptHas(word))); };
+      else chip.disabled = true;
+      return chip;
+    })));
+  }
+  return rows.length ? el('div', { style: 'margin-top:6px' }, rows) : null;
 }
 
 function savedControls() { try { return JSON.parse(load(CONTROLS_KEY) || '{}'); } catch (e) { return {}; } }
@@ -414,6 +476,7 @@ async function loadControls(wf, restored = null) {
   $('controls-box').classList.remove('hide');
   $('auto-loras-row').classList.toggle('hide', !controls.can_add_lora);
   renderControls();
+  if (controls.loras.length || controls.can_add_lora) loadLoraInfo(wf);
 }
 
 function strengthRow(choice, onChange) {
@@ -451,12 +514,13 @@ function renderControls() {
 
   for (const l of controls.loras) {
     const choice = choices.loras[l.node];
-    const select = modelSelect(controls.lora_options, choice.name, base, 'LoRA');
-    const [warn, setWarn] = loraFamilyNote(choice.name, base);
+    const select = modelSelect(controls.lora_options, choice.name, base, 'LoRA', true);
+    const warn = loraFamilyNote(choice.name, base);
     const toggle = el('button', { class: 'ghost', type: 'button' }, choice.on ? 'On' : 'Off');
     const box = el('div', { class: 'lora' + (choice.on ? '' : ' off') });
     const update = () => { saveControls(); renderSummary(); };
-    select.onchange = () => { choice.name = select.value; setWarn(choice.name); update(); };
+    const strength = () => { rememberStrength(choice.name, choice.strength); update(); };
+    select.onchange = () => { choice.name = select.value; choice.strength = defaultStrength(choice.name); update(); renderControls(); };
     toggle.onclick = () => {
       choice.on = !choice.on;
       toggle.textContent = choice.on ? 'On' : 'Off';
@@ -464,21 +528,22 @@ function renderControls() {
       update();
     };
     box.append(el('div', { class: 'row between' }, el('label', { style: 'margin:0' }, 'LoRA'), toggle), select, warn,
-      el('div', { class: 'row' }, ...strengthRow(choice, update)));
+      el('div', { class: 'row' }, ...strengthRow(choice, strength)), loraHints(choice));
     rows.push(box);
   }
 
   if (controls.can_add_lora) {
     choices.extra.forEach((choice, i) => {
-      const select = modelSelect(controls.lora_options, choice.name, base, `Extra LoRA ${i + 1}`);
-      const [warn, setWarn] = loraFamilyNote(choice.name, base);
+      const select = modelSelect(controls.lora_options, choice.name, base, `Extra LoRA ${i + 1}`, true);
+      const warn = loraFamilyNote(choice.name, base);
       const remove = el('button', { class: 'ghost', type: 'button', 'aria-label': 'Remove LoRA' }, '✕');
       const update = () => { saveControls(); renderSummary(); };
-      select.onchange = () => { choice.name = select.value; setWarn(choice.name); update(); };
+      const strength = () => { rememberStrength(choice.name, choice.strength); update(); };
+      select.onchange = () => { choice.name = select.value; choice.strength = defaultStrength(choice.name); update(); renderControls(); };
       remove.onclick = () => { choices.extra.splice(i, 1); update(); renderControls(); };
       rows.push(el('div', { class: 'lora' },
         el('div', { class: 'row between' }, el('label', { style: 'margin:0' }, `Extra LoRA ${i + 1}`), remove),
-        select, warn, el('div', { class: 'row' }, ...strengthRow(choice, update))));
+        select, warn, el('div', { class: 'row' }, ...strengthRow(choice, strength)), loraHints(choice)));
     });
     if (choices.extra.length < MAX_EXTRA_LORAS && controls.lora_options.length) {
       const add = el('button', { class: 'ghost', type: 'button', style: 'margin-top:10px;width:100%' }, '+ Add another LoRA');
@@ -486,7 +551,7 @@ function renderControls() {
         const free = name => !choices.extra.some(x => x.name === name) && !Object.values(choices.loras).some(l => l.name === name);
         const unused = controls.lora_options.find(name => free(name) && (!base || familyOf(name) === base))
           || controls.lora_options.find(free) || controls.lora_options[0];
-        choices.extra.push({ name: unused, strength: 1.0 });
+        choices.extra.push({ name: unused, strength: defaultStrength(unused) });
         saveControls(); renderSummary(); renderControls();
       };
       rows.push(add);
@@ -494,8 +559,12 @@ function renderControls() {
   }
 
   if (controls.size) rows.push(sizeSection(() => { saveControls(); renderSummary(); }));
+  // With no full-generation pass the first refine pass re-draws an input photo (image-to-image).
+  const fromPhoto = !controls.samplers.some(smp => smp.role === 'base') && controls.samplers[0];
   for (const smp of controls.samplers) {
-    const title = smp.role === 'refine' ? `Refiner (${smp.class})` : controls.samplers.length > 1 ? `Base sampler (${smp.class})` : 'Sampler';
+    const title = smp === fromPhoto ? 'Image-to-image (denoise sets how much changes)'
+      : smp.role === 'refine' ? (fromPhoto ? 'Hi-res pass' : `Refiner (${smp.class})`)
+      : controls.samplers.length > 1 ? `Base sampler (${smp.class})` : 'Sampler';
     rows.push(samplerSection(smp, title, () => { saveControls(); renderSummary(); }));
   }
   for (const cap of controls.captions) rows.push(captionSection(cap, () => { saveControls(); renderSummary(); }));
@@ -778,6 +847,11 @@ $('form').onsubmit = async event => {
       if (params.review) params.review = { ...params.review, positive: withTriggers(params.review.positive, auto) };
       else params.prompt = withTriggers(params.prompt, auto);
       showToast(auto.label, 6000);
+    }
+    // Under an Adviser approval the job must match what was approved, so nothing is added (as for Auto LoRAs).
+    if (stage === 'render' && !approval) {
+      if (params.review) params.review = { ...params.review, positive: withPickedTriggers(params.review.positive) };
+      else if (params.prompt) params.prompt = withPickedTriggers(params.prompt);
     }
     if (!approval && stage === 'render' && $('check-settings').checked) {
       if (!await checkSettings({ ...params, seed: base })) return;
@@ -1499,7 +1573,8 @@ function captionEditor(job, outputs) {
     try {
       // Suggestions use the current workflow's settings, so only when this caption came from it.
       const auto = selected?.id === job.workflowId ? await suggestLoras(positive.value, job.controls || {}) : null;
-      const approved = { positive: withTriggers(positive.value, auto), negative: negative.value };
+      const same = selected?.id === job.workflowId;
+      const approved = { positive: withTriggers(same ? withPickedTriggers(positive.value) : positive.value, auto), negative: negative.value };
       for (let i = 0; i < count; i++) {
         await submitJob({ ...job, id: undefined, finished: false, stage: 'render',
           review: approved, seed: i === 0 ? job.seed : randomSeed(), controls: withAutoLoras(job.controls || {}, auto),

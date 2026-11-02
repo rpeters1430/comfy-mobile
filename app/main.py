@@ -25,7 +25,7 @@ if __package__:
     from .progress import ProgressTracker, listen
     from .settings_check import check as check_settings
     from .settings_check import LABELS, SPEED, family
-    from . import lora_suggest
+    from . import lora_info, lora_suggest
 else:
     from adviser import Adviser, fingerprint
     from adviser_ai import AI, AIError
@@ -42,7 +42,7 @@ else:
     from progress import ProgressTracker, listen
     from settings_check import check as check_settings
     from settings_check import LABELS, SPEED, family
-    import lora_suggest
+    import lora_info, lora_suggest
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
@@ -58,6 +58,9 @@ preset_store = PresetStore(DATA_DIR)
 adviser = Adviser(DATA_DIR)
 wake_pc = WakePC(os.getenv('WOL_MAC', ''), os.getenv('WOL_BROADCAST', ''))
 push = Push(DATA_DIR, os.getenv('PUSH_CONTACT','mailto:image-studio@localhost'))
+# Optional ModelHarbor on the same network: its Civitai matches give LoRA trigger words and strengths.
+MODELHARBOR = os.getenv('MODELHARBOR_URL', '').rstrip('/')
+MODELHARBOR_TOKEN = os.getenv('MODELHARBOR_TOKEN', '')
 log = logging.getLogger('image-studio')
 # Jobs are queued under this client id, and ComfyUI sends their progress only to it.
 CLIENT_ID = 'image-studio-mobile'
@@ -483,6 +486,52 @@ async def suggest_loras(body: LoraSuggestRequest, authorization: str | None = He
     gate = asyncio.Semaphore(8)
     profiles = await asyncio.gather(*(lora_profile(n, gate) for n in names))
     return {'suggestions': lora_suggest.suggest(body.text, profiles, body.limit)}
+
+_harbor_cache = {'at': 0.0, 'records': []}
+HARBOR_TTL = 300
+HARBOR_MAX_BYTES = 20_000_000
+
+async def harbor_records():
+    """ModelHarbor's inventory, cached for five minutes; [] when it is not configured or unreachable."""
+    if not (MODELHARBOR and MODELHARBOR_TOKEN):
+        return []
+    if time.monotonic() - _harbor_cache['at'] < HARBOR_TTL:
+        return _harbor_cache['records']
+    try:
+        async with _http_client.stream('GET', MODELHARBOR + '/api/models', headers={'X-ModelHarbor-Token': MODELHARBOR_TOKEN},
+                                       timeout=httpx.Timeout(10.0, connect=3.0)) as response:
+            response.raise_for_status()
+            body = bytearray()
+            async for chunk in response.aiter_bytes():
+                body.extend(chunk)
+                if len(body) > HARBOR_MAX_BYTES:
+                    raise ValueError('ModelHarbor response too large')
+        records = json.loads(body)
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning('ModelHarbor unavailable: %s', e)
+        records = _harbor_cache['records']  # keep the last good copy; try again after the TTL
+    _harbor_cache.update(at=time.monotonic(), records=records if isinstance(records, list) else [])
+    return _harbor_cache['records']
+
+@app.get('/api/loras/info')
+async def loras_info(authorization: str | None = Header(default=None)):
+    """Per LoRA: Civitai trigger words, recommended strength and family, else a trigger guessed from training tags."""
+    auth(authorization)
+    info = await get_object_info()
+    # The same list the LoRA pickers show (see find_controls), loose copies included.
+    names = _options(info, 'LoraLoaderModelOnly', 'lora_name') or _options(info, 'LoraLoader', 'lora_name')
+    found = lora_info.match(names, await harbor_records())
+    gate = asyncio.Semaphore(8)
+    guess = [n for n in names if not found.get(n, {}).get('triggers')]
+    profiles = dict(zip(guess, await asyncio.gather(*(lora_profile(n, gate) for n in guess))))
+    out = {}
+    for name in names:
+        entry = dict(found.get(name) or {'family': '', 'base_model': None, 'triggers': [], 'weight': None, 'url': None})
+        entry['source'] = 'civitai' if name in found else None
+        if not entry['triggers'] and profiles.get(name, {}).get('trigger'):
+            entry['triggers'], entry['guessed'] = [profiles[name]['trigger']], True
+        out[name] = entry
+    return {'loras': out, 'modelharbor': bool(MODELHARBOR and MODELHARBOR_TOKEN)}
 
 def job_intent(job):
     return hashlib.sha256(json.dumps(job.model_dump(exclude={'adviser_token','adviser_index'}),sort_keys=True,separators=(',',':')).encode()).hexdigest()

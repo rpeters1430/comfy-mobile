@@ -6,11 +6,11 @@ everything else is a message. Unknown model families get no family-specific advi
 import re
 
 LABELS = {'sd15': 'SD 1.5', 'sdxl': 'SDXL', 'ponyv7': 'Pony V7', 'krea2': 'Krea 2', 'qwen': 'Qwen Image', 'wan': 'Wan',
-          'zimage': 'Z-Image', 'flux': 'Flux', 'moss': 'MOSS', 'ltx': 'LTX'}
+          'zimage': 'Z-Image', 'flux': 'Flux', 'moss': 'MOSS', 'ltx': 'LTX', 'sd2': 'SD 2.x'}
 # The model folders this ComfyUI is organised by decide first; keywords cover files kept at the root.
 FOLDERS = {'sd15': 'sd15', 'sdxl': 'sdxl', 'pony': 'sdxl', 'ponyv7': 'ponyv7', 'krea2': 'krea2', 'qwen': 'qwen',
-           'wan': 'wan', 'zimage': 'zimage', 'flux': 'flux', 'moss': 'moss', 'ltx': 'ltx'}
-KEYWORDS = [('ponyv7', r'pony_?v7'), ('sd15', r'sd_?1\.?5|v1-5'), ('sdxl', r'sdxl|pony|illustrious'), ('krea2', r'krea2'),
+           'wan': 'wan', 'zimage': 'zimage', 'flux': 'flux', 'moss': 'moss', 'ltx': 'ltx', 'sd2': 'sd2'}
+KEYWORDS = [('ponyv7', r'pony_?v7'), ('sd15', r'sd_?1\.?5|v1-5'), ('sdxl', r'sdxl|pony|illustrious'), ('sd2', r'sd_?2\.?[01]|v2-[01]'), ('krea2', r'krea2'),
             ('qwen', r'qwen'), ('wan', r'wan2'), ('zimage', r'z_?image'), ('flux', r'flux'), ('moss', r'moss'),
             ('ltx', r'ltx'), ('sdxl', r'(?<![a-z])xl|xl(?![a-z])')]
 SPEED = re.compile(r'turbo|lightning|lightx2v|hyper|lcm|dmd|schnell|distill|flash|\d+[-_ ]?steps?', re.I)
@@ -24,6 +24,17 @@ def family(name):
     if len(parts) > 1 and parts[0] in FOLDERS:
         return FOLDERS[parts[0]]
     return next((fam for fam, pattern in KEYWORDS if re.search(pattern, parts[-1])), None)
+
+# Civitai's base model names, for files whose folder and name don't say. The first pattern that matches wins.
+CIVITAI_BASES = [('ponyv7', r'^pony v7'), ('sdxl', r'^(sdxl|pony|illustrious|noobai)'), ('sd15', r'^sd 1\.'),
+                 ('sd2', r'^sd 2\.'), ('krea2', r'^krea'), ('flux', r'^flux'), ('qwen', r'^qwen'), ('wan', r'^wan'),
+                 ('ltx', r'^ltx'), ('moss', r'^moss'), ('zimage', r'^z ?image')]
+
+
+def civitai_family(base):
+    """The LABELS text for a Civitai base model ("SDXL 1.0" -> "SDXL"), or ''."""
+    base = base.strip().lower()
+    return next((LABELS[fam] for fam, pattern in CIVITAI_BASES if re.search(pattern, base)), '')
 
 
 def short(name):
