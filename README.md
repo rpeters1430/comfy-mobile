@@ -69,6 +69,12 @@ The example broadcast is for `192.168.8.0/24`. Configure Wake-on-LAN on the PC's
 
 Docker bridge networking may block LAN broadcast. On a Linux NAS, if necessary use `network_mode: host` on the service and remove its `ports` mapping. Preserve the current `COMFYUI_URL`, `.env`, volumes and data. The app continues to listen on port 8095. Check your NAS firewall/network configuration before changing networking.
 
+## Reviewed-caption LoRA suggestions
+
+For Image → Prompt → Image workflows, select **Review caption before rendering**, generate the caption, and open the resulting caption editor. Tap **Suggest LoRAs for this caption** to check installed, architecture-compatible LoRAs against the edited positive caption. Matches use distinguishing local training tags and ModelHarbor's verified training family, activation words, and example-derived strengths when available. Suggested LoRAs start **unchecked**: choose them, adjust their 0–2 strengths and optional activation word, then generate. Changing the caption clears stale suggestions; no model is downloaded or replaced.
+
+The older **Auto-add matching LoRAs** switch remains available for users who want that convenience. Explicit caption-editor selections override automatic matches for that render. Cross-variant SDXL LoRAs still require judgment: Pony, Illustrious, and standard SDXL may load but behave differently. No suggestion guarantees a particular image result.
+
 ## LoRA trigger words and strengths (optional)
 
 If you run ModelHarbor, point the app at it and LoRAs get their Civitai trigger words, a recommended strength and their base model:
