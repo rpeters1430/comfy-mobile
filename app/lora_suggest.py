@@ -120,3 +120,35 @@ def enrich(picks, verified):
         pick['trigger_options'] = triggers[:10]
         output.append(pick)
     return output
+
+
+def shortlist(text, profiles, limit=40):
+    """Prioritize relevant candidate descriptions across the full installed library.
+
+    Deterministic, bounded: direct tag or filename-word overlap scores first.
+    If there are fewer matches than slots, sample the remainder across the library
+    rather than sending only the first alphabetical model paths.
+    """
+    limit = max(0, min(int(limit), 40))
+    if not limit:
+        return []
+    query = _norm(text)
+    ranked = []
+    for pos, p in enumerate(profiles):
+        words = p.get('words', [])
+        terms = p.get('terms', [])
+        score = sum(3 for w in set(words) if len(w) > 3 and _has(query, w))
+        score += sum(1 for t in set(terms[:25]) if len(t) > 3 and _has(query, t))
+        ranked.append((score, pos, p))
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    matched = [p for score, _, p in ranked if score > 0][:limit]
+    if len(matched) == limit:
+        return matched
+    selected = {p['name'] for p in matched}
+    remaining = [p for p in profiles if p['name'] not in selected]
+    count = min(limit - len(matched), len(remaining))
+    if count:
+        # Even coverage avoids an alphabetical bias when no lexical clue exists.
+        slots = [int((i + 0.5) * len(remaining) / count) for i in range(count)]
+        matched += [remaining[min(len(remaining)-1, i)] for i in slots]
+    return matched
