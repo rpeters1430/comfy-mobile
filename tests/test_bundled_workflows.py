@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class BundledWorkflowTests(unittest.TestCase):
     def test_workflows(self):
         files = sorted((ROOT / 'workflows').glob('*.json'))
-        self.assertEqual(len(files), 32)
+        self.assertEqual(len(files), 33)
         for path in files:
             with self.subTest(workflow=path.name):
                 obj = json.loads(path.read_text(encoding='utf-8'))

@@ -107,6 +107,24 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(("success", "pending", None), (body[done]["status"], body[pending]["status"], body[offline]))
         self.assertEqual(401, self.client.post("/api/jobs/outputs", json={"ids": []}).status_code)
 
+    def test_lora_info_merges_modelharbor_and_guessed_triggers(self):
+        from unittest.mock import AsyncMock, patch
+        info = {"LoraLoaderModelOnly": {"input": {"required": {"lora_name": [["SDXL/eyes.safetensors", "techwear.safetensors"]]}}}}
+        harbor = [{"device": "pc:comfyui", "path": "C:/m/loras/SDXL/eyes.safetensors", "sha256": "a" * 64,
+                   "source": {"provider": "civitai", "base_model": "SDXL 1.0", "trained_words": ["perfecteyes"], "weight": 0.8}}]
+        meta = {"ss_tag_frequency": '{"t": {"techwear": 9, "jacket": 5}}'}
+        main._lora_profiles.clear()
+        with patch.object(main, "get_object_info", AsyncMock(return_value=info)), \
+             patch.object(main, "harbor_records", AsyncMock(return_value=harbor)), \
+             patch.object(main, "request", AsyncMock(return_value=meta)):
+            r = self.client.get("/api/loras/info", headers={"Authorization": "Bearer secret123"})
+        main._lora_profiles.clear()
+        loras = r.json()["loras"]
+        self.assertEqual((loras["SDXL/eyes.safetensors"]["triggers"], loras["SDXL/eyes.safetensors"]["weight"],
+                          loras["SDXL/eyes.safetensors"]["family"]), (["perfecteyes"], 0.8, "SDXL"))
+        self.assertEqual((loras["techwear.safetensors"]["triggers"], loras["techwear.safetensors"]["guessed"]), (["techwear"], True))
+        self.assertEqual(401, self.client.get("/api/loras/info").status_code)
+
     def test_push_endpoints_need_auth(self):
         for method, path in (("get", "/api/push/key"), ("post", "/api/push/subscribe"), ("post", "/api/push/test")):
             self.assertEqual(401, getattr(self.client, method)(path).status_code if method == "get"

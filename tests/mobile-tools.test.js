@@ -89,6 +89,11 @@ test('model groups put the base family first, drop root duplicates and label odd
   assert.deepEqual(fv.map(g => g.items.map(i => i.value)), [['SDXL/fv.safetensors']]);
   // The current value survives deduplication even when it is the root copy.
   assert.equal(modelGroups(options, families, 'SDXL', 'juggernaut.safetensors')[0].items[1].value, 'juggernaut.safetensors');
+  // LoRA pickers list only the checkpoint's family and unknown files, plus the current pick even if it doesn't fit.
+  assert.deepEqual(modelGroups(options, families, 'SDXL', '', true).map(g => g.label), ['✓ SDXL', 'Unknown family']);
+  assert.deepEqual(modelGroups(options, families, 'SDXL', 'Krea2/tessa.safetensors', true).map(g => g.label), ['✓ SDXL', 'Krea 2', 'Unknown family']);
+  // Without a known base family nothing is hidden.
+  assert.equal(modelGroups(options, families, '', '', true).length, 3);
 });
 
 test('choicesFromJob restores form choices from recorded job controls', () => {

@@ -67,6 +67,17 @@ The example broadcast is for `192.168.8.0/24`. Configure Wake-on-LAN on the PC's
 
 Docker bridge networking may block LAN broadcast. On a Linux NAS, if necessary use `network_mode: host` on the service and remove its `ports` mapping. Preserve the current `COMFYUI_URL`, `.env`, volumes and data. The app continues to listen on port 8095. Check your NAS firewall/network configuration before changing networking.
 
+## LoRA trigger words and strengths (optional)
+
+If you run ModelHarbor, point the app at it and LoRAs get their Civitai trigger words, a recommended strength and their base model:
+
+```dotenv
+MODELHARBOR_URL=http://192.168.8.137:8099
+MODELHARBOR_TOKEN=<ModelHarbor's MODELHARBOR_AGENT_TOKEN>
+```
+
+LoRA pickers then list only LoRAs for the chosen checkpoint's family. A LoRA with one trigger word has it added to your prompt when you generate; one with several shows them as chips to tap into the prompt. Picking a LoRA sets the strength you last used it at, else the creator's recommended strength. Without ModelHarbor, a trigger word guessed from the LoRA's training tags is used where there is one.
+
 ## UGREEN NAS
 
 Keep `.env` on the NAS (never commit it). Set `COMFYUI_URL` and `STUDIO_TOKEN`. Create the data folder once (the container runs as uid 1000), then run:

@@ -63,8 +63,9 @@
       ['Job ID', job.id || 'Not recorded']];
   }
   // Model/LoRA picker groups: by model family (server-supplied), the base model's family first, and the same
-  // file kept in two folders listed once, preferring the copy inside a folder.
-  function modelGroups(options, families, base, keep) {
+  // file kept in two folders listed once, preferring the copy inside a folder. `only` (LoRA pickers) leaves out
+  // files known to be for another family than `base`, except the current pick; unknown families stay.
+  function modelGroups(options, families, base, keep, only = false) {
     const parts = o => String(o).split(/[\\/]/);
     const stem = o => parts(o).pop().replace(/\.(safetensors|ckpt|pt|gguf)$/i, '');
     const fam = o => families[o] || '';
@@ -78,6 +79,7 @@
     const groups = new Map();
     for (const o of options) {
       if (seen.get(stem(o).toLowerCase()) !== o) continue;
+      if (only && base && fam(o) && fam(o) !== base && o !== keep) continue;
       const folder = parts(o).length > 1 ? parts(o)[0] : '';
       const text = stem(o).replace(/_/g, ' ') + (folder && folder.toLowerCase() !== fam(o).toLowerCase() ? ` · ${folder}` : '');
       if (!groups.has(fam(o))) groups.set(fam(o), []);
