@@ -1590,15 +1590,92 @@ function captionEditor(job, outputs) {
   positive.value = text.positive; negative.value = text.negative;
   const runs = el('select', { 'aria-label': 'Render count' }, [1, 2, 4, 8].map(n => new Option(String(n), String(n))));
   const status = el('p', { class: 'status', role: 'status' });
+  const recommendations = el('div', { class: 'lora' });
+  const recommend = el('button', { class: 'secondary', type: 'button' }, 'Suggest LoRAs for this caption');
+  const recommendStatus = el('p', { class: 'status', role: 'status' },
+    'Review suggestions before adding anything. ModelHarbor metadata is used when available.');
+  let recommended = null;
+  let revision = 0;
+  positive.oninput = () => {
+    revision++;
+    recommended = null;
+    recommendations.replaceChildren();
+    recommendStatus.textContent = 'Caption changed. Refresh suggestions before applying them.';
+  };
+  recommend.onclick = async () => {
+    if (!positive.value.trim()) return void (recommendStatus.textContent = 'Enter a caption first.');
+    if (selected?.id !== job.workflowId || !controls?.can_add_lora)
+      return void (recommendStatus.textContent = 'Select the original workflow with extra LoRA support first.');
+    const base = baseFamily();
+    if (!base) return void (recommendStatus.textContent = 'Checkpoint family is unknown; not guessing compatibility.');
+    const current = job.controls || {};
+    const extras = current.extra_loras || [];
+    const limit = Math.min(MAX_EXTRA_LORAS - extras.length, 4);
+    if (limit < 1) return void (recommendStatus.textContent = 'No free LoRA slots.');
+    const exclude = [...extras.map(x => x.name), ...controls.loras.map(l => current.loras?.[l.node]?.name || l.value)];
+    const requestRevision = ++revision, caption = positive.value;
+    recommended = null;
+    recommendations.replaceChildren();
+    recommend.disabled = true;
+    recommendStatus.textContent = 'Matching caption against installed LoRAs…';
+    try {
+      const { suggestions = [] } = await api('/loras/suggest', { method: 'POST',
+        json: { text: caption, base, exclude, limit } });
+      if (requestRevision !== revision || selected?.id !== job.workflowId) return;
+      recommended = { caption, rows: [] };
+      if (!suggestions.length) {
+        recommendStatus.textContent = 'No distinctive, compatible LoRA match found. Rendering without additions is fine.';
+        return;
+      }
+      for (const s of suggestions) {
+        const box = el('input', { type: 'checkbox', 'aria-label': 'Use ' + fileLabel(s.name) });
+        const weight = el('input', { type: 'number', min: '0', max: '2', step: '0.05',
+          value: String(s.strength || 0.7), 'aria-label': 'Strength for ' + fileLabel(s.name) });
+        const trigger = el('select', { 'aria-label': 'Trigger for ' + fileLabel(s.name) });
+        trigger.append(new Option('No trigger word', ''));
+        const triggers = s.trigger_options?.length ? s.trigger_options : s.trigger ? [s.trigger] : [];
+        for (const word of triggers) trigger.append(new Option(word, word));
+        trigger.value = s.trigger || '';
+        recommended.rows.push({ suggestion: s, box, weight, trigger });
+        recommendations.append(el('div', { class: 'lora' },
+          el('label', {}, box, ' ' + fileLabel(s.name)),
+          el('small', { class: 'status', style: 'display:block' },
+            'Matched: ' + (s.matched || []).join(', ') +
+            (s.base_model ? ' · Trained for ' + s.base_model : ' · Training-base metadata unavailable')),
+          el('label', {}, 'Strength'), weight,
+          el('label', {}, 'Optional trigger word'), trigger));
+      }
+      recommendStatus.textContent = 'Select the LoRAs you want, adjust strength or trigger, then generate. None are selected by default.';
+    } catch (e) {
+      if (requestRevision === revision) recommendStatus.textContent = 'Suggestions unavailable: ' + e.message;
+    } finally { recommend.disabled = false; }
+  };
   const generate = el('button', { class: 'secondary', type: 'button' }, 'Generate with edited caption');
   generate.onclick = async () => {
     if (!positive.value.trim()) { status.textContent = 'Enter a positive caption.'; return; }
     generate.disabled = true;
     const count = Number(runs.value);
     try {
-      // Suggestions use the current workflow's settings, so only when this caption came from it.
-      const auto = selected?.id === job.workflowId ? await suggestLoras(positive.value, job.controls || {}) : null;
       const same = selected?.id === job.workflowId;
+      // Reviewed suggestions require explicit checkboxes; do not silently auto-add other LoRAs.
+      // Editing the caption invalidates prior matches.
+      let auto = null;
+      if (recommended && recommended.caption === positive.value && same) {
+        const chosen = recommended.rows.filter(r => r.box.checked);
+        const remaining = MAX_EXTRA_LORAS - (job.controls?.extra_loras || []).length;
+        if (chosen.length > remaining) throw Error('Too many LoRAs selected for the free slots.');
+        const picks = chosen.map(r => {
+          const strength = Number(r.weight.value);
+          if (!Number.isFinite(strength) || strength < 0 || strength > 2) throw Error('LoRA strength must be between 0 and 2.');
+          return { name: r.suggestion.name, strength, trigger: r.trigger.value };
+        });
+        const lower = positive.value.toLowerCase();
+        auto = { loras: picks.map(({ name, strength }) => ({ name, strength })),
+          triggers: [...new Set(picks.map(x => x.trigger).filter(t => t && !lower.includes(t.toLowerCase())))],
+          label: 'Reviewed LoRAs: ' + (picks.map(x => fileLabel(x.name)).join(', ') || 'none') };
+      } else {
+        auto = same ? await suggestLoras(positive.value, job.controls || {}) : null;
+      }
       const approved = { positive: withTriggers(same ? withPickedTriggers(positive.value) : positive.value, auto), negative: negative.value };
       for (let i = 0; i < count; i++) {
         await submitJob({ ...job, id: undefined, finished: false, stage: 'render',
@@ -1624,7 +1701,7 @@ function captionEditor(job, outputs) {
   };
   return el('div', { class: 'caption-editor' }, el('h3', {}, 'Review caption'),
     el('label', {}, 'Positive caption'), positive, el('label', {}, 'Negative caption'), negative,
-    el('label', {}, 'Runs'), runs, generate, research, status);
+    el('label', {}, 'Runs'), runs, recommend, recommendStatus, recommendations, generate, research, status);
 }
 
 /* ---------- NAS job links and PC wake ---------- */

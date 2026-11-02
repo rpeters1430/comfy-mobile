@@ -481,11 +481,17 @@ async def suggest_loras(body: LoraSuggestRequest, authorization: str | None = He
     info = await get_object_info()
     used = {lora_suggest.filename(n) for n in body.exclude}
     # Speed LoRAs change how many steps a run needs, so they are never added behind the user's back.
-    names = [n for n in lora_suggest.unique(_options(info, 'LoraLoaderModelOnly', 'lora_name'))
-             if LABELS.get(family(n)) == body.base and not SPEED.search(n) and lora_suggest.filename(n) not in used]
+    options = _options(info, 'LoraLoaderModelOnly', 'lora_name') or _options(info, 'LoraLoader', 'lora_name')
+    # ModelHarbor's verified base-model family takes precedence over path guesses.
+    # An unknown family is not silently assumed compatible.
+    verified = lora_info.match(options, await harbor_records())
+    names = [n for n in lora_suggest.unique(options)
+             if (verified.get(n, {}).get('family') or LABELS.get(family(n))) == body.base
+             and not SPEED.search(n) and lora_suggest.filename(n) not in used]
     gate = asyncio.Semaphore(8)
     profiles = await asyncio.gather(*(lora_profile(n, gate) for n in names))
-    return {'suggestions': lora_suggest.suggest(body.text, profiles, body.limit)}
+    picks = lora_suggest.suggest(body.text, profiles, body.limit)
+    return {'suggestions': lora_suggest.enrich(picks, verified)}
 
 _harbor_cache = {'at': 0.0, 'records': []}
 HARBOR_TTL = 300

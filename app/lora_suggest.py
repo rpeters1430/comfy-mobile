@@ -97,3 +97,26 @@ def unique(names):
         if filename(name) not in best or len(re.split(r'[\\/]', name)) > len(re.split(r'[\\/]', best[filename(name)])):
             best[filename(name)] = name
     return [n for n in names if best[filename(n)] == n]
+
+
+def enrich(picks, verified):
+    """Apply hash-verified ModelHarbor metadata without inventing trigger words.
+
+    Multiple concept triggers require explicit user selection, not automatic injection.
+    """
+    output = []
+    for candidate in picks:
+        pick = dict(candidate)
+        entry = verified.get(pick['name']) or {}
+        triggers = entry.get('triggers') or []
+        if len(triggers) == 1:
+            pick['trigger'] = triggers[0]
+        elif len(triggers) > 1:
+            pick['trigger'] = None
+        if entry.get('weight') is not None:
+            pick['strength'] = entry['weight']
+        pick['base_model'] = entry.get('base_model')
+        pick['source'] = 'civitai' if entry else 'training tags'
+        pick['trigger_options'] = triggers[:10]
+        output.append(pick)
+    return output
