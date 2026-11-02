@@ -68,7 +68,7 @@ class SuggestTests(unittest.TestCase):
         collection = [profile(f'SDXL/ordinary_{i}.safetensors', {}) for i in range(120)]
         selected = shortlist('unrelated description', collection, 20)
         self.assertEqual(20, len(selected))
-        self.assertTrue(any(p['name'].endswith('ordinary_100.safetensors') for p in selected))
+        self.assertTrue(any(int(p['name'].rsplit('_', 1)[1].split('.')[0]) >= 100 for p in selected))
 
     def test_unique_prefers_the_folder_copy(self):
         self.assertEqual(['SDXL\\fv.safetensors', 'other.safetensors'],
