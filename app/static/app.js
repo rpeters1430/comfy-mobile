@@ -368,7 +368,11 @@ async function loadLoraInfo(wf) {
     if (x.family && x.source === 'civitai') controls.families[name] = x.family;
     else if (x.family && !controls.families[name]) controls.families[name] = x.family;
   }
-  renderControls();
+  try { renderControls(); }
+  catch (e) {
+    console.warn('LoRA metadata could not be displayed; retaining previously loaded settings', e);
+    $('controls-state').textContent = 'Some LoRA details could not be displayed. Basic settings remain available.';
+  }
 }
 
 function activeLoras(c) {
@@ -428,9 +432,32 @@ function saveControls() {
   store(CONTROLS_KEY, JSON.stringify(all));
 }
 
+function settingsLoadError(message, wf) {
+  if (selected !== wf) return;
+  controlsReady = false;
+  $('controls-box').classList.remove('hide');
+  $('controls-box').open = true;
+  $('controls').replaceChildren();
+  $('controls-summary').textContent = 'Settings unavailable';
+  $('controls-state').textContent = 'Could not load models and settings: ' + message;
+  $('controls-retry').classList.remove('hide');
+  $('form-error').textContent = 'Models & settings failed to load. Open the panel to retry.';
+}
+
+$('controls-retry').onclick = () => {
+  if (!selected) return;
+  loadControls(selected);
+};
+
 async function loadControls(wf, restored = null) {
   controls = choices = null;
-  $('controls-box').classList.add('hide');
+  controlsReady = false;
+  $('controls-box').classList.remove('hide');
+  $('controls-box').open = true;
+  $('controls').replaceChildren();
+  $('controls-summary').textContent = 'Loading…';
+  $('controls-state').textContent = 'Loading model and sampler options…';
+  $('controls-retry').classList.add('hide');
   $('auto-loras-row').classList.add('hide');
   let found;
   try {
@@ -442,9 +469,17 @@ async function loadControls(wf, restored = null) {
     $('review-before').disabled = !captionCapability?.supported;
     $('caption-review-hint').textContent = captionCapability?.supported ? 'Preview the caption, edit it, then generate.' : captionCapability?.reason || 'Caption review is unavailable for this workflow.';
     found = validation.controls;
-    controlsReady = true;
-  } catch (e) { if (selected === wf) $('form-error').textContent = 'Could not load settings: ' + e.message; return; }
-  if (selected !== wf || !found || (!found.models.length && !found.loras.length && !found.samplers.length && !found.size && !found.captions.length)) return;
+  } catch (e) { settingsLoadError(e.message, wf); return; }
+  if (selected !== wf) return;
+  if (!found || !Array.isArray(found.models) || !Array.isArray(found.loras) ||
+      !Array.isArray(found.samplers) || !Array.isArray(found.captions)) {
+    settingsLoadError('The workflow validation response did not contain a usable controls list.', wf);
+    return;
+  }
+  if (!found.models.length && !found.loras.length && !found.samplers.length && !found.size && !found.captions.length) {
+    settingsLoadError('No editable settings were detected for this workflow.', wf);
+    return;
+  }
   controls = found;
   const saved = restored || savedControls()[wf.id] || {};
   const loraOk = name => controls.lora_options.includes(name);
@@ -482,9 +517,18 @@ async function loadControls(wf, restored = null) {
         values[field] = value;
     choices.caption[cap.node] = values;
   }
-  $('controls-box').classList.remove('hide');
+  try {
+    renderControls();
+  } catch (e) {
+    console.error('Failed to render model controls', e);
+    settingsLoadError(e.message || 'Controls could not be displayed.', wf);
+    return;
+  }
+  if (selected !== wf) return;
+  controlsReady = true;
+  $('controls-state').textContent = '';
+  $('controls-retry').classList.add('hide');
   $('auto-loras-row').classList.toggle('hide', !controls.can_add_lora);
-  renderControls();
   if (controls.loras.length || controls.can_add_lora) loadLoraInfo(wf);
 }
 
