@@ -69,6 +69,12 @@ The example broadcast is for `192.168.8.0/24`. Configure Wake-on-LAN on the PC's
 
 Docker bridge networking may block LAN broadcast. On a Linux NAS, if necessary use `network_mode: host` on the service and remove its `ports` mapping. Preserve the current `COMFYUI_URL`, `.env`, volumes and data. The app continues to listen on port 8095. Check your NAS firewall/network configuration before changing networking.
 
+## Model-aware workflow guidance
+
+The Generate screen includes **Preview model-aware guidance**, a read-only check of the *current prepared render graph*: selected checkpoint, active LoRAs, sampler settings and generation/refinement context. Provide input photos first for workflows that need them. The preview reports warnings and optional trial values without altering any setting. The existing **Check settings before generating** approval dialog remains separate.
+
+Rule-based speed advice now distinguishes model names with explicit low-step counts from variants with an unknown schedule, for which it does not invent an 8-step target. Generic SDXL guidance is not forced onto Qwen/Wan CFG, and low-denoise image-to-image/detailer and partial advanced sampling passes do not receive full-generation step/CFG suggestions. These are conservative heuristics, **not verified author defaults**: use the AI settings review and published model documentation when fine-tuning. No changes are applied automatically by the new preview.
+
 ## Optional AI semantic LoRA matching
 
 The reviewed-caption LoRA picker now has **Use AI semantic matching**, **off by default**. If selected, tapping Suggest sends only the edited caption (up to 3000 characters) and descriptions of up to 40 installed, broad-family-compatible LoRAs to the AI provider already configured under **AI connection setup** (Ollama/OpenAI/Gemini/OpenRouter). It **does not send the image**. If a hosted provider is selected, the caption leaves your local network, so enable this only when appropriate. The AI returns ranked indices and short rationales; the server validates them against the supplied catalog. It never downloads LoRAs, sets strengths or silently adds anything. Every suggested LoRA remains unchecked until explicitly selected.
