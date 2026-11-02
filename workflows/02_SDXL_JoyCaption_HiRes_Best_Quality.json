@@ -1,8 +1,8 @@
 {
  "id": "2d447ebe-c65b-4503-8b0f-6754ea5ff52b",
  "revision": 0,
- "last_node_id": 28,
- "last_link_id": 49,
+ "last_node_id": 36,
+ "last_link_id": 69,
  "nodes": [
   {
    "id": 1,
@@ -869,7 +869,10 @@
      "type": "VAE",
      "links": [
       40,
-      44
+      44,
+      51,
+      56,
+      62
      ]
     }
    ],
@@ -1035,7 +1038,8 @@
      "links": [
       24,
       29,
-      43
+      43,
+      61
      ]
     }
    ],
@@ -1084,9 +1088,9 @@
      "name": "MODEL",
      "type": "MODEL",
      "links": [
-      30,
-      35,
-      42
+      42,
+      60,
+      67
      ]
     }
    ],
@@ -1303,7 +1307,8 @@
      "links": [
       31,
       36,
-      45
+      45,
+      63
      ]
     }
    ],
@@ -1461,7 +1466,8 @@
      "links": [
       32,
       37,
-      46
+      46,
+      64
      ]
     }
    ],
@@ -1528,7 +1534,7 @@
      "localized_name": "model",
      "name": "model",
      "type": "MODEL",
-     "link": 30
+     "link": 68
     },
     {
      "localized_name": "positive",
@@ -1609,7 +1615,7 @@
      "name": "LATENT",
      "type": "LATENT",
      "links": [
-      34
+      50
      ]
     }
    ],
@@ -1625,65 +1631,6 @@
     "dpmpp_2m_sde",
     "karras",
     1
-   ]
-  },
-  {
-   "id": 21,
-   "type": "LatentUpscaleBy",
-   "pos": [
-    1920,
-    520
-   ],
-   "size": [
-    270,
-    82
-   ],
-   "flags": {},
-   "order": 22,
-   "mode": 0,
-   "inputs": [
-    {
-     "localized_name": "samples",
-     "name": "samples",
-     "type": "LATENT",
-     "link": 34
-    },
-    {
-     "localized_name": "upscale_method",
-     "name": "upscale_method",
-     "type": "COMBO",
-     "widget": {
-      "name": "upscale_method"
-     },
-     "link": null
-    },
-    {
-     "localized_name": "scale_by",
-     "name": "scale_by",
-     "type": "FLOAT",
-     "widget": {
-      "name": "scale_by"
-     },
-     "link": null
-    }
-   ],
-   "outputs": [
-    {
-     "localized_name": "LATENT",
-     "name": "LATENT",
-     "type": "LATENT",
-     "links": [
-      38
-     ]
-    }
-   ],
-   "title": "Latent Upscale (1.25x)",
-   "properties": {
-    "Node name for S&R": "LatentUpscaleBy"
-   },
-   "widgets_values": [
-    "bicubic",
-    1.25
    ]
   },
   {
@@ -1705,7 +1652,7 @@
      "localized_name": "model",
      "name": "model",
      "type": "MODEL",
-     "link": 35
+     "link": 69
     },
     {
      "localized_name": "positive",
@@ -1723,7 +1670,7 @@
      "localized_name": "latent_image",
      "name": "latent_image",
      "type": "LATENT",
-     "link": 38
+     "link": 57
     },
     {
      "localized_name": "seed",
@@ -1801,7 +1748,7 @@
     5.5,
     "dpmpp_2m_sde",
     "karras",
-    0.38
+    0.33
    ]
   },
   {
@@ -2244,8 +2191,7 @@
      "name": "image",
      "type": "IMAGE",
      "links": [
-      48,
-      49
+      65
      ]
     },
     {
@@ -2345,7 +2291,7 @@
      "name": "image_b",
      "shape": 7,
      "type": "IMAGE",
-     "link": 48
+     "link": 58
     },
     {
      "localized_name": "compare_view",
@@ -2383,7 +2329,7 @@
      "localized_name": "images",
      "name": "images",
      "type": "IMAGE",
-     "link": 49
+     "link": 59
     },
     {
      "localized_name": "filename_prefix",
@@ -2434,6 +2380,724 @@
    ],
    "color": "#432",
    "bgcolor": "#653"
+  },
+  {
+   "id": 29,
+   "type": "VAEDecode",
+   "pos": [
+    1920,
+    1120
+   ],
+   "size": [
+    210,
+    46
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "samples",
+     "name": "samples",
+     "type": "LATENT",
+     "link": 50
+    },
+    {
+     "localized_name": "vae",
+     "name": "vae",
+     "type": "VAE",
+     "link": 51
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "IMAGE",
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      53
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecode"
+   },
+   "title": "Decode Base Pass",
+   "widgets_values": null
+  },
+  {
+   "id": 30,
+   "type": "UpscaleModelLoader",
+   "pos": [
+    1920,
+    1210
+   ],
+   "size": [
+    270,
+    60
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "localized_name": "UPSCALE_MODEL",
+     "name": "UPSCALE_MODEL",
+     "type": "UPSCALE_MODEL",
+     "links": [
+      52
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "UpscaleModelLoader"
+   },
+   "title": "Upscale Model (4x-UltraSharp)",
+   "widgets_values": [
+    "4x-UltraSharp.pth"
+   ]
+  },
+  {
+   "id": 31,
+   "type": "ImageUpscaleWithModel",
+   "pos": [
+    1920,
+    1310
+   ],
+   "size": [
+    240,
+    46
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "upscale_model",
+     "name": "upscale_model",
+     "type": "UPSCALE_MODEL",
+     "link": 52
+    },
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "link": 53
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "IMAGE",
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      54
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ImageUpscaleWithModel"
+   },
+   "title": "Upscale 4x (detail)",
+   "widgets_values": null
+  },
+  {
+   "id": 32,
+   "type": "ImageScaleBy",
+   "pos": [
+    1920,
+    1400
+   ],
+   "size": [
+    270,
+    82
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "link": 54
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "IMAGE",
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      55
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ImageScaleBy"
+   },
+   "title": "Resize to 1.25x of base",
+   "widgets_values": [
+    "lanczos",
+    0.3125
+   ]
+  },
+  {
+   "id": 33,
+   "type": "VAEEncode",
+   "pos": [
+    1920,
+    1520
+   ],
+   "size": [
+    210,
+    46
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "pixels",
+     "name": "pixels",
+     "type": "IMAGE",
+     "link": 55
+    },
+    {
+     "localized_name": "vae",
+     "name": "vae",
+     "type": "VAE",
+     "link": 56
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "LATENT",
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      57
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEEncode"
+   },
+   "title": "Encode for Hi-Res Pass",
+   "widgets_values": null
+  },
+  {
+   "id": 34,
+   "type": "UltralyticsDetectorProvider",
+   "pos": [
+    2830,
+    120
+   ],
+   "size": [
+    279.0767578125,
+    78
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model_name",
+     "name": "model_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "model_name"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "BBOX_DETECTOR",
+     "name": "BBOX_DETECTOR",
+     "type": "BBOX_DETECTOR",
+     "links": [
+      66
+     ]
+    },
+    {
+     "localized_name": "SEGM_DETECTOR",
+     "name": "SEGM_DETECTOR",
+     "type": "SEGM_DETECTOR",
+     "links": null
+    }
+   ],
+   "title": "Hand Detector (Bbox)",
+   "properties": {
+    "Node name for S&R": "UltralyticsDetectorProvider"
+   },
+   "widgets_values": [
+    "bbox/hand_yolov8n.pt"
+   ]
+  },
+  {
+   "id": 35,
+   "type": "FaceDetailer",
+   "pos": [
+    2830,
+    240
+   ],
+   "size": [
+    400,
+    960
+   ],
+   "flags": {},
+   "order": 25,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "link": 65
+    },
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 60
+    },
+    {
+     "localized_name": "clip",
+     "name": "clip",
+     "type": "CLIP",
+     "link": 61
+    },
+    {
+     "localized_name": "vae",
+     "name": "vae",
+     "type": "VAE",
+     "link": 62
+    },
+    {
+     "localized_name": "positive",
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 63
+    },
+    {
+     "localized_name": "negative",
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 64
+    },
+    {
+     "localized_name": "bbox_detector",
+     "name": "bbox_detector",
+     "type": "BBOX_DETECTOR",
+     "link": 66
+    },
+    {
+     "localized_name": "sam_model_opt",
+     "name": "sam_model_opt",
+     "shape": 7,
+     "type": "SAM_MODEL",
+     "link": null
+    },
+    {
+     "localized_name": "segm_detector_opt",
+     "name": "segm_detector_opt",
+     "shape": 7,
+     "type": "SEGM_DETECTOR",
+     "link": null
+    },
+    {
+     "localized_name": "detailer_hook",
+     "name": "detailer_hook",
+     "shape": 7,
+     "type": "DETAILER_HOOK",
+     "link": null
+    },
+    {
+     "localized_name": "scheduler_func_opt",
+     "name": "scheduler_func_opt",
+     "shape": 7,
+     "type": "SCHEDULER_FUNC",
+     "link": null
+    },
+    {
+     "localized_name": "guide_size",
+     "name": "guide_size",
+     "type": "FLOAT",
+     "widget": {
+      "name": "guide_size"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "guide_size_for",
+     "name": "guide_size_for",
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "guide_size_for"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "max_size",
+     "name": "max_size",
+     "type": "FLOAT",
+     "widget": {
+      "name": "max_size"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "seed",
+     "name": "seed",
+     "type": "INT",
+     "widget": {
+      "name": "seed"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "steps",
+     "name": "steps",
+     "type": "INT",
+     "widget": {
+      "name": "steps"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "cfg",
+     "name": "cfg",
+     "type": "FLOAT",
+     "widget": {
+      "name": "cfg"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "sampler_name",
+     "name": "sampler_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "sampler_name"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "scheduler",
+     "name": "scheduler",
+     "type": "COMBO",
+     "widget": {
+      "name": "scheduler"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "denoise",
+     "name": "denoise",
+     "type": "FLOAT",
+     "widget": {
+      "name": "denoise"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "feather",
+     "name": "feather",
+     "type": "INT",
+     "widget": {
+      "name": "feather"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "noise_mask",
+     "name": "noise_mask",
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "noise_mask"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "force_inpaint",
+     "name": "force_inpaint",
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "force_inpaint"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "bbox_threshold",
+     "name": "bbox_threshold",
+     "type": "FLOAT",
+     "widget": {
+      "name": "bbox_threshold"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "bbox_dilation",
+     "name": "bbox_dilation",
+     "type": "INT",
+     "widget": {
+      "name": "bbox_dilation"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "bbox_crop_factor",
+     "name": "bbox_crop_factor",
+     "type": "FLOAT",
+     "widget": {
+      "name": "bbox_crop_factor"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "sam_detection_hint",
+     "name": "sam_detection_hint",
+     "type": "COMBO",
+     "widget": {
+      "name": "sam_detection_hint"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "sam_dilation",
+     "name": "sam_dilation",
+     "type": "INT",
+     "widget": {
+      "name": "sam_dilation"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "sam_threshold",
+     "name": "sam_threshold",
+     "type": "FLOAT",
+     "widget": {
+      "name": "sam_threshold"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "sam_bbox_expansion",
+     "name": "sam_bbox_expansion",
+     "type": "INT",
+     "widget": {
+      "name": "sam_bbox_expansion"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "sam_mask_hint_threshold",
+     "name": "sam_mask_hint_threshold",
+     "type": "FLOAT",
+     "widget": {
+      "name": "sam_mask_hint_threshold"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "sam_mask_hint_use_negative",
+     "name": "sam_mask_hint_use_negative",
+     "type": "COMBO",
+     "widget": {
+      "name": "sam_mask_hint_use_negative"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "drop_size",
+     "name": "drop_size",
+     "type": "INT",
+     "widget": {
+      "name": "drop_size"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "wildcard",
+     "name": "wildcard",
+     "type": "STRING",
+     "widget": {
+      "name": "wildcard"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "cycle",
+     "name": "cycle",
+     "type": "INT",
+     "widget": {
+      "name": "cycle"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "inpaint_model",
+     "name": "inpaint_model",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "inpaint_model"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "noise_mask_feather",
+     "name": "noise_mask_feather",
+     "shape": 7,
+     "type": "INT",
+     "widget": {
+      "name": "noise_mask_feather"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "tiled_encode",
+     "name": "tiled_encode",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "tiled_encode"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "tiled_decode",
+     "name": "tiled_decode",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "tiled_decode"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "links": [
+      58,
+      59
+     ]
+    },
+    {
+     "localized_name": "cropped_refined",
+     "name": "cropped_refined",
+     "shape": 6,
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "localized_name": "cropped_enhanced_alpha",
+     "name": "cropped_enhanced_alpha",
+     "shape": 6,
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "localized_name": "mask",
+     "name": "mask",
+     "type": "MASK",
+     "links": null
+    },
+    {
+     "localized_name": "detailer_pipe",
+     "name": "detailer_pipe",
+     "type": "DETAILER_PIPE",
+     "links": null
+    },
+    {
+     "localized_name": "cnet_images",
+     "name": "cnet_images",
+     "shape": 6,
+     "type": "IMAGE",
+     "links": null
+    }
+   ],
+   "title": "Hand Detailer",
+   "properties": {
+    "Node name for S&R": "FaceDetailer"
+   },
+   "widgets_values": [
+    512,
+    true,
+    1024,
+    1027179119370307,
+    "randomize",
+    20,
+    5.5,
+    "dpmpp_2m_sde",
+    "karras",
+    0.4,
+    5,
+    true,
+    true,
+    0.5,
+    10,
+    3.0,
+    "center-1",
+    0,
+    0.93,
+    0,
+    0.7,
+    "False",
+    10,
+    "",
+    1,
+    false,
+    20,
+    false,
+    false
+   ]
+  },
+  {
+   "id": 36,
+   "type": "PerturbedAttentionGuidance",
+   "pos": [
+    1920,
+    -40
+   ],
+   "size": [
+    330,
+    58
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 4,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 67
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "MODEL",
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      68,
+      69
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PerturbedAttentionGuidance"
+   },
+   "title": "Perturbed-Attention Guidance (optional: un-bypass to try, ~1.5x time)",
+   "widgets_values": [
+    3.0
+   ]
   }
  ],
  "links": [
@@ -2670,14 +3334,6 @@
    "CLIP"
   ],
   [
-   30,
-   11,
-   0,
-   20,
-   0,
-   "MODEL"
-  ],
-  [
    31,
    15,
    0,
@@ -2702,22 +3358,6 @@
    "LATENT"
   ],
   [
-   34,
-   20,
-   0,
-   21,
-   0,
-   "LATENT"
-  ],
-  [
-   35,
-   11,
-   0,
-   22,
-   0,
-   "MODEL"
-  ],
-  [
    36,
    15,
    0,
@@ -2732,14 +3372,6 @@
    22,
    2,
    "CONDITIONING"
-  ],
-  [
-   38,
-   21,
-   0,
-   22,
-   3,
-   "LATENT"
   ],
   [
    39,
@@ -2814,20 +3446,164 @@
    "BBOX_DETECTOR"
   ],
   [
-   48,
-   25,
+   50,
+   20,
+   0,
+   29,
+   0,
+   "LATENT"
+  ],
+  [
+   51,
+   8,
+   2,
+   29,
+   1,
+   "VAE"
+  ],
+  [
+   52,
+   30,
+   0,
+   31,
+   0,
+   "UPSCALE_MODEL"
+  ],
+  [
+   53,
+   29,
+   0,
+   31,
+   1,
+   "IMAGE"
+  ],
+  [
+   54,
+   31,
+   0,
+   32,
+   0,
+   "IMAGE"
+  ],
+  [
+   55,
+   32,
+   0,
+   33,
+   0,
+   "IMAGE"
+  ],
+  [
+   56,
+   8,
+   2,
+   33,
+   1,
+   "VAE"
+  ],
+  [
+   57,
+   33,
+   0,
+   22,
+   3,
+   "LATENT"
+  ],
+  [
+   58,
+   35,
    0,
    26,
    1,
    "IMAGE"
   ],
   [
-   49,
-   25,
+   59,
+   35,
    0,
    27,
    0,
    "IMAGE"
+  ],
+  [
+   60,
+   11,
+   0,
+   35,
+   1,
+   "MODEL"
+  ],
+  [
+   61,
+   10,
+   1,
+   35,
+   2,
+   "CLIP"
+  ],
+  [
+   62,
+   8,
+   2,
+   35,
+   3,
+   "VAE"
+  ],
+  [
+   63,
+   15,
+   0,
+   35,
+   4,
+   "CONDITIONING"
+  ],
+  [
+   64,
+   18,
+   0,
+   35,
+   5,
+   "CONDITIONING"
+  ],
+  [
+   65,
+   25,
+   0,
+   35,
+   0,
+   "IMAGE"
+  ],
+  [
+   66,
+   34,
+   0,
+   35,
+   6,
+   "BBOX_DETECTOR"
+  ],
+  [
+   67,
+   11,
+   0,
+   36,
+   0,
+   "MODEL"
+  ],
+  [
+   68,
+   36,
+   0,
+   20,
+   0,
+   "MODEL"
+  ],
+  [
+   69,
+   36,
+   0,
+   22,
+   0,
+   "MODEL"
   ]
  ],
  "groups": [
