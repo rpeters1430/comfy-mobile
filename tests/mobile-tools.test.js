@@ -106,7 +106,8 @@ test('choicesFromJob restores form choices from recorded job controls', () => {
       sampling: { '7': { steps: 24 } },
       size: { width: 832, height: 1216 },
       fit: { width: 1080, height: 2400, upscaler: '4x-UltraSharp.pth' },
-      skip_detailers: true
+      skip_detailers: true,
+      caption_suffix: '4ng3l face, red dress'
     }
   });
   assert.deepEqual(restored.models, { '1': 'SDXL/a.safetensors' });
@@ -116,4 +117,5 @@ test('choicesFromJob restores form choices from recorded job controls', () => {
   assert.deepEqual(restored.adviserSize, { width: 832, height: 1216 });
   assert.equal(restored.upscaler, '4x-UltraSharp.pth');
   assert.equal(restored.skipDetailers, true);
+  assert.deepEqual(restored.triggers, ['4ng3l face', 'red dress']);
 });

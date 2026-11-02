@@ -21,8 +21,6 @@ let swReg = null;
 let controls = null;   // models & LoRAs from /validate
 let controlsReady = false;
 let captionCapability = null;
-// Trigger chips tapped for a workflow that writes its own prompt; added to its caption on Generate.
-const chosenTriggers = new Set();
 let sharedPresets = [];
 let nasJobs = [];
 let galleryOffset = 0;
@@ -188,7 +186,6 @@ async function selectWorkflow(wf, restored = null) {
   selected = wf;
   controlsReady = false;
   captionCapability = null;
-  chosenTriggers.clear();
   $('review-before').checked = false;
   $('caption-review-box').classList.add('hide');
   slots = Array.from({ length: wf.image_inputs || 0 }, () => ({ name: null, uploading: false, preview: null, error: null }));
@@ -392,7 +389,7 @@ function pickedTriggers(text) {
   if (!controls || !choices) return [];
   const lower = text.toLowerCase();
   const lists = activeLoras(choices).map(x => loraInfo[x.name]?.triggers || []);
-  const words = [...lists.filter(t => t.length === 1).map(t => t[0]), ...lists.flat().filter(t => chosenTriggers.has(t))];
+  const words = [...lists.filter(t => t.length === 1).map(t => t[0]), ...lists.flat().filter(t => choices.triggers.includes(t))];
   return [...new Set(words)].filter(t => !lower.includes(t.toLowerCase()));
 }
 function withPickedTriggers(text) { const t = pickedTriggers(text); return t.length ? [text, ...t].join(', ') : text; }
@@ -423,11 +420,15 @@ function loraHints(choice) {
   } else if (x.triggers.length > 1) {
     rows.push(line(`Trigger words: tap the ones you want added to ${where}.`));
     rows.push(el('div', { class: 'aspects' }, x.triggers.map(word => {
-      const on = () => typed ? promptHas(word) : chosenTriggers.has(word);
+      const on = () => typed ? promptHas(word) : choices.triggers.includes(word);
       const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(on()) }, word);
       chip.onclick = () => {
         if (typed) togglePromptWord(word);
-        else if (!chosenTriggers.delete(word)) chosenTriggers.add(word);
+        else {
+          // Chips tapped for a workflow that writes its own prompt; saved with its settings and presets.
+          choices.triggers = on() ? choices.triggers.filter(t => t !== word) : [...choices.triggers, word];
+          saveControls();
+        }
         chip.setAttribute('aria-pressed', String(on()));
       };
       return chip;
@@ -499,7 +500,8 @@ async function loadControls(wf, restored = null) {
     controls = found;
     const saved = restored || savedControls()[wf.id] || {};
   const loraOk = name => controls.lora_options.includes(name);
-  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', preset: '', upscaler: '', cinematic: saved.cinematic !== false, caption: {}, skipDetailers: !!saved.skipDetailers };
+  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', preset: '', upscaler: '', cinematic: saved.cinematic !== false, caption: {}, skipDetailers: !!saved.skipDetailers,
+    triggers: Array.isArray(saved.triggers) ? saved.triggers.filter(t => typeof t === 'string') : [] };
   for (const m of controls.models) choices.models[m.node] = m.options.includes(saved.models?.[m.node]) ? saved.models[m.node] : m.value;
   for (const l of controls.loras) {
     const s = saved.loras?.[l.node];

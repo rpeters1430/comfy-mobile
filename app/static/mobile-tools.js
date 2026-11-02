@@ -104,7 +104,8 @@
       caption: structuredClone(c.caption || {}),
       ...(c.size ? { adviserSize: { ...c.size } } : {}),
       upscaler: c.fit?.upscaler || '',
-      skipDetailers: Boolean(c.skipDetailers ?? c.skip_detailers)
+      skipDetailers: Boolean(c.skipDetailers ?? c.skip_detailers),
+      triggers: c.caption_suffix ? c.caption_suffix.split(',').map(t => t.trim()).filter(Boolean) : []
     };
   }
   const api = { nasJob, mergeHistory, captionText, presetJob, preferredWorkflows, photoDetails, modelGroups, choicesFromJob };
