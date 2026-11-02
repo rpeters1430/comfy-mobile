@@ -50,9 +50,9 @@ WF_DIR = Path(os.getenv('WORKFLOW_DIR','/workflows'))
 _LOCAL_STATIC = Path(__file__).resolve().parent / 'static'
 STATIC = Path(os.getenv('STATIC_DIR', str(_LOCAL_STATIC) if _LOCAL_STATIC.is_dir() else '/app/static'))
 SYNC_DIR = Path(os.getenv('WORKFLOW_SYNC_DIR','/workflow-sync'))
-workflow_sync = WorkflowSync(COMFY, SYNC_DIR)
 # Writable NAS folder for job records, thumbnails and push keys. Without it those features are simply off.
 DATA_DIR = Path(os.getenv('DATA_DIR','/data'))
+workflow_sync = WorkflowSync(COMFY, SYNC_DIR, WF_DIR, DATA_DIR / 'workflow-push.json')
 job_store = JobStore(DATA_DIR)
 preset_store = PresetStore(DATA_DIR)
 adviser = Adviser(DATA_DIR)
@@ -81,7 +81,8 @@ async def lifespan(app: FastAPI):
         timeout=httpx.Timeout(20.0, connect=4.0),
         limits=httpx.Limits(max_keepalive_connections=20, max_connections=50)
     )
-    tasks = [asyncio.create_task(watch_jobs()), asyncio.create_task(listen(COMFY, CLIENT_ID, progress))]
+    tasks = [asyncio.create_task(watch_jobs()), asyncio.create_task(listen(COMFY, CLIENT_ID, progress)),
+             asyncio.create_task(sync_workflows_periodically())]
     yield
     if DATA_DIR.is_dir():
         try: await adviser.shutdown()
@@ -337,6 +338,14 @@ async def comfy_workflow_discovery(authorization: str | None = Header(default=No
             workflow_names.append(name)
     return {'available': True, 'workflows': workflow_names, 'count': len(workflow_names),
             'note': 'Read-only discovery; synchronization is not enabled yet'}
+
+async def sync_workflows_periodically():
+    """Keep the PC and the app's workflows in step without a manual sync (errors are kept in last_result)."""
+    while True:
+        result = await workflow_sync.sync()
+        if result.get('pushed') or result.get('downloaded'):
+            _catalog_inspect_cache.clear()
+        await asyncio.sleep(900)
 
 @app.post('/api/comfy/workflows/sync')
 async def sync_comfy_workflows(authorization: str | None = Header(default=None)):
