@@ -13,7 +13,7 @@
   }
   function compatibility(checkpointName, loraName, info, modelFamily, loraFamily) {
     const source = info && typeof info === 'object' ? info : {};
-    const trained = variant(source.base_model) || variant(loraName);
+    const trained = variant(source.base_model);
     const target = variant(checkpointName);
     const verified = source.source === 'civitai' && !!source.base_model;
     if (modelFamily && loraFamily && modelFamily !== loraFamily) {
