@@ -1173,6 +1173,14 @@ function resultActions(item) {
   let file = null;
   const share = el('button', { class: 'secondary', type: 'button' }, '↗ Share');
   const save = el('a', { class: 'button ghost', href: item.url, download: item.filename }, '⬇ Save');
+  const wallpaper = el('button', { class: 'secondary', type: 'button' }, '📱 Pixel wallpaper');
+  if (!/\\.(png|jpe?g|webp)$/i.test(item.filename || '')) wallpaper.classList.add('hide');
+  wallpaper.onclick = async () => {
+    wallpaper.disabled = true;
+    try { await WallpaperExport.open(item); }
+    catch (e) { showToast('Wallpaper tool: ' + e.message); }
+    finally { wallpaper.disabled = false; }
+  };
   share.onclick = async () => {
     share.disabled = true;
     try {
@@ -1197,7 +1205,7 @@ function resultActions(item) {
       share.disabled = false;
     }
   };
-  return el('div', { class: 'row result-actions' }, share, save);
+  return el('div', { class: 'row result-actions' }, share, save, wallpaper);
 }
 
 function showResults(job, entry, r) {
