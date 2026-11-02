@@ -340,7 +340,7 @@ function modelSelect(options, value, base, label, only = false) {
 
 // A warning line under a LoRA picker (the pickers re-render when the pick changes).
 function loraFamilyNote(name, base) {
-  const checkpoint = controls?.models?.[0] ? choices?.models?.[controls.models[0].node] : '';
+  const checkpoint = controls?.models?.length === 1 ? choices?.models?.[controls.models[0].node] : '';
   const info = loraInfo[name] || {};
   const advice = LoraCompatibility.compatibility(checkpoint, name, info, base, familyOf(name));
   return el('small', { class: 'status', style: 'display:block' }, advice?.text || '');
