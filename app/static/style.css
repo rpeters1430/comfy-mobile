@@ -664,6 +664,16 @@ a.button {
   margin-top: 2px;
 }
 
+/* Desktop / Mobile workspace helpers */
+.create-workspace { display: contents; }
+.empty-workspace { display: none !important; }
+.nav-brand { display: none; }
+.slot.drag-over {
+  border-color: var(--md-primary);
+  background: var(--md-surface-container-highest);
+  box-shadow: inset 0 0 0 2px var(--md-primary);
+}
+
 /* Navigation bar */
 nav {
   position: fixed;
@@ -800,3 +810,188 @@ dialog::backdrop { background: var(--md-scrim); }
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
+
+
+/* ============================================================
+   Desktop & Computer Browser Responsive Adaptations
+   Activates on viewports >= 900px while keeping mobile intact.
+   ============================================================ */
+@media (min-width: 900px) {
+  body {
+    display: flex;
+    flex-direction: row;
+    min-height: 100vh;
+    padding-bottom: 0;
+  }
+
+  /* Material 3 Expressive Navigation Rail on the left */
+  nav {
+    position: sticky;
+    top: 0;
+    left: 0;
+    bottom: auto;
+    right: auto;
+    width: 96px;
+    height: 100vh;
+    flex: none;
+    order: -1;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 12px;
+    padding: 24px 8px;
+    border-right: 1px solid var(--md-outline-variant);
+    background: var(--md-surface-container-low);
+    z-index: 100;
+  }
+
+  .nav-brand {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--shape-full);
+    background: var(--md-primary-container);
+    color: var(--md-on-primary-container);
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    user-select: none;
+  }
+
+  nav button {
+    flex: none;
+    width: 80px;
+    height: 64px;
+    padding: 8px 0;
+    border-radius: var(--shape-md);
+  }
+
+  main {
+    flex: 1;
+    max-width: 1440px;
+    width: calc(100% - 96px);
+    margin: 0;
+    padding: 24px 32px 48px;
+  }
+
+  /* Reposition snackbar toast above bottom of desktop screen */
+  #toast {
+    bottom: 24px;
+    left: calc(50% + 48px);
+    transform: translateX(-50%);
+    max-width: 480px;
+  }
+
+  /* Tab: Create — 2-Column Responsive Studio Layout */
+  #tab-create {
+    display: grid;
+    grid-template-columns: 340px minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+  }
+
+  #shared-banner {
+    grid-column: 1 / -1;
+  }
+
+  #wf-picker {
+    position: sticky;
+    top: 24px;
+    max-height: calc(100vh - 48px);
+    display: flex;
+    flex-direction: column;
+    margin-top: 0;
+  }
+
+  #wf-picker .wf-list {
+    max-height: calc(100vh - 220px);
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+
+  .create-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+  }
+
+  .empty-workspace {
+    display: block !important;
+    margin-top: 0;
+  }
+
+  #form {
+    margin-top: 0;
+  }
+
+  /* Generate button is natural static block on desktop */
+  #generate {
+    position: static;
+    box-shadow: none;
+    margin-top: 24px;
+    max-width: 320px;
+  }
+
+  /* Tab: Gallery — Dense Responsive Grid & Hero Feature Card */
+  .gallery {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+  }
+
+  .gallery > .card:first-child {
+    grid-column: span 2;
+    grid-row: span 2;
+  }
+
+  /* Tab: Settings — Multi-Column Responsive Grid */
+  #tab-settings {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 20px;
+    align-items: start;
+  }
+
+  #tab-settings .panel {
+    margin-top: 0;
+  }
+
+  /* Dialogs: Full desktop modal dialog experience */
+  #image-viewer {
+    width: min(92vw, 1320px);
+    height: min(92vh, 880px);
+    max-width: 1320px;
+    max-height: 880px;
+    margin: auto;
+    border-radius: var(--shape-xl);
+    box-shadow: var(--elev-3);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #image-viewer:not([open]) {
+    display: none;
+  }
+
+  #viewer-scroll {
+    height: 60vh;
+    max-height: 560px;
+  }
+
+  #viewer-stage {
+    height: 60vh;
+    max-height: 560px;
+  }
+}
+
+@media (min-width: 900px) and (hover: hover) {
+  .card {
+    transition: transform var(--dur-effects) var(--ease-effects), box-shadow var(--dur-effects) var(--ease-effects);
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--elev-3);
+  }
+}

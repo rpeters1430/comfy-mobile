@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  STYLE_PRESETS, STYLE_TAIL, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropAspect
+  STYLE_PRESETS, STYLE_TAIL, ASPECTS, WALLPAPER_PRESETS, DESKTOP_PRESETS, SCREEN_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropAspect
 } = require('../app/static/presets.js');
 
 test('styledPrompt sends the prompt as written without a style', () => {
@@ -56,6 +56,20 @@ test('preset aspects parse', () => {
   for (const p of WALLPAPER_PRESETS) {
     const [a, b] = presetAspect(p).split(':').map(Number);
     assert.ok(a > 0 && b > a, p.id);
+  }
+});
+
+test('desktop presets parse as landscape and preserve pixel budget in multiples of 64', () => {
+  assert.ok(DESKTOP_PRESETS.length >= 5);
+  assert.equal(SCREEN_PRESETS.length, WALLPAPER_PRESETS.length + DESKTOP_PRESETS.length);
+  const base = { width: 1024, height: 1024 };
+  for (const p of DESKTOP_PRESETS) {
+    const [a, b] = presetAspect(p).split(':').map(Number);
+    assert.ok(a > 0 && a > b, `${p.id} should be landscape`);
+    const size = aspectSize(renderAspect(presetAspect(p)), base);
+    assert.equal(size.width % 64, 0, `${p.id} width multiple of 64`);
+    assert.equal(size.height % 64, 0, `${p.id} height multiple of 64`);
+    assert.ok(Math.abs(size.width * size.height / (base.width * base.height) - 1) < 0.1, `${p.id} budget`);
   }
 });
 

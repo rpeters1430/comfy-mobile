@@ -260,5 +260,18 @@ class DetailerTests(unittest.TestCase):
             apply_controls(graph, INFO, {}, {}, [], skip_detailers=True)
 
 
+
+    def test_negative_prompt_detection_and_apply(self):
+        graph = {
+            "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "base.safetensors"}},
+            "2": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["1", 1], "text": "{{prompt}}"}},
+            "3": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["1", 1], "text": "bad quality, blurry"}},
+            "4": {"class_type": "KSampler", "inputs": {"model": ["1", 0], "positive": ["2", 0], "negative": ["3", 0], "seed": 42}},
+        }
+        controls = find_controls(graph, INFO)
+        self.assertEqual(controls["negative_prompt"], {"node": "3", "default": "bad quality, blurry"})
+        apply_controls(graph, INFO, {}, {}, [], negative_prompt="extra fingers, deformed")
+        self.assertEqual(graph["3"]["inputs"]["text"], "extra fingers, deformed")
+
 if __name__ == "__main__":
     unittest.main()

@@ -20,7 +20,7 @@ function styledPrompt(text, style, cinematic) {
   return [text, style?.suffix, cinematic ? CINEMATIC_SUFFIX : null, style || cinematic ? STYLE_TAIL : null].filter(Boolean).join(', ');
 }
 
-const ASPECTS = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9'];
+const ASPECTS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '9:16', '16:9', '16:10', '21:9'];
 
 const WALLPAPER_PRESETS = [
   { id: 'iphone', label: '🍏 iPhone (19.5:9)', aspect: '9:19.5', native: null, desc: 'Model-tuned for iPhone 13–16 Pro/Max' },
@@ -33,8 +33,18 @@ const WALLPAPER_PRESETS = [
   { id: 'pixel10-pro-xl', label: '📱 Pixel 10 Pro XL (1344×2992)', aspect: null, native: { width: 1344, height: 2992 }, cinematic: true, desc: 'Pixel 10 Pro XL exact screen resolution' },
   { id: 'iphone-native', label: '🍏 iPhone Native (1176×2552)', aspect: null, native: { width: 1176, height: 2552 }, desc: 'Exact screen resolution for iPhone 15/16 Pro' },
   { id: 'samsung-native', label: '🌌 Galaxy Native (1080×2344)', aspect: null, native: { width: 1080, height: 2344 }, desc: 'Exact screen resolution for Galaxy S23/S24' },
-  { id: 'qhd-native', label: '🖥️ QHD 1440p (1440×2560)', aspect: null, native: { width: 1440, height: 2560 }, desc: 'Crisp Quad HD 16:9 vertical' },
+  { id: 'qhd-native', label: '📱 QHD 1440p (1440×2560)', aspect: null, native: { width: 1440, height: 2560 }, desc: 'Crisp Quad HD 16:9 vertical' },
 ];
+
+const DESKTOP_PRESETS = [
+  { id: 'desktop-fhd', label: '🖥️ 1080p FHD (1920×1080)', aspect: null, native: { width: 1920, height: 1080 }, desc: 'Standard 1080p Desktop Display' },
+  { id: 'desktop-qhd', label: '🖥️ 1440p QHD (2560×1440)', aspect: null, native: { width: 2560, height: 1440 }, desc: 'Quad HD 2K Desktop Monitor' },
+  { id: 'desktop-4k', label: '🖥️ 4K UHD (3840×2160)', aspect: null, native: { width: 3840, height: 2160 }, desc: '4K Ultra HD Display' },
+  { id: 'desktop-16-10', label: '💻 16:10 Laptop (2560×1600)', aspect: null, native: { width: 2560, height: 1600 }, desc: 'MacBook & 16:10 Laptop Displays' },
+  { id: 'ultrawide-21-9', label: '🖥️ 21:9 Ultrawide (3440×1440)', aspect: null, native: { width: 3440, height: 1440 }, desc: '21:9 Ultrawide Curved Monitor' },
+];
+
+const SCREEN_PRESETS = [...WALLPAPER_PRESETS, ...DESKTOP_PRESETS];
 
 // Pixel's Cinematic wallpaper cuts the main subject out of the background on-device and moves the layers
 // in 3D, so it works best with one clear subject, real depth and good contrast. The parallax also zooms in a
@@ -44,7 +54,7 @@ const WALLPAPER_PRESETS = [
 const CINEMATIC_SUFFIX = 'single clear main subject in the lower middle of the frame, subject sharply separated from the background, ' +
   'strong sense of depth, uncluttered background, open space in the top third, nothing important near the edges';
 
-function cinematicOn(c) { return !!(c?.cinematic && WALLPAPER_PRESETS.find(p => p.id === c.preset)?.cinematic); }
+function cinematicOn(c) { return !!(c?.cinematic && SCREEN_PRESETS.find(p => p.id === c.preset)?.cinematic); }
 
 function aspectSize(aspect, base) {
   const [a, b] = aspect.split(':').map(Number);
@@ -101,5 +111,5 @@ function videoShape(size) {
 const VIDEO_QUALITY = [{ id: 'fast', label: 'Fast', megapixels: 0.35 }, { id: 'standard', label: 'Standard', megapixels: null }, { id: 'high', label: 'High', megapixels: 0.8 }];
 
 if (typeof module !== 'undefined') {
-  module.exports = { STYLE_PRESETS, STYLE_TAIL, ASPECTS, WALLPAPER_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropAspect, VIDEO_RESOLUTIONS, videoSize, videoShape, VIDEO_QUALITY };
+  module.exports = { STYLE_PRESETS, STYLE_TAIL, ASPECTS, WALLPAPER_PRESETS, DESKTOP_PRESETS, SCREEN_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropAspect, VIDEO_RESOLUTIONS, videoSize, videoShape, VIDEO_QUALITY };
 }

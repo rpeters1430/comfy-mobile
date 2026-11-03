@@ -394,6 +394,7 @@ class Job(BaseModel):
     caption_suffix: str = Field(default='', max_length=1000)  # LoRA trigger words joined onto an unreviewed auto-caption
     workflow_id: str = Field(max_length=240)
     prompt: str = Field(default='',max_length=10000)
+    negative_prompt: str | None = Field(default=None, max_length=10000)
     images: list[str] = Field(default_factory=list,max_length=8)
     seed: int | None = Field(default=None,ge=0,le=18446744073709551615)
     models: dict[str,str] = Field(default_factory=dict,max_length=8)
@@ -425,7 +426,7 @@ async def prepare_job(job: Job):
     # Only the {{prompt}} placeholder is replaced, so negative prompts and instructions are never rewritten.
     try:
         apply_controls(graph,info,job.models,{k:v.model_dump() for k,v in job.loras.items()},[v.model_dump() for v in job.extra_loras],job.sampling,job.size,job.caption,
-                       job.fit.model_dump(exclude_none=True) if job.fit else None, job.skip_detailers, job.video)
+                       job.fit.model_dump(exclude_none=True) if job.fit else None, job.skip_detailers, job.video, negative_prompt=job.negative_prompt)
         applied=apply_job(graph,job.prompt,job.images,job.seed)
         if job.stage == 'caption':
             if job.review: raise CaptionError('Caption preview cannot include approved text')
