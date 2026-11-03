@@ -164,6 +164,25 @@ def _captions(graph, object_info):
     return found
 
 
+
+def _negative_prompt(graph):
+    """Find a single identifiable unlinked CLIPTextEncode feeding into a sampler negative socket."""
+    targets = {}
+    for node_id, node in graph.items():
+        if "KSampler" in node.get("class_type", "") or "CFGGuider" in node.get("class_type", ""):
+            neg_link = node.get("inputs", {}).get("negative")
+            if isinstance(neg_link, list) and len(neg_link) == 2:
+                origin_id = str(neg_link[0])
+                origin_node = graph.get(origin_id)
+                if origin_node and origin_node.get("class_type") == "CLIPTextEncode":
+                    text = origin_node["inputs"].get("text")
+                    if isinstance(text, str) and "{{prompt}}" not in text:
+                        targets[origin_id] = text
+    if len(targets) == 1:
+        nid, default_txt = next(iter(targets.items()))
+        return {"node": nid, "default": default_txt}
+    return None
+
 def find_controls(graph: dict, object_info: dict) -> dict:
     models, loras = [], []
     for node_id, node in graph.items():
@@ -189,7 +208,7 @@ def find_controls(graph: dict, object_info: dict) -> dict:
             "detailers": _detailers(graph),
             "upscale_options": _options(object_info, "UpscaleModelLoader", "model_name"),
             "sampler_options": _options(object_info, "KSampler", "sampler_name"),
-            "scheduler_options": _options(object_info, "KSampler", "scheduler")}
+            "scheduler_options": _options(object_info, "KSampler", "scheduler"), "negative_prompt": _negative_prompt(graph)}
 
 
 def _strength(value):
@@ -320,9 +339,10 @@ def _apply_fit(graph, found, fit, object_info):
 
 def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, extra_loras: list,
                    sampling: dict | None = None, size: dict | None = None, caption: dict | None = None,
-                   fit: dict | None = None, skip_detailers: bool = False) -> None:
+                   fit: dict | None = None, skip_detailers: bool = False,
+                   negative_prompt: str | None = None) -> None:
     """Apply phone choices in place. Only nodes and options found by find_controls are accepted."""
-    if not (models or loras or extra_loras or sampling or size or caption or fit or skip_detailers):
+    if not (models or loras or extra_loras or sampling or size or caption or fit or skip_detailers or negative_prompt is not None):
         return
     found = find_controls(graph, object_info)
     if skip_detailers:
@@ -338,6 +358,10 @@ def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, ex
         _apply_caption(graph, found, caption)
     if size:
         _apply_size(graph, size)
+    if negative_prompt is not None and found.get("negative_prompt"):
+        neg_node = found["negative_prompt"]["node"]
+        if neg_node in graph and "inputs" in graph[neg_node] and "text" in graph[neg_node]["inputs"]:
+            graph[neg_node]["inputs"]["text"] = negative_prompt
     by_model = {c["node"]: c for c in found["models"]}
     by_lora = {c["node"]: c for c in found["loras"]}
     lora_options = set(found["lora_options"])
@@ -388,4 +412,5 @@ def run_details(graph, object_info):
         'loras': [{key: lora[key] for key in ('node', 'value', 'strength')} for lora in found['loras']],
         'samplers': found['samplers'], 'size': found['size'],
         'captions': [{'node': caption['node'], 'values': caption['values']} for caption in found['captions']],
+        'negative_prompt': found.get('negative_prompt', {}).get('default') if found.get('negative_prompt') else None,
     }

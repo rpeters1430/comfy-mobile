@@ -188,8 +188,13 @@ async function selectWorkflow(wf, restored = null) {
   captionCapability = null;
   $('review-before').checked = false;
   $('caption-review-box').classList.add('hide');
+  $('negative-prompt-box')?.classList.add('hide');
+  if ($('negative-prompt')) $('negative-prompt').value = '';
+  $('lora-triggers-box')?.classList.add('hide');
+  $('prompt-triggers')?.replaceChildren();
   slots = Array.from({ length: wf.image_inputs || 0 }, () => ({ name: null, uploading: false, preview: null, error: null }));
   $('form').classList.remove('hide');
+  if ($('empty-workspace')) $('empty-workspace').classList.add('hide');
   $('form-title').textContent = prettyName(wf.name);
   $('prompt-box').classList.toggle('hide', !wf.takes_prompt);
   $('no-prompt').classList.toggle('hide', wf.takes_prompt || !wf.image_inputs);
@@ -199,6 +204,7 @@ async function selectWorkflow(wf, restored = null) {
   renderSlots();
   renderSavedPrompts();
   renderWorkflows();
+  renderPromptLoraTriggers();
   await loadControls(wf, restored);
   if (selected !== wf) return;
   if (sharedFiles.length && slots.length) {
@@ -214,6 +220,16 @@ function renderSlots() {
     const input = el('input', { type: 'file', accept: 'image/*', 'aria-label': `Choose image ${i + 1}` });
     input.onchange = () => input.files[0] && pickImage(i, input.files[0]);
     const box = el('div', { class: 'slot' }, slot.preview ? el('img', { src: slot.preview, alt: '' }) : `Tap to add image ${slots.length > 1 ? i + 1 : ''}`, input);
+    box.ondragover = e => { e.preventDefault(); box.classList.add('drag-over'); };
+    box.ondragleave = () => box.classList.remove('drag-over');
+    box.ondrop = e => {
+      e.preventDefault();
+      box.classList.remove('drag-over');
+      const file = e.dataTransfer?.files?.[0];
+      if (file && (file.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name))) {
+        pickImage(i, file);
+      }
+    };
     if (slot.uploading || slot.error) {
       box.append(el('span', { class: 'state' }, slot.error ? 'Upload failed' : 'Uploading…'));
     } else if (slot.name) {
@@ -283,8 +299,12 @@ function renderSavedPrompts() {
 }
 $('saved-prompts').onchange = () => {
   const list = savedPrompts()[promptKey()] || [];
-  if ($('saved-prompts').value !== '') $('prompt').value = list[Number($('saved-prompts').value)] || '';
+  if ($('saved-prompts').value !== '') {
+    $('prompt').value = list[Number($('saved-prompts').value)] || '';
+    renderPromptLoraTriggers();
+  }
 };
+$('prompt').oninput = () => renderPromptLoraTriggers();
 $('save-prompt').onclick = () => {
   const text = $('prompt').value.trim();
   if (!text || !selected) return;
@@ -372,7 +392,7 @@ async function loadLoraInfo(wf) {
     if (x.family && x.source === 'civitai') controls.families[name] = x.family;
     else if (x.family && !controls.families[name]) controls.families[name] = x.family;
   }
-  try { renderControls(); }
+  try { renderControls(); renderPromptLoraTriggers(); }
   catch (e) {
     console.warn('LoRA metadata could not be displayed; retaining previously loaded settings', e);
     $('controls-state').textContent = 'Some LoRA details could not be displayed. Basic settings remain available.';
@@ -401,6 +421,41 @@ function togglePromptWord(word) {
     const at = box.value.toLowerCase().indexOf(word.toLowerCase());
     box.value = (box.value.slice(0, at) + box.value.slice(at + word.length)).replace(/\s*,\s*(,\s*)+/g, ', ').replace(/^\s*,\s*|\s*,\s*$/g, '');
   } else box.value = box.value.trim() ? box.value.trim().replace(/,$/, '') + ', ' + word : word;
+  renderPromptLoraTriggers();
+}
+
+function renderPromptLoraTriggers() {
+  const container = $('prompt-triggers');
+  const box = $('lora-triggers-box');
+  if (!container || !box) return;
+  if (!selected?.takes_prompt || !controls || !choices) {
+    box.classList.add('hide');
+    container.replaceChildren();
+    return;
+  }
+  const loras = activeLoras(choices);
+  const words = [...new Set(loras.flatMap(l => loraInfo[l.name]?.triggers || []))];
+  if (!words.length) {
+    box.classList.add('hide');
+    container.replaceChildren();
+    return;
+  }
+  box.classList.remove('hide');
+  const chips = words.map(word => {
+    const on = () => promptHas(word);
+    const chip = el('button', {
+      class: 'chip',
+      type: 'button',
+      'aria-pressed': String(on()),
+      title: `Click to toggle in prompt`
+    }, word);
+    chip.onclick = () => {
+      togglePromptWord(word);
+      chip.setAttribute('aria-pressed', String(on()));
+    };
+    return chip;
+  });
+  container.replaceChildren(...chips);
 }
 
 // Recommended strength and trigger words under a LoRA picker.
@@ -518,7 +573,7 @@ async function loadControls(wf, restored = null) {
   }
   const advised = saved.adviserSize;
   if (controls.size && advised && [advised.width, advised.height].every(v => Number.isInteger(v) && v >= 256 && v <= 2880 && v % 8 === 0) && advised.width * advised.height <= 2048 * 2048) choices.adviserSize = { ...advised };
-  const preset = WALLPAPER_PRESETS.find(p => p.id === saved.preset);
+  const preset = (typeof SCREEN_PRESETS !== "undefined" ? SCREEN_PRESETS : WALLPAPER_PRESETS).find(p => p.id === saved.preset);
   if (controls.size && preset) {
     choices.preset = preset.id;
     choices.aspect = presetAspect(preset);
@@ -544,6 +599,13 @@ async function loadControls(wf, restored = null) {
   }
   if (selected !== wf) return;
   controlsReady = true;
+  if (controls.negative_prompt) {
+    $('negative-prompt-box').classList.remove('hide');
+    $('negative-prompt').value = (restored ? restored.negative_prompt : saved.negative_prompt) ?? controls.negative_prompt.default ?? '';
+  } else {
+    $('negative-prompt-box').classList.add('hide');
+  }
+  renderPromptLoraTriggers();
   $('controls-state').textContent = '';
   $('controls-retry').classList.add('hide');
   $('auto-loras-row').classList.toggle('hide', !controls.can_add_lora);
@@ -565,7 +627,7 @@ function strengthRow(choice, onChange) {
 // An exact screen size for native presets, or a crop shape for tall aspect presets (see presets.js).
 function fitSize(c) {
   if (!controls?.can_fit) return null;
-  const native = WALLPAPER_PRESETS.find(p => p.id === c?.preset)?.native;
+  const native = (typeof SCREEN_PRESETS !== "undefined" ? SCREEN_PRESETS : WALLPAPER_PRESETS).find(p => p.id === c?.preset)?.native;
   const aspect = !native && !cinematicOn(c) && controls?.can_crop !== false && c?.aspect && cropAspect(c.aspect);
   return native || (aspect ? { aspect } : null);
 }
@@ -670,7 +732,7 @@ function sizeSection(changed) {
     const size = chosenSize(choices);
     let desc = controls.size_from_photo ? 'Same shape as your photo' : 'Workflow default size';
     if (choices.preset) {
-      const p = WALLPAPER_PRESETS.find(x => x.id === choices.preset);
+      const p = (typeof SCREEN_PRESETS !== "undefined" ? SCREEN_PRESETS : WALLPAPER_PRESETS).find(x => x.id === choices.preset);
       if (p) desc = p.desc;
     } else if (choices.adviserSize) {
       desc = 'Published render size selected in settings review';
@@ -686,6 +748,27 @@ function sizeSection(changed) {
     upscaleRow.classList.toggle('hide', !enlarged);
     upscaleSkip.classList.toggle('hide', !enlarged || !controls.upscale_options.length || upscaleWorthIt(size, fit));
   }
+
+  const dtChips = (typeof DESKTOP_PRESETS !== 'undefined' ? DESKTOP_PRESETS : []).map(preset => {
+    const isCurrent = choices.preset === preset.id;
+    const chip = el('button', {
+      class: 'chip',
+      type: 'button',
+      'aria-pressed': String(isCurrent),
+      title: preset.desc
+    }, preset.label);
+
+    chip.onclick = () => {
+      delete choices.adviserSize;
+      choices.preset = preset.id;
+      choices.aspect = presetAspect(preset);
+      choices.cinematic = false;
+      refreshChips();
+      updateDisplay();
+      changed();
+    };
+    return chip;
+  });
 
   const wpChips = WALLPAPER_PRESETS.map(preset => {
     const isCurrent = choices.preset === preset.id;
@@ -749,7 +832,10 @@ function sizeSection(changed) {
       : el('small', { class: 'status', style: 'display:block;margin-top:2px' }, 'Add an upscale model (e.g. 4x-UltraSharp) to ComfyUI’s models/upscale_models for sharper results.'));
 
   function refreshChips() {
-    cinematicRow.classList.toggle('hide', !WALLPAPER_PRESETS.find(p => p.id === choices.preset)?.cinematic);
+    cinematicRow.classList.toggle('hide', !(typeof SCREEN_PRESETS !== 'undefined' ? SCREEN_PRESETS : WALLPAPER_PRESETS).find(p => p.id === choices.preset)?.cinematic);
+    dtChips.forEach((chip, i) => {
+      chip.setAttribute('aria-pressed', String(choices.preset === (typeof DESKTOP_PRESETS !== 'undefined' ? DESKTOP_PRESETS : [])[i]?.id));
+    });
     wpChips.forEach((chip, i) => {
       chip.setAttribute('aria-pressed', String(choices.preset === WALLPAPER_PRESETS[i].id));
     });
@@ -764,7 +850,9 @@ function sizeSection(changed) {
   updateDisplay();
 
   return el('div', { class: 'lora' },
-    el('label', { style: 'margin:0' }, 'Phone Wallpapers (Pixel, iPhone, Samsung)'),
+    el('label', { style: 'margin:0 0 4px' }, '🖥️ Computer & Display Presets'),
+    el('div', { class: 'aspects', style: 'margin-bottom:8px' }, dtChips),
+    el('label', { style: 'margin:8px 0 4px' }, '📱 Phone Wallpapers (Pixel, iPhone, Galaxy)'),
     el('div', { class: 'aspects', style: 'margin-bottom:8px' }, wpChips),
     cinematicRow,
     el('label', { style: 'margin:8px 0 0' }, 'Standard Shape & Aspect Ratio'),
@@ -909,6 +997,7 @@ $('form').onsubmit = async event => {
   const params = {
     workflowId: selected.id, workflow: prettyName(selected.name), takesPrompt: selected.takes_prompt,
     prompt: selected.takes_prompt ? styledPrompt(prompt, style, cinematicOn(choices)) : '',
+    negative_prompt: controls?.negative_prompt ? $('negative-prompt').value.trim() : null,
     images: slots.map(s => s.name), stage, review: activeCaptionDraft(),
     controls: controlsPayload(choices), controlsText: [style?.label, controlsText(choices)].filter(Boolean).join(' · ')
   };
@@ -955,7 +1044,7 @@ $('form').onsubmit = async event => {
 };
 
 function jobBody(params) {
-  return { ...(params.controls || {}), workflow_id: params.workflowId, prompt: params.prompt, images: params.images, seed: params.seed, stage: params.stage || 'render', review: params.review || null, adviser_token: params.adviserToken || null, adviser_index: params.adviserIndex || 0 };
+  return { ...(params.controls || {}), workflow_id: params.workflowId, prompt: params.prompt, negative_prompt: params.negative_prompt, images: params.images, seed: params.seed, stage: params.stage || 'render', review: params.review || null, adviser_token: params.adviserToken || null, adviser_index: params.adviserIndex || 0 };
 }
 
 /* Auto LoRAs: added per job from the prompt or reviewed caption; the user's own picks are never changed. */
@@ -2099,3 +2188,162 @@ const adviserUI = SettingsAdviser.mount({ api, el, getForm: adviserForm, random:
     openFromId(jobId);
   }
 })();
+
+
+/* ---------- Desktop & Keyboard Ergonomics ---------- */
+window.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    if (!$('form').classList.contains('hide') && !$('generate').disabled) {
+      e.preventDefault();
+      $('generate').click();
+    }
+  }
+  if (e.key === 'Escape') {
+    if ($('image-viewer')?.open) {
+      e.preventDefault();
+      $('viewer-close')?.click();
+    } else if ($('check-dialog')?.open) {
+      e.preventDefault();
+      $('check-dialog')?.close();
+    }
+  }
+  if ($('image-viewer')?.open && !['input', 'textarea', 'select'].includes(document.activeElement?.tagName?.toLowerCase())) {
+    if (e.key === 'ArrowLeft' && !$('viewer-previous')?.disabled) {
+      e.preventDefault();
+      $('viewer-previous')?.click();
+    } else if (e.key === 'ArrowRight' && !$('viewer-next')?.disabled) {
+      e.preventDefault();
+      $('viewer-next')?.click();
+    }
+  }
+  if (e.key === '/' && !['input', 'textarea', 'select'].includes(document.activeElement?.tagName?.toLowerCase())) {
+    e.preventDefault();
+    $('wf-search')?.focus();
+  }
+});
+
+window.addEventListener('paste', e => {
+  const items = e.clipboardData?.items;
+  if (!items || !slots.length) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) {
+        const emptyIdx = slots.findIndex(s => !s.name && !s.preview);
+        pickImage(emptyIdx !== -1 ? emptyIdx : 0, file);
+        showToast('Image pasted from clipboard');
+        break;
+      }
+    }
+  }
+});
+
+
+/* ---------- Seed Controls & PNG Metadata Reader ---------- */
+if ($('seed-dice')) {
+  $('seed-dice').onclick = () => {
+    $('seed').value = '';
+    showToast('Seed cleared (random each run)');
+  };
+}
+if ($('seed-plus')) {
+  $('seed-plus').onclick = () => {
+    const cur = $('seed').value === '' ? Math.floor(Math.random() * 1000000) : Number($('seed').value);
+    $('seed').value = String(cur + 1);
+    showToast(`Seed: ${$('seed').value}`);
+  };
+}
+if ($('seed-minus')) {
+  $('seed-minus').onclick = () => {
+    const cur = $('seed').value === '' ? Math.floor(Math.random() * 1000000) : Number($('seed').value);
+    $('seed').value = String(Math.max(0, cur - 1));
+    showToast(`Seed: ${$('seed').value}`);
+  };
+}
+
+async function extractPngMetadata(file) {
+  try {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    if (bytes.length < 8 || bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4E || bytes[3] !== 0x47) return null;
+    let offset = 8;
+    const view = new DataView(buffer);
+    const meta = {};
+    const decoder = new TextDecoder('utf-8');
+    while (offset + 8 <= bytes.length) {
+      const length = view.getUint32(offset);
+      const type = decoder.decode(bytes.subarray(offset + 4, offset + 8));
+      offset += 8;
+      if (offset + length > bytes.length) break;
+      if (type === 'tEXt') {
+        const chunk = bytes.subarray(offset, offset + length);
+        const nullIdx = chunk.indexOf(0);
+        if (nullIdx !== -1) {
+          const key = decoder.decode(chunk.subarray(0, nullIdx));
+          const text = decoder.decode(chunk.subarray(nullIdx + 1));
+          meta[key] = text;
+        }
+      }
+      offset += length + 4;
+    }
+    return meta;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Global drop on form/prompt-box to restore prompt and seed from generated PNG
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', async e => {
+  const file = e.dataTransfer?.files?.[0];
+  if (!file || file.type !== 'image/png') return;
+  // If dropped directly into a slot, let slot handler process it
+  if (e.target.closest('.slot')) return;
+  const meta = await extractPngMetadata(file);
+  if (!meta || (!meta.prompt && !meta.workflow)) return;
+  try {
+    const promptData = meta.prompt ? JSON.parse(meta.prompt) : null;
+    let positive = '', negative = '', seed = null;
+    if (promptData) {
+      for (const node of Object.values(promptData)) {
+        if (node.class_type === 'CLIPTextEncode' && typeof node.inputs?.text === 'string') {
+          // Identify negative by text content or connections
+          const txt = node.inputs.text;
+          if (/score_6|bad anatomy|blurry|worst quality|watermark/i.test(txt)) negative = txt;
+          else if (!positive) positive = txt;
+        }
+        if (seed == null && (node.inputs?.seed != null || node.inputs?.noise_seed != null)) {
+          seed = node.inputs.seed ?? node.inputs.noise_seed;
+        }
+      }
+    }
+    if (positive && $('prompt')) $('prompt').value = positive;
+    if (negative && $('negative-prompt')) $('negative-prompt').value = negative;
+    if (seed != null && $('seed')) $('seed').value = String(seed);
+    renderPromptLoraTriggers();
+    showToast('Restored prompt & seed from PNG metadata');
+  } catch (err) {
+    console.warn('Could not parse embedded PNG metadata', err);
+  }
+});
+
+// Mouse wheel zoom on viewer
+const viewerStage = $('viewer-stage');
+const viewerZoom = $('viewer-zoom');
+if (viewerStage && viewerZoom) {
+  viewerStage.addEventListener('wheel', e => {
+    e.preventDefault();
+    const cur = parseFloat(viewerZoom.value) || 1;
+    const delta = e.deltaY < 0 ? 0.25 : -0.25;
+    const next = Math.min(3, Math.max(1, cur + delta));
+    if (next !== cur) {
+      viewerZoom.value = String(next);
+      viewerZoom.dispatchEvent(new Event('input'));
+    }
+  }, { passive: false });
+
+  viewerStage.addEventListener('dblclick', () => {
+    viewerZoom.value = '1';
+    viewerZoom.dispatchEvent(new Event('input'));
+  });
+}

@@ -31,7 +31,7 @@
       <p class="status" id="shared-hint" style="margin-top:8px">Pick a workflow below and the photos fill its image slots in order.</p>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="wf-picker">
       <div class="wf-search-wrap">
         <span class="wf-search-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
         <input type="search" id="wf-search" placeholder="Search workflows or nodes…" autocomplete="off">
@@ -50,7 +50,13 @@
       </details>
     </div>
 
-    <form class="panel hide" id="form">
+    <div class="create-workspace" id="create-workspace">
+      <div class="panel empty-workspace hide" id="empty-workspace">
+        <h2>Select a Workflow</h2>
+        <p class="status">Choose a workflow from the list on the left to start generating or editing images.</p>
+      </div>
+
+      <form class="panel hide" id="form">
       <h2 id="form-title">Workflow</h2>
       <details class="controls" id="named-presets">
         <summary>Shared presets</summary>
@@ -69,6 +75,14 @@
       <div id="prompt-box">
         <label for="prompt">Prompt</label>
         <textarea id="prompt" placeholder="Describe what you want to create…" spellcheck="false"></textarea>
+        <div id="lora-triggers-box" class="hide" style="margin-top:6px">
+          <small class="muted" style="display:block;margin-bottom:4px">LoRA Triggers (click to insert):</small>
+          <div class="aspects" id="prompt-triggers" role="group" aria-label="LoRA Triggers"></div>
+        </div>
+        <div id="negative-prompt-box" class="hide" style="margin-top:8px">
+          <label for="negative-prompt">Negative prompt</label>
+          <textarea id="negative-prompt" placeholder="Things to avoid (e.g. blurry, deformed, watermark)…" spellcheck="false" style="min-height:72px"></textarea>
+        </div>
         <label style="margin-top:8px">Wallpaper style</label>
         <div class="aspects" id="styles" role="group" aria-label="Wallpaper style"></div>
         <small class="status" id="style-hint" style="display:block;margin-top:4px"></small>
@@ -91,14 +105,19 @@
       </div>
       <p id="caption-draft" class="status hide" role="status"></p>
       <button type="button" class="ghost hide" id="caption-draft-clear">Clear edited caption</button>
-      <div class="row seed-row">
-        <div>
+      <div class="row seed-row" style="align-items:flex-end">
+        <div style="flex:1">
           <label for="seed">Seed</label>
-          <input id="seed" type="number" min="0" inputmode="numeric" placeholder="Random each run">
+          <div class="row" style="margin-top:6px">
+            <input id="seed" type="number" min="0" inputmode="numeric" placeholder="Random each run" style="margin:0;flex:1">
+            <button class="ghost" id="seed-dice" type="button" title="Clear for random seed" style="flex:none;min-width:44px;padding:0 12px">🎲</button>
+            <button class="ghost" id="seed-plus" type="button" title="Seed + 1" style="flex:none;min-width:38px;padding:0 8px">+1</button>
+            <button class="ghost" id="seed-minus" type="button" title="Seed - 1" style="flex:none;min-width:38px;padding:0 8px">-1</button>
+          </div>
         </div>
-        <div>
+        <div style="width:96px;flex:none">
           <label for="runs">Runs</label>
-          <select id="runs"><option>1</option><option>2</option><option>4</option><option>8</option></select>
+          <select id="runs" style="margin-top:6px"><option>1</option><option>2</option><option>4</option><option>8</option></select>
         </div>
       </div>
       <p class="status" style="margin:4px 0 0">Leave seed empty for a random seed each run. With a fixed seed, runs use seed, seed+1, …</p>
@@ -133,6 +152,7 @@
     </form>
 
     <div id="jobs"></div>
+    </div>
   </section>
 
   <!-- Tab: Gallery -->
@@ -183,6 +203,7 @@
 </main>
 
 <nav aria-label="Sections">
+  <div class="nav-brand" aria-hidden="true">✦</div>
   <button data-tab="create" aria-current="page" type="button"><span class="nav-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.1 6.9L21 12l-6.9 2.1L12 21l-2.1-6.9L3 12l6.9-2.1z"/></svg></span>Create</button>
   <button data-tab="gallery" type="button"><span class="nav-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span>Gallery</button>
   <button data-tab="settings" type="button"><span class="nav-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></span>Settings</button>
