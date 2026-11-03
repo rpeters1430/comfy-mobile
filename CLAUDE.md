@@ -84,3 +84,8 @@ Configuration is env-only: `COMFYUI_URL`, `STUDIO_TOKEN` (required, or every end
 ## Gallery detail screen (v0.5.1)
 
 Gallery taps use `openGalleryPhoto` and fetch fresh signed output URLs; they do not switch to the Create tab. The full-viewport dialog supports metadata, paging through files, optional comparison, video playback, and a link to the existing job card. `run_details` records effective values only (never the option lists) in each new JobStore record; create/history APIs return this optional `details` field. Legacy records remain readable. `MobileTools.preferredWorkflows` hides bundled copies only when the synced copy is runnable, exposing a labelled bundled fallback when sync is broken.
+
+## Video length, size and quality
+
+- `find_controls` returns `video` for the single video latent (`WanImageToVideo`, `EmptyLTXVLatentVideo` and kin), traced to the workflow's own primitives so linked nodes stay in step: `seconds`/`fps` from a `ComfyMathExpression` `a * b + 1` (`floor` allowed) on the latent's `length`; `width`/`height` from `a` or `a/N` expressions over `PrimitiveInt`s (LTX's half-size first pass), or the latent's plain ints; otherwise `megapixels` of the `ImageScaleToTotalPixels` the photo-sized latent reads (Wan I2V). Jobs send `video: {seconds, width, height, megapixels}`; `_apply_video` checks 1–20 whole seconds, multiples of 8 and 0.2–1.5 MP.
+- The phone shows a Video section: a length slider (max 10 s at ≤16 fps, else 20), resolution × orientation chips for exact-size workflows, Fast/Standard/High quality chips for photo-sized ones.

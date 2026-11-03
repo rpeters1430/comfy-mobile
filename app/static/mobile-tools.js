@@ -34,6 +34,8 @@
     }));
     job.sampling = structuredClone(choices.sampling || {});
     job.caption = structuredClone(choices.caption || {});
+    // Every exposed video value, so validation checks what loading the preset restores.
+    if (controls.video && choices.video && Object.keys(choices.video).length) job.video = { ...choices.video };
     return job;
   }
   function preferredWorkflows(workflows) {
@@ -105,6 +107,7 @@
       ...(c.size ? { adviserSize: { ...c.size } } : {}),
       upscaler: c.fit?.upscaler || '',
       skipDetailers: Boolean(c.skipDetailers ?? c.skip_detailers),
+      ...(c.video ? { video: { ...c.video } } : {}),
       triggers: c.caption_suffix ? c.caption_suffix.split(',').map(t => t.trim()).filter(Boolean) : []
     };
   }

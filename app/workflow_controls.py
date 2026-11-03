@@ -164,6 +164,99 @@ def _captions(graph, object_info):
     return found
 
 
+VIDEO_LATENTS = ("WanImageToVideo", "Wan22ImageToVideoLatent", "WanFirstLastFrameToVideo", "EmptyLTXVLatentVideo",
+                 "EmptyHunyuanLatentVideo")
+LENGTH_EXPR = re.compile(r"(?:floor)?\(?a\*b\+1\)?")  # frames = seconds * fps + 1
+SIDE_EXPR = re.compile(r"a(?:/\d+)?")  # a side set directly, or a first pass at a fraction of it (LTX)
+MAX_SECONDS = 20
+
+
+def _numeric(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _primitive(graph, value):
+    node = graph.get(value[0]) if isinstance(value, list) and len(value) == 2 else None
+    if node and node["class_type"] in ("PrimitiveInt", "PrimitiveFloat") and _numeric(node["inputs"].get("value")):
+        return value[0]
+    return None
+
+
+def _expression(graph, value, pattern):
+    """The primitives a math expression of the given form reads as `a` and `b`, or None."""
+    node = graph.get(value[0]) if isinstance(value, list) and len(value) == 2 else None
+    if not node or node["class_type"] != "ComfyMathExpression":
+        return None
+    if not pattern.fullmatch(re.sub(r"\s+", "", str(node["inputs"].get("expression", "")))):
+        return None
+    return _primitive(graph, node["inputs"].get("values.a")), _primitive(graph, node["inputs"].get("values.b"))
+
+
+def _video(graph):
+    """Length and size of the single video latent, traced back to the workflow's own seconds, fps and size
+    primitives, so everything else wired to them (audio latent, frame rate, second pass) stays in step."""
+    latents = [node_id for node_id, node in graph.items() if node["class_type"] in VIDEO_LATENTS]
+    if len(latents) != 1:
+        return None
+    inputs = graph[latents[0]]["inputs"]
+    found = {"node": latents[0]}
+    length = _expression(graph, inputs.get("length"), LENGTH_EXPR)
+    if length and all(length):
+        found.update(seconds_at=[length[0], "value"], seconds=graph[length[0]]["inputs"]["value"],
+                     fps=graph[length[1]]["inputs"]["value"])
+    sides = [_expression(graph, inputs.get(f), SIDE_EXPR) for f in ("width", "height")]
+    photo = _photo_size(graph, graph[latents[0]])
+    if all(side and side[0] for side in sides) and sides[0][0] != sides[1][0]:
+        found.update(width_at=[sides[0][0], "value"], height_at=[sides[1][0], "value"])
+    elif all(_plain(inputs.get(f)) for f in ("width", "height")):
+        found.update(width_at=[latents[0], "width"], height_at=[latents[0], "height"])
+    elif photo:
+        image = graph[photo]["inputs"].get("image")
+        scaler = image[0] if isinstance(image, list) else None
+        if graph.get(scaler, {}).get("class_type") == "ImageScaleToTotalPixels" and _numeric(graph[scaler]["inputs"].get("megapixels")):
+            found.update(megapixels_at=[scaler, "megapixels"], megapixels=graph[scaler]["inputs"]["megapixels"])
+    if "width_at" in found:
+        found.update(width=graph[found["width_at"][0]]["inputs"][found["width_at"][1]],
+                     height=graph[found["height_at"][0]]["inputs"][found["height_at"][1]])
+    return found if len(found) > 1 else None
+
+
+def _apply_video(graph, found, video):
+    control = found["video"]
+    if not control:
+        raise ControlError("This workflow has no video length or size to change")
+    editable = {key for key in ("seconds", "width", "height", "megapixels") if key + "_at" in control}
+    if set(video) - editable:
+        raise ControlError(f"This workflow's video can't change: {', '.join(sorted(set(video) - editable))}")
+
+    def put(key, value):
+        node_id, field = control[key + "_at"]
+        current = graph[node_id]["inputs"][field]
+        graph[node_id]["inputs"][field] = float(value) if isinstance(current, float) else value
+
+    if "seconds" in video:
+        seconds = video["seconds"]
+        if "seconds_at" not in control or not _numeric(seconds) or seconds != int(seconds) or not 1 <= seconds <= MAX_SECONDS:
+            raise ControlError(f"Video length must be 1-{MAX_SECONDS} whole seconds")
+        put("seconds", int(seconds))
+    if "width" in video or "height" in video:
+        width, height = video.get("width"), video.get("height")
+        if "width_at" not in control:
+            raise ControlError("This workflow sizes its video from the input image; change the quality instead")
+        width, height = (int(v) if _numeric(v) and v == int(v) else v for v in (width, height))
+        for side in (width, height):
+            if not _plain(side) or not 256 <= side <= MAX_SIDE or side % 8:
+                raise ControlError(f"Video width and height must be multiples of 8 between 256 and {MAX_SIDE}")
+        if width * height > MAX_PIXELS:
+            raise ControlError("Video size is too large")
+        put("width", width)
+        put("height", height)
+    if "megapixels" in video:
+        megapixels = video["megapixels"]
+        if "megapixels_at" not in control or not _numeric(megapixels) or not 0.2 <= megapixels <= 1.5:
+            raise ControlError("Video quality must be between 0.2 and 1.5 megapixels")
+        put("megapixels", round(float(megapixels), 2))
+
 
 def _negative_prompt(graph):
     """Find a single identifiable unlinked CLIPTextEncode feeding into a sampler negative socket."""
@@ -182,6 +275,7 @@ def _negative_prompt(graph):
         nid, default_txt = next(iter(targets.items()))
         return {"node": nid, "default": default_txt}
     return None
+
 
 def find_controls(graph: dict, object_info: dict) -> dict:
     models, loras = [], []
@@ -205,7 +299,7 @@ def find_controls(graph: dict, object_info: dict) -> dict:
             "samplers": _samplers(graph), "size": size, "size_from_photo": from_photo, "captions": _captions(graph, object_info),
             "can_fit": saves and "ImageScale" in object_info,
             "can_crop": saves and all(node in object_info for node in CROP_NODES),
-            "detailers": _detailers(graph),
+            "detailers": _detailers(graph), "video": _video(graph),
             "upscale_options": _options(object_info, "UpscaleModelLoader", "model_name"),
             "sampler_options": _options(object_info, "KSampler", "sampler_name"),
             "scheduler_options": _options(object_info, "KSampler", "scheduler"), "negative_prompt": _negative_prompt(graph)}
@@ -339,10 +433,11 @@ def _apply_fit(graph, found, fit, object_info):
 
 def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, extra_loras: list,
                    sampling: dict | None = None, size: dict | None = None, caption: dict | None = None,
-                   fit: dict | None = None, skip_detailers: bool = False,
+                   fit: dict | None = None, skip_detailers: bool = False, video: dict | None = None,
                    negative_prompt: str | None = None) -> None:
     """Apply phone choices in place. Only nodes and options found by find_controls are accepted."""
-    if not (models or loras or extra_loras or sampling or size or caption or fit or skip_detailers or negative_prompt is not None):
+    if not (models or loras or extra_loras or sampling or size or caption or fit or skip_detailers or video
+            or negative_prompt is not None):
         return
     found = find_controls(graph, object_info)
     if skip_detailers:
@@ -358,6 +453,8 @@ def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, ex
         _apply_caption(graph, found, caption)
     if size:
         _apply_size(graph, size)
+    if video:
+        _apply_video(graph, found, video)
     if negative_prompt is not None and found.get("negative_prompt"):
         neg_node = found["negative_prompt"]["node"]
         if neg_node in graph and "inputs" in graph[neg_node] and "text" in graph[neg_node]["inputs"]:
@@ -410,7 +507,7 @@ def run_details(graph, object_info):
     return {
         'models': [{key: model[key] for key in ('node', 'field', 'value')} for model in found['models']],
         'loras': [{key: lora[key] for key in ('node', 'value', 'strength')} for lora in found['loras']],
-        'samplers': found['samplers'], 'size': found['size'],
+        'samplers': found['samplers'], 'size': found['size'], 'video': found['video'],
         'captions': [{'node': caption['node'], 'values': caption['values']} for caption in found['captions']],
         'negative_prompt': found.get('negative_prompt', {}).get('default') if found.get('negative_prompt') else None,
     }

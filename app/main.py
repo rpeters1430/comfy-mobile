@@ -405,6 +405,7 @@ class Job(BaseModel):
     caption: dict[str,dict[str,bool|str]] = Field(default_factory=dict,max_length=4)
     fit: FitChoice | None = None
     skip_detailers: bool = False
+    video: dict[str,float] | None = Field(default=None,max_length=4)  # seconds, width/height or megapixels
     auto_loras: str = Field(default='', max_length=1000)  # the phone's note on what auto LoRAs added; recorded only
 
 async def prepare_job(job: Job):
@@ -425,7 +426,7 @@ async def prepare_job(job: Job):
     # Only the {{prompt}} placeholder is replaced, so negative prompts and instructions are never rewritten.
     try:
         apply_controls(graph,info,job.models,{k:v.model_dump() for k,v in job.loras.items()},[v.model_dump() for v in job.extra_loras],job.sampling,job.size,job.caption,
-                       job.fit.model_dump(exclude_none=True) if job.fit else None, job.skip_detailers, negative_prompt=job.negative_prompt)
+                       job.fit.model_dump(exclude_none=True) if job.fit else None, job.skip_detailers, job.video, negative_prompt=job.negative_prompt)
         applied=apply_job(graph,job.prompt,job.images,job.seed)
         if job.stage == 'caption':
             if job.review: raise CaptionError('Caption preview cannot include approved text')
@@ -929,7 +930,7 @@ async def validate_preset(preset_id: str, authorization: str | None = Header(def
         if not check['runnable']: return {'valid': False, 'errors': check['errors']}
         apply_controls(graph, info, job.models, {k: v.model_dump() for k, v in job.loras.items()},
                        [v.model_dump() for v in job.extra_loras], job.sampling, job.size, job.caption,
-                       job.fit.model_dump(exclude_none=True) if job.fit else None, job.skip_detailers)
+                       job.fit.model_dump(exclude_none=True) if job.fit else None, job.skip_detailers, job.video)
         return {'valid': True, 'errors': [], 'preset': preset}
     except (ValueError, OSError, ConversionError, ControlError) as exc:
         return {'valid': False, 'errors': [str(exc)]}

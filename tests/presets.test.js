@@ -89,3 +89,11 @@ test('cinematic mode renders to the requested aspect instead of forcing 9:16 cen
   assert.equal(renderAspect('1344:2992', true), '1344:2992');
   assert.equal(renderAspect('1344:2992'), '9:16');
 });
+
+test('video sizes follow resolution and orientation', () => {
+  const { videoSize, videoShape } = require('../app/static/presets.js');
+  assert.deepEqual(videoSize('720p', 'portrait'), { width: 720, height: 1280 });
+  assert.deepEqual(videoSize('480p', 'square'), { width: 480, height: 480 });
+  assert.deepEqual(videoShape({ width: 1280, height: 720 }), { res: '720p', orient: 'landscape' });
+  assert.equal(videoSize('4k', 'landscape'), null);
+});

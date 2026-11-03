@@ -95,6 +95,21 @@ function cropAspect(aspect) {
   return [Math.round(a), Math.round(b)];
 }
 
+// Video sizes by resolution and orientation (LTX-style workflows that take an exact size).
+const VIDEO_RESOLUTIONS = [{ id: '480p', short: 480, long: 848 }, { id: '720p', short: 720, long: 1280 }, { id: '1080p', short: 1080, long: 1920 }];
+function videoSize(res, orient) {
+  const r = VIDEO_RESOLUTIONS.find(x => x.id === res);
+  if (!r) return null;
+  return orient === 'portrait' ? { width: r.short, height: r.long } : orient === 'square' ? { width: r.short, height: r.short } : { width: r.long, height: r.short };
+}
+// The resolution and orientation a size matches, so the chips show the current choice.
+function videoShape(size) {
+  const orient = size.width > size.height ? 'landscape' : size.width < size.height ? 'portrait' : 'square';
+  return { res: VIDEO_RESOLUTIONS.find(r => r.short === Math.min(size.width, size.height))?.id || '', orient };
+}
+// Photo-sized video workflows (Wan image-to-video) keep the photo's shape; quality sets its pixel count.
+const VIDEO_QUALITY = [{ id: 'fast', label: 'Fast', megapixels: 0.35 }, { id: 'standard', label: 'Standard', megapixels: null }, { id: 'high', label: 'High', megapixels: 0.8 }];
+
 if (typeof module !== 'undefined') {
-  module.exports = { STYLE_PRESETS, STYLE_TAIL, ASPECTS, WALLPAPER_PRESETS, DESKTOP_PRESETS, SCREEN_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropAspect };
+  module.exports = { STYLE_PRESETS, STYLE_TAIL, ASPECTS, WALLPAPER_PRESETS, DESKTOP_PRESETS, SCREEN_PRESETS, CINEMATIC_SUFFIX, styledPrompt, cinematicOn, aspectSize, presetAspect, upscaleWorthIt, renderAspect, cropAspect, VIDEO_RESOLUTIONS, videoSize, videoShape, VIDEO_QUALITY };
 }

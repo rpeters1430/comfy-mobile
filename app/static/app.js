@@ -557,6 +557,9 @@ async function loadControls(wf, restored = null) {
   const loraOk = name => controls.lora_options.includes(name);
   choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', preset: '', upscaler: '', cinematic: saved.cinematic !== false, caption: {}, skipDetailers: !!saved.skipDetailers,
     triggers: Array.isArray(saved.triggers) ? saved.triggers.filter(t => typeof t === 'string') : [] };
+  // Saved video values only replace the ones this workflow exposes.
+  choices.video = Object.fromEntries(VIDEO_KEYS.filter(k => controls.video?.[k] != null)
+    .map(k => [k, typeof saved.video?.[k] === 'number' ? saved.video[k] : controls.video[k]]));
   for (const m of controls.models) choices.models[m.node] = m.options.includes(saved.models?.[m.node]) ? saved.models[m.node] : m.value;
   for (const l of controls.loras) {
     const s = saved.loras?.[l.node];
@@ -696,6 +699,7 @@ function renderControls() {
   }
 
   if (controls.size) rows.push(sizeSection(() => { saveControls(); renderSummary(); }));
+  if (controls.video) rows.push(videoSection(() => { saveControls(); renderSummary(); }));
   // With no full-generation pass the first refine pass re-draws an input photo (image-to-image).
   const fromPhoto = !controls.samplers.some(smp => smp.role === 'base') && controls.samplers[0];
   for (const smp of controls.samplers) {
@@ -926,6 +930,60 @@ function captionSection(cap, changed) {
     el('div', { class: 'settings-grid' }, selects), toggles.length ? el('div', { class: 'aspects' }, toggles) : null);
 }
 
+const VIDEO_KEYS = ['seconds', 'width', 'height', 'megapixels'];
+
+function videoSection(changed) {
+  const v = controls.video, c = choices.video;
+  const box = el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, 'Video'));
+  const chips = (items, current, pick) => {
+    const row = el('div', { class: 'aspects' });
+    for (const item of items) {
+      const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(item.id === current()) }, item.label);
+      chip.onclick = () => { pick(item); for (const b of row.children) b.setAttribute('aria-pressed', String(b === chip)); changed(); };
+      row.append(chip);
+    }
+    return row;
+  };
+  if (v.seconds != null) {
+    // Wan runs at 16 fps and slows down sharply past ~5 s; LTX handles longer clips.
+    const max = v.fps > 16 ? 20 : 10;
+    const note = el('small', { class: 'status', style: 'display:block' });
+    const show = () => { note.textContent = `${c.seconds} s · ${c.seconds * v.fps + 1} frames at ${v.fps} fps` + (c.seconds > v.seconds ? ' · takes longer and uses more memory' : ''); };
+    const slider = el('input', { type: 'range', min: '1', max: String(max), step: '1', value: String(c.seconds), 'aria-label': 'Video length in seconds' });
+    slider.oninput = () => { c.seconds = Number(slider.value); show(); changed(); };
+    show();
+    box.append(el('label', { style: 'display:block;margin-top:8px' }, 'Length'), slider, note);
+  }
+  if (v.width != null) {
+    const shape = () => videoShape(c);
+    const note = el('small', { class: 'status', style: 'display:block' });
+    const show = () => { note.textContent = `${c.width}×${c.height}`; };
+    const set = (res, orient) => { const size = videoSize(res || '720p', orient); if (size) Object.assign(c, size); show(); };
+    box.append(el('label', { style: 'display:block;margin-top:8px' }, 'Resolution'),
+      chips(VIDEO_RESOLUTIONS.map(r => ({ id: r.id, label: r.id })), () => shape().res, r => set(r.id, shape().orient)),
+      chips([{ id: 'landscape', label: 'Landscape' }, { id: 'portrait', label: 'Portrait' }, { id: 'square', label: 'Square' }],
+        () => shape().orient, o => set(shape().res, o.id)), note);
+    show();
+  }
+  if (v.megapixels != null) {
+    const current = () => VIDEO_QUALITY.find(q => (q.megapixels ?? v.megapixels) === c.megapixels)?.id;
+    box.append(el('label', { style: 'display:block;margin-top:8px' }, 'Quality'),
+      chips(VIDEO_QUALITY, current, q => { c.megapixels = q.megapixels ?? v.megapixels; }),
+      el('small', { class: 'status', style: 'display:block' }, 'Size follows your photo’s shape. High takes about twice as long as Standard.'));
+  }
+  return box;
+}
+
+function videoPayload(c) {
+  const v = controls.video, x = c.video || {};
+  if (!v) return null;
+  const out = {};
+  if (v.seconds != null && x.seconds !== v.seconds) out.seconds = x.seconds;
+  if (v.width != null && (x.width !== v.width || x.height !== v.height)) Object.assign(out, { width: x.width, height: x.height });
+  if (v.megapixels != null && x.megapixels !== v.megapixels) out.megapixels = x.megapixels;
+  return Object.keys(out).length ? out : null;
+}
+
 function controlsText(c) {
   if (!c) return '';
   const parts = Object.values(c.models || {}).map(fileLabel);
@@ -935,6 +993,9 @@ function controlsText(c) {
   if (size && c.aspect) parts.push(`${size.width}×${size.height}` + (fit?.aspect ? ` cropped to ${c.aspect}` : ''));
   if (cinematicOn(c)) parts.push('Cinematic');
   if (c.skipDetailers && controls?.detailers?.length) parts.push('No face detailer');
+  const video = controls?.video && videoPayload(c);
+  if (video) parts.push([video.seconds && `${video.seconds} s`, video.width && `${video.width}×${video.height}`,
+    video.megapixels && `${video.megapixels} MP`].filter(Boolean).join(' · '));
   const base = controls?.samplers.find(smp => smp.role === 'base');
   const v = base && c.sampling?.[base.node];
   if (v && 'steps' in v) parts.push(`${v.steps} steps` + ('cfg' in v ? ` · CFG ${v.cfg}` : ''));
@@ -967,6 +1028,7 @@ function controlsPayload(c) {
   return {
     models, loras, extra_loras: c.extra.map(x => ({ name: x.name, strength: x.strength })), sampling, caption,
     ...(c.skipDetailers && controls.detailers?.length ? { skip_detailers: true } : {}),
+    ...(videoPayload(c) ? { video: videoPayload(c) } : {}),
     ...(size && (size.width !== controls.size.width || size.height !== controls.size.height) ? { size } : {}),
     ...(fit ? { fit: { ...fit, ...(fit.width && c.upscaler && upscaleWorthIt(chosenSize(c), fit) ? { upscaler: c.upscaler } : {}) } } : {})
   };
