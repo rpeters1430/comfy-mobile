@@ -9,15 +9,15 @@ const open = source.slice(source.indexOf('function openJob('), source.indexOf('/
 const poll = source.slice(source.indexOf('async function ensurePollerRunning('), source.indexOf('async function showLivePreview('));
 
 // Exercise the actual card creation and poller with a clock and minimal DOM/API boundaries.
-async function status(job, now, pending = false) {
-  const element = () => ({ classList: { add() {}, remove() {} }, prepend() {}, scrollIntoView() {} });
+async function status(job, now, pending = false, progress = { value: 3, max: 10 }) {
+  const element = () => ({ classList: { add() {}, remove() {} }, prepend() {}, scrollIntoView() {}, removeAttribute() {} });
   const entries = new Map();
   const context = vm.createContext({
     Date: { now: () => now }, Number, Math, Set, openJobs: entries,
     el: element, $: element, showTab() {}, pollSignal() {},
     api: async path => path === '/queue'
       ? { queue_running: pending ? [] : [[0, job.id]], queue_pending: pending ? [[0, job.id]] : [] }
-      : { value: 3, max: 10 },
+      : progress,
     setTimeout: fn => { for (const entry of entries.values()) entry.stopped = true; fn(); }
   });
   vm.runInContext('let pollerActive = true;\n' + open + poll, context);
@@ -42,4 +42,17 @@ test('legacy or invalid timestamps fall back to the current time', async () => {
   for (const created of [undefined, null, 0, -1, 'bad', Infinity, 1700000001000]) {
     assert.match(await status({ id: 'legacy', created }, 1700000000000), /Generating.*0s$/);
   }
+});
+
+test('video progress shows pass, steps and a clearly scoped estimate', async () => {
+  const job = { id: 'video', created: 1700000000000 };
+  const text = await status(job, job.created + 125000, false,
+    { value: 3, max: 10, pass: 2, passes: 2, eta_seconds: 70 });
+  assert.match(text, /pass 2\/2 · step 3\/10/);
+  assert.match(text, /this pass ~70s left/);
+  const finishing = await status(job, job.created + 150000, false,
+    { value: 0, max: 0, finishing: true, stage: 'VAEDecode' });
+  assert.match(finishing, /decoding and saving/);
+  assert.doesNotMatch(finishing, /left/);
+  assert.match(await status(job, job.created + 10000, false, { stage: 'UNETLoader', max: 0 }), /UNETLoader/);
 });

@@ -1285,15 +1285,19 @@ async function ensurePollerRunning() {
         const steps = p?.max > 1;
         const passes = p?.passes > 1 ? p.passes : 0;
         const pass = passes ? `pass ${Math.min(Math.max(p.pass, 1), passes)}/${passes} · ` : '';
+        const eta = steps && Number.isFinite(p?.eta_seconds) && p.eta_seconds >= 0
+          ? ` · this pass ~${Math.max(1, Math.round(p.eta_seconds))}s left` : '';
         entry.statusText.textContent = p?.finishing ? `Finishing up (decoding and saving)… ${secs}s`
-          : steps ? `Generating… ${pass}step ${p.value}/${p.max} · ${secs}s`
-          : `Generating… ${passes && p.pass ? pass : ''}${secs}s`;
+          : steps ? `Generating… ${pass}step ${p.value}/${p.max} · ${secs}s${eta}`
+          : `Generating… ${p?.stage ? p.stage + ' · ' : ''}${passes && p.pass ? pass : ''}${secs}s`;
         // One bar across every pass, so a two-pass video doesn't look done halfway.
         if (steps) {
           const done = passes ? (Math.min(Math.max(p.pass, 1), passes) - 1 + p.value / p.max) / passes : p.value / p.max;
           entry.bar.max = 1; entry.bar.value = done; entry.bar.classList.remove('hide');
         } else if (p?.finishing) {
           entry.bar.removeAttribute('value'); entry.bar.classList.remove('hide');
+        } else {
+          entry.bar.classList.add('hide');
         }
         if (p?.frame && p.frame !== entry.frame) showLivePreview(id, entry, p.frame);
       } else if (isPending) {
