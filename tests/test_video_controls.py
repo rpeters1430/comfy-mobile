@@ -55,6 +55,14 @@ class VideoControlTests(unittest.TestCase):
                 apply_controls(g, {}, {}, {}, [], video=video)
         self.assertIsNone(find_controls({}, {})['video'])
 
+    def test_wan_length_is_capped_at_its_trained_five_seconds(self):
+        g = wan()
+        self.assertEqual(5, find_controls(g, {})['video']['max_seconds'])
+        with self.assertRaises(ControlError):
+            apply_controls(g, {}, {}, {}, [], video={'seconds': 10})
+        apply_controls(g, {}, {}, {}, [], video={'seconds': 5})
+        self.assertEqual(20, find_controls(ltx(), {})['video']['max_seconds'])
+
 
 if __name__ == '__main__':
     unittest.main()
