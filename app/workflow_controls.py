@@ -169,6 +169,9 @@ VIDEO_LATENTS = ("WanImageToVideo", "Wan22ImageToVideoLatent", "WanFirstLastFram
 LENGTH_EXPR = re.compile(r"(?:floor)?\(?a\*b\+1\)?")  # frames = seconds * fps + 1
 SIDE_EXPR = re.compile(r"a(?:/\d+)?")  # a side set directly, or a first pass at a fraction of it (LTX)
 MAX_SECONDS = 20
+# Wan 2.x is trained on 5 s clips (81 frames at 16 fps, 121 at 24). Longer ones loop, and attention memory grows with
+# the square of the frame count: 10 s of a 14B model on a 16 GB card stalled ComfyUI instead of failing.
+WAN_MAX_SECONDS = 5
 
 
 def _numeric(value):
@@ -202,8 +205,10 @@ def _video(graph):
     found = {"node": latents[0]}
     length = _expression(graph, inputs.get("length"), LENGTH_EXPR)
     if length and all(length):
-        found.update(seconds_at=[length[0], "value"], seconds=graph[length[0]]["inputs"]["value"],
-                     fps=graph[length[1]]["inputs"]["value"])
+        seconds = graph[length[0]]["inputs"]["value"]
+        wan = graph[latents[0]]["class_type"].startswith("Wan")
+        found.update(seconds_at=[length[0], "value"], seconds=seconds, fps=graph[length[1]]["inputs"]["value"],
+                     max_seconds=max(WAN_MAX_SECONDS, int(seconds)) if wan else MAX_SECONDS)
     sides = [_expression(graph, inputs.get(f), SIDE_EXPR) for f in ("width", "height")]
     photo = _photo_size(graph, graph[latents[0]])
     if all(side and side[0] for side in sides) and sides[0][0] != sides[1][0]:
@@ -236,8 +241,9 @@ def _apply_video(graph, found, video):
 
     if "seconds" in video:
         seconds = video["seconds"]
-        if "seconds_at" not in control or not _numeric(seconds) or seconds != int(seconds) or not 1 <= seconds <= MAX_SECONDS:
-            raise ControlError(f"Video length must be 1-{MAX_SECONDS} whole seconds")
+        top = control.get("max_seconds", MAX_SECONDS)
+        if "seconds_at" not in control or not _numeric(seconds) or seconds != int(seconds) or not 1 <= seconds <= top:
+            raise ControlError(f"Video length must be 1-{top} whole seconds for this model")
         put("seconds", int(seconds))
     if "width" in video or "height" in video:
         width, height = video.get("width"), video.get("height")

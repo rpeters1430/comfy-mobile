@@ -945,8 +945,8 @@ function videoSection(changed) {
     return row;
   };
   if (v.seconds != null) {
-    // Wan runs at 16 fps and slows down sharply past ~5 s; LTX handles longer clips.
-    const max = v.fps > 16 ? 20 : 10;
+    // The server caps Wan at the 5 s it is trained on; older servers send no cap.
+    const max = v.max_seconds || (v.fps > 16 ? 20 : 10);
     const note = el('small', { class: 'status', style: 'display:block' });
     const show = () => { note.textContent = `${c.seconds} s · ${c.seconds * v.fps + 1} frames at ${v.fps} fps` + (c.seconds > v.seconds ? ' · takes longer and uses more memory' : ''); };
     const slider = el('input', { type: 'range', min: '1', max: String(max), step: '1', value: String(c.seconds), 'aria-label': 'Video length in seconds' });
