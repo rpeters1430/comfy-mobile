@@ -36,6 +36,7 @@ class ProgressTracker:
     def expect(self, prompt_id: str, graph: dict) -> None:
         """Remember a queued prompt's sampler nodes, so a two-pass video run reads pass 1/2, pass 2/2."""
         self._job(prompt_id)["samplers"] = {node_id for node_id, node in graph.items() if node.get("class_type") in SAMPLERS}
+        self._job(prompt_id)["stages"] = {node_id: node.get("class_type") for node_id, node in graph.items()}
 
     def handle_text(self, message: dict) -> None:
         kind, data = message.get("type"), message.get("data")
@@ -52,13 +53,30 @@ class ProgressTracker:
             # node None means the prompt finished.
             self.current = prompt_id if data.get("node") is not None else None
             if data.get("node") is not None:
-                self._job(prompt_id)["node"] = data["node"]
+                job = self._job(prompt_id)
+                if job['node'] != data['node']:
+                    job.pop('timing', None)
+                    job.pop('eta_seconds', None)
+                job["node"] = data["node"]
             elif prompt_id in self.jobs:
                 # The phone shows the outputs now; dropping the frame keeps KEEP entries cheap.
                 self.jobs[prompt_id]["preview"] = None
         elif kind == "progress" and isinstance(data.get("value"), int) and isinstance(data.get("max"), int):
             job = self._job(prompt_id)
             node = data.get("node", job["node"])
+            value, maximum = data['value'], data['max']
+            now = time.monotonic()
+            timing = job.get('timing')
+            if not timing or node != job['step_node'] or maximum != job['max'] or value < job['value']:
+                job['timing'] = (now, value)
+                job.pop('eta_seconds', None)
+            elif value > job['value']:
+                elapsed, advanced = now - timing[0], value - timing[1]
+                # Measure completed step intervals, excluding model loading and queue time.
+                if elapsed > 0 and advanced >= 2 and 0 < value < maximum:
+                    job['eta_seconds'] = round(elapsed / advanced * (maximum - value))
+            if value >= maximum or maximum <= 1:
+                job.pop('eta_seconds', None)
             job.update(value=data["value"], max=data["max"], node=node, step_node=node, updated=time.time())
             if node is not None and node not in job["seen"]:
                 job["seen"].append(node)
@@ -80,7 +98,13 @@ class ProgressTracker:
         stepping = job["step_node"] is not None and job["step_node"] == job["node"]
         samplers = job["samplers"]
         done = [n for n in job["seen"] if n in samplers]
-        return {"value": job["value"] if stepping else 0, "max": job["max"] if stepping else 0, "node": job["node"],
+        extra = {}
+        stage = job.get('stages', {}).get(job['node'])
+        if stage:
+            extra['stage'] = stage
+        if stepping and job['node'] in samplers and 'eta_seconds' in job:
+            extra['eta_seconds'] = job['eta_seconds']
+        return {**extra, "value": job["value"] if stepping else 0, "max": job["max"] if stepping else 0, "node": job["node"],
                 "frame": job["frame"], "pass": len(done), "passes": len(samplers),
                 "finishing": bool(samplers) and len(done) == len(samplers) and job["node"] not in samplers}
 

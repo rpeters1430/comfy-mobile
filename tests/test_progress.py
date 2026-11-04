@@ -1,5 +1,6 @@
 import struct
 import unittest
+from unittest.mock import patch
 
 from app.progress import KEEP, ProgressTracker
 
@@ -7,6 +8,44 @@ JPEG = struct.pack(">II", 1, 1) + b"\xff\xd8jpeg"
 
 
 class ProgressTests(unittest.TestCase):
+    def test_pass_eta_uses_step_deltas_and_survives_phone_reconnect(self):
+        t = ProgressTracker()
+        t.expect('a', {'3': {'class_type': 'KSamplerAdvanced'}, '4': {'class_type': 'KSamplerAdvanced'}, '8': {'class_type': 'VAEDecode'}})
+        def send(kind, **data):
+            t.handle_text({'type': kind, 'data': {'prompt_id': 'a', **data}})
+        send('executing', node='3')
+        with patch('app.progress.time.monotonic', return_value=100):
+            send('progress', node='3', value=1, max=10)
+        self.assertIsNone(t.status('a').get('eta_seconds'))
+        with patch('app.progress.time.monotonic', return_value=120):
+            send('progress', node='3', value=3, max=10)
+        self.assertEqual(70, t.status('a').get('eta_seconds'))
+        self.assertEqual(70, t.status('a').get('eta_seconds'))  # another phone poll shares server timing
+        self.assertEqual('KSamplerAdvanced', t.status('a').get('stage'))
+        send('executing', node='4')
+        self.assertIsNone(t.status('a').get('eta_seconds'))
+        with patch('app.progress.time.monotonic', return_value=200):
+            send('progress', node='4', value=1, max=4)
+        self.assertIsNone(t.status('a').get('eta_seconds'))
+        with patch('app.progress.time.monotonic', return_value=230):
+            send('progress', node='4', value=4, max=4)
+        self.assertIsNone(t.status('a').get('eta_seconds'))
+        send('executing', node='8')
+        self.assertEqual('VAEDecode', t.status('a').get('stage'))
+        self.assertIsNone(t.status('a').get('eta_seconds'))
+
+    def test_eta_resets_if_steps_restart_or_total_changes(self):
+        t = ProgressTracker()
+        t.expect('a', {'3': {'class_type': 'KSampler'}})
+        for now, value, maximum in [(100, 1, 10), (120, 3, 10), (130, 1, 10), (140, 2, 20)]:
+            with patch('app.progress.time.monotonic', return_value=now):
+                t.handle_text({'type': 'progress', 'data': {'prompt_id': 'a', 'node': '3', 'value': value, 'max': maximum}})
+            if now == 120:
+                self.assertEqual(70, t.status('a').get('eta_seconds'))
+            else:
+                self.assertIsNone(t.status('a').get('eta_seconds'))
+        self.assertIsNone(t.status('a').get('eta_seconds'))
+
     def test_steps_and_previews_follow_the_executing_prompt(self):
         t = ProgressTracker()
         t.handle_binary(JPEG)  # nothing running yet
