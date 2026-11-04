@@ -1201,7 +1201,10 @@ function openJob(job, focus) {
     state, bar, live, results, actions);
 
   $('jobs').prepend(card);
-  const entry = { job, card, state, statusText, pulse, bar, live, frame: 0, missing: 0, results, actions, started: Date.now(), stopped: false, stopping: false };
+  // Reopening a card must include time spent disconnected, using the saved submission time.
+  const now = Date.now();
+  const started = Number.isFinite(job.created) && job.created > 0 && job.created <= now ? job.created : now;
+  const entry = { job, card, state, statusText, pulse, bar, live, frame: 0, missing: 0, results, actions, started, stopped: false, stopping: false };
   openJobs.set(job.id, entry);
 
   close.onclick = () => {
