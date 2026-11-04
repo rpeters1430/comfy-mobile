@@ -908,6 +908,10 @@ dialog::backdrop { background: var(--md-scrim); }
     max-height: calc(100vh - 220px);
     overflow-y: auto;
     padding-right: 4px;
+    /* Keep every card at its content height when the sticky picker scrolls. */
+    grid-auto-rows: max-content;
+    align-content: start;
+    scrollbar-gutter: stable;
   }
 
   .create-workspace {
