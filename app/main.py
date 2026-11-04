@@ -563,19 +563,20 @@ async def harbor_records():
 
 @app.get('/api/loras/info')
 async def loras_info(authorization: str | None = Header(default=None)):
-    """Per LoRA: Civitai trigger words, recommended strength and family, else a trigger guessed from training tags."""
+    """Per LoRA: source/embedded trigger words and family, with optional exact Hugging Face sidecars."""
     auth(authorization)
     info = await get_object_info()
     # The same list the LoRA pickers show (see find_controls), loose copies included.
     names = _options(info, 'LoraLoaderModelOnly', 'lora_name') or _options(info, 'LoraLoader', 'lora_name')
     found = lora_info.match(names, await harbor_records())
+    await lora_info.enrich_huggingface(found, _http_client)
     gate = asyncio.Semaphore(8)
     guess = [n for n in names if not found.get(n, {}).get('triggers')]
     profiles = dict(zip(guess, await asyncio.gather(*(lora_profile(n, gate) for n in guess))))
     out = {}
     for name in names:
         entry = dict(found.get(name) or {'family': '', 'base_model': None, 'triggers': [], 'weight': None, 'url': None})
-        entry['source'] = 'civitai' if name in found else None
+        entry.setdefault('source', None)
         if not entry['triggers'] and profiles.get(name, {}).get('trigger'):
             entry['triggers'], entry['guessed'] = [profiles[name]['trigger']], True
         out[name] = entry

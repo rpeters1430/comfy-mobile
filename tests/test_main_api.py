@@ -142,6 +142,29 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(401, getattr(self.client, method)(path).status_code if method == "get"
                              else self.client.post(path, json={"endpoint": "https://fcm.googleapis.com/x"}).status_code)
 
+    def test_krea_huggingface_trigger_reaches_mobile_api_without_tag_guess(self):
+        import httpx
+        from unittest.mock import AsyncMock, patch
+        from app import lora_info
+        name = 'AnaDeArmas_KREA2.safetensors'
+        info = {'LoraLoaderModelOnly': {'input': {'required': {'lora_name': [[name]]}}}}
+        records = [{'device': 'pc:comfyui', 'path': 'C:/models/loras/' + name,
+                    'source': {'provider': 'huggingface', 'base_model': 'Krea 2', 'trained_words': [],
+                               'url': 'https://huggingface.co/UntMods/Krea2_Chars_LoRA/blob/main/Characters/Ana%20De%20Armas/' + name}}]
+        transport = httpx.MockTransport(lambda request: httpx.Response(200, text='Trigger word: AnaDeArmas'))
+        lora_info._hf_cache.clear()
+        with patch.object(main, 'get_object_info', AsyncMock(return_value=info)), \
+             patch.object(main, 'harbor_records', AsyncMock(return_value=records)), \
+             patch.object(main, '_http_client', httpx.AsyncClient(transport=transport, trust_env=False)), \
+             patch.object(main, 'lora_profile', AsyncMock()) as fallback:
+            response = self.client.get('/api/loras/info', headers={'Authorization': 'Bearer secret123'})
+        self.assertEqual(response.status_code, 200)
+        entry = response.json()['loras'][name]
+        self.assertEqual(entry['triggers'], ['AnaDeArmas'])
+        self.assertEqual((entry['source'], entry['family']), ('huggingface', 'Krea 2'))
+        self.assertNotIn('guessed', entry)
+        fallback.assert_not_awaited()
+
 
 if __name__ == "__main__":
     unittest.main()
