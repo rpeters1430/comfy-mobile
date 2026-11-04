@@ -370,7 +370,7 @@ function loraFamilyNote(name, base) {
   return el('small', { class: 'status', style: 'display:block' }, advice?.text || fallback);
 }
 
-/* LoRA trigger words and strengths: Civitai data via ModelHarbor (GET /api/loras/info), else a trigger guessed
+/* LoRA trigger words and strengths: source metadata via ModelHarbor (GET /api/loras/info), else a trigger guessed
    from the LoRA's training tags. Optional: without it the pickers work as before. */
 const STRENGTH_KEY = 'image-studio-mobile:lora-strengths:v1';
 let loraInfo = {};
@@ -389,7 +389,7 @@ async function loadLoraInfo(wf) {
   // Preserve the original family when metadata is absent.
   controls.families = controls.families || {};
   for (const [name, x] of Object.entries(loraInfo)) {
-    if (x.family && x.source === 'civitai') controls.families[name] = x.family;
+    if (x.family && ['civitai', 'huggingface'].includes(x.source)) controls.families[name] = x.family;
     else if (x.family && !controls.families[name]) controls.families[name] = x.family;
   }
   try { renderControls(); renderPromptLoraTriggers(); }
