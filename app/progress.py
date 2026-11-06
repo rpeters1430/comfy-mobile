@@ -24,6 +24,8 @@ class ProgressTracker:
     def __init__(self):
         self.jobs: dict[str, dict] = {}
         self.current: str | None = None
+        # Set when ComfyUI reports a prompt finished, so the job watcher checks /history straight away.
+        self.ended = asyncio.Event()
 
     def _job(self, prompt_id: str) -> dict:
         if prompt_id not in self.jobs:
@@ -43,6 +45,8 @@ class ProgressTracker:
         if not isinstance(data, dict) or not isinstance(data.get("prompt_id"), str):
             return
         prompt_id = data["prompt_id"]
+        if kind in ("execution_success", "execution_error", "execution_interrupted"):
+            self.ended.set()
         if kind == "execution_start":
             self.current = prompt_id
             self._job(prompt_id)
@@ -58,9 +62,11 @@ class ProgressTracker:
                     job.pop('timing', None)
                     job.pop('eta_seconds', None)
                 job["node"] = data["node"]
-            elif prompt_id in self.jobs:
-                # The phone shows the outputs now; dropping the frame keeps KEEP entries cheap.
-                self.jobs[prompt_id]["preview"] = None
+            else:
+                self.ended.set()
+                if prompt_id in self.jobs:
+                    # The phone shows the outputs now; dropping the frame keeps KEEP entries cheap.
+                    self.jobs[prompt_id]["preview"] = None
         elif kind == "progress" and isinstance(data.get("value"), int) and isinstance(data.get("max"), int):
             job = self._job(prompt_id)
             node = data.get("node", job["node"])

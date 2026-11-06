@@ -10,7 +10,8 @@ const imageName = 'mobile_' + 'a'.repeat(32) + '.png';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');
 const controls = {models:[{node:'3',field:'ckpt_name',value:'base',options:['base','alternate']}],loras:[],samplers:[{node:'7',role:'base',values:{steps:30,cfg:7,sampler_name:'euler',scheduler:'normal'}}],captions:[],
  lora_options:[],upscale_options:[],sampler_options:['euler','dpmpp_2m'],scheduler_options:['normal'],can_add_lora:false,size:null};
-const workflows = [{id:'edit.json',name:'Photo_Edit',runnable:true,image_inputs:1,takes_prompt:false,node_types:['LoadImage']}];
+const workflows = [{id:'edit.json',name:'Photo_Edit',runnable:true,image_inputs:1,takes_prompt:false,node_types:['LoadImage']},
+ {id:'text.json',name:'Text_Image',runnable:true,image_inputs:0,takes_prompt:true,node_types:['KSampler']}];
 const library = {id:jobId,workflow:'Photo Edit',prompt:'',created:1700000000,status:'success',
  params:{workflow_id:'edit.json',prompt:'',images:[imageName],seed:42,stage:'render'}};
 const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kind:'image',filename:'result.png',preview:false,url:'/image.png?sig=ok'},
@@ -35,6 +36,7 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   const errors = [], submissions = [];
   let reviewRequest = null;
   let presets = [], stage = 'render', stale = false, woke = false, delayValidation = false, fullUnavailable = false;
+  let snippets = [], offline = false, held = [], streams = 0, bulk = [], moved = null;
   page.on('pageerror', error => errors.push(error.message));
   await context.route('**/image.png?*', route => fullUnavailable && !route.request().url().includes('thumb=1')
     ? route.abort('failed') : route.fulfill({contentType:'image/png',body:png}));
@@ -44,7 +46,17 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
    if (p === '/api/auth/check') data={authenticated:true};
    else if (p === '/api/health') data={devices:[]};
    else if (p === '/api/catalog') data={workflows,models:{checkpoints:[],loras:[],upscalers:[]}};
-   else if (p === '/api/workflows/edit.json/validate') { if (delayValidation) await new Promise(r=>setTimeout(r,150)); data={runnable:true,controls,caption_review:{supported:true}}; }
+   else if (p === '/api/jobs/stream') { streams++; return route.fulfill({contentType:'text/event-stream',
+     body:url.searchParams.get('ids').split(',').map(id=>'data: '+JSON.stringify({id,state:'done'})+'\n\n').join('')}); }
+   else if (p === '/api/snippets' && method==='GET') data={items:snippets};
+   else if (p === '/api/snippets' && method==='POST') {const b=req.postDataJSON();data={id:'00000000-0000-4000-8000-000000000001',...b};snippets=[data];}
+   else if (p === '/api/jobs/check') data={issues:[]};
+   else if (p === '/api/deferred' && method==='POST') {const b=req.postDataJSON();held=b.jobs.map((j,i)=>({id:String(i).padStart(32,'0'),workflow:'Text Image',prompt:j.prompt,created:1700000000,status:'waiting',error:null}));data={items:held,woke:b.wake};}
+   else if (p === '/api/queue/jobs') data={running:[],pending:[{id:'r'.repeat(36),position:1,mine:false,workflow:'Started outside the app',prompt:''},{id:jobId,position:2,mine:true,workflow:'Text Image',prompt:'fox'}],held};
+   else if (p === '/api/queue/'+jobId+'/next') {moved=true;data={moved:true,id:jobId};}
+   else if (p === '/api/library/jobs/bulk') {bulk.push(req.postDataJSON());data={changed:1};}
+   else if (p === '/api/library/jobs/'+jobId+'/favorite') {library.favorite=req.postDataJSON().favorite;data={favorite:library.favorite};}
+   else if (/^\/api\/workflows\/.+\/validate$/.test(p)) { if (delayValidation) await new Promise(r=>setTimeout(r,150)); data={runnable:true,controls,caption_review:{supported:true}}; }
    else if (p === '/api/presets' && method==='GET') data={items:presets};
    else if (p === '/api/presets' && method==='POST') {const body=req.postDataJSON();data={...body,id:'preset-1'};presets=[data];}
    else if (p === '/api/presets/preset-1/validate') data={valid:!stale,errors:stale?['Model was removed']:[],preset:presets[0]};
@@ -58,7 +70,9 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
      {node:'mobile_review_negative',kind:'text',text:'blur'}]}:output;
    else if (p === '/api/jobs/'+jobId+'/inputs/0') return route.fulfill({contentType:'image/png',body:png});
    else if (p === '/api/uploads') data={name:imageName};
-   else if (p === '/api/jobs' && method==='POST') {const body=req.postDataJSON();submissions.push(body);stage=body.stage;data={prompt_id:jobId};}
+   else if (p === '/api/jobs' && method==='POST') {
+     if (offline) return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:{message:'ComfyUI is offline',offline:true,can_hold:true}})});
+     const body=req.postDataJSON();submissions.push(body);stage=body.stage;data={prompt_id:jobId};}
    else if (p === '/api/adviser/config' && method==='GET') data={provider:'ollama',base_url:'http://pc:11434',model:'local',has_key:false};
    else if (p === '/api/adviser/models') data={models:['local']};
    else if (p === '/api/adviser/config' && method==='PUT') data={provider:'ollama',base_url:'http://pc:11434',model:'local',has_key:false,connected:true};
@@ -142,6 +156,65 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   await page.locator('#viewer-close').click();
   await page.locator('nav [data-tab=settings]').click();await page.locator('#wake-pc').click();
   await page.waitForFunction(()=>document.querySelector('#wake-status').textContent==='ComfyUI is online.');assert.equal(woke,true);
+  assert.ok(streams > 0, 'job cards follow the progress stream');
+
+  // Snippets and wildcards: every run gets its own pick, and nothing unexpanded reaches the NAS.
+  await page.locator('nav [data-tab=create]').click();
+  await page.locator('#workflows .wf', {hasText:'Text Image'}).click();
+  await page.waitForFunction(()=>controlsReady && !document.querySelector('#prompt-box').classList.contains('hide'));
+  await page.locator('#snippets-box > summary').click();
+  await page.locator('#snippet-name').fill('colors');await page.locator('#snippet-text').fill('crimson\nteal');
+  await page.locator('#snippet-save').click();
+  await page.locator('#snippet-chips .chip').waitFor();
+  await page.locator('#prompt').fill('a {small|large} fox,');
+  await page.locator('#snippet-chips .chip').click();
+  assert.equal(await page.locator('#prompt').inputValue(), 'a {small|large} fox, __colors__');
+  assert.match(await page.locator('#wildcard-hint').textContent(), /^Wildcards: .*a (small|large) fox, (crimson|teal)/);
+  await page.locator('#runs').selectOption('2');
+  const before = submissions.length;
+  await page.locator('#generate').click();
+  for (let i = 0; i < 100 && submissions.length < before + 2; i++) await page.waitForTimeout(100);
+  const runs = submissions.slice(before);
+  assert.equal(runs.length, 2);
+  for (const r of runs) assert.match(r.prompt, /^a (small|large) fox, (crimson|teal)$/);
+
+  // ComfyUI PC offline: Generate offers to hold the runs on the NAS, then the Queue tab shows them.
+  offline = true;
+  await page.locator('#generate').click();
+  await page.locator('#hold-dialog').waitFor({state:'visible'});
+  assert.match(await page.locator('#hold-text').textContent(), /these 2 jobs/);
+  await page.locator('#hold-dialog button[value=hold]').click();
+  await page.waitForFunction(()=>document.querySelector('#toast').textContent.startsWith('Held 2 jobs'));
+  assert.equal(held.length, 2);
+  offline = false;
+  await page.locator('nav [data-tab=queue]').click();
+  await page.locator('#queue-held .queue-row').first().waitFor();
+  assert.equal(await page.locator('#queue-held .queue-row').count(), 2);
+  assert.match(await page.locator('#queue-pending').textContent(), /Started outside the app/);
+  await page.locator('#queue-pending').getByRole('button',{name:'Run next'}).click();
+  await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('Moved to the front'));
+  assert.equal(moved, true);
+
+  // Gallery: favorite in the viewer, bulk actions, and a result reused as the next job's input.
+  await page.locator('nav [data-tab=gallery]').click();
+  await page.locator('#gallery .card').first().click();
+  await page.locator('#viewer-favorite').click();
+  await page.waitForFunction(()=>document.querySelector('#viewer-favorite').getAttribute('aria-pressed')==='true');
+  assert.equal(library.favorite, true);
+  await page.locator('#viewer-actions').getByRole('button',{name:'Use as input'}).click();
+  await page.waitForFunction(()=>!document.querySelector('#shared-banner').classList.contains('hide'));
+  assert.equal(await page.locator('#shared-title').textContent(), 'Result ready to use as input');
+  await page.locator('#workflows .wf', {hasText:'Photo Edit'}).click();
+  await page.waitForFunction(()=>document.querySelector('#slots').textContent.includes('Ready'));
+  await page.locator('nav [data-tab=gallery]').click();
+  await page.locator('#gallery .card .fav').first().waitFor();
+  await page.locator('#gallery-select').click();
+  await page.locator('#gallery .card').first().click();
+  assert.equal(await page.locator('#bulk-count').textContent(), '1 selected');
+  await page.locator('#bulk-favorite').click();
+  await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('removed from favorites'));
+  assert.deepEqual(bulk[0], {ids:[jobId], action:'unfavorite'});
+  await page.locator('#gallery-select').click();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   assert.deepEqual(errors,[]);
   // A second phone has no local history but must recover NAS jobs.
@@ -155,8 +228,9 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   assert.match(await second.locator('#photo-metadata').textContent(), /Photo Edit/);
   await second.locator('#viewer-close').click();
   fullUnavailable = false;
+  await page.locator('nav [data-tab=settings]').click();
   await page.locator('#forget').click();
   assert.equal(await page.locator('#jobs').textContent(),'');
-  console.log('PASS mobile presets, stale preset, caption edit/render, NAS gallery, compare/zoom, wake, logout, layout');
+  console.log('PASS mobile presets, stale preset, caption edit/render, NAS gallery, compare/zoom, wake, progress stream, wildcards, hold on NAS, queue, favorites, use as input, logout, layout');
  } finally {await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

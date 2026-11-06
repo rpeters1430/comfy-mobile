@@ -1,4 +1,5 @@
 import base64
+import json
 import os
 import unittest
 from pathlib import Path
@@ -76,6 +77,47 @@ class JobStoreTests(unittest.TestCase):
         store.add(JOB, "w", "")
         self.assertFalse(store.enabled)
         self.assertEqual({}, store.jobs)
+
+    def test_imports_legacy_json_once(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "jobs.json").write_text(json.dumps({JOB: {"workflow": "w", "prompt": "p", "created": 5,
+                                                              "summary": None, "params": None}, "../x": {}}))
+            store = JobStore(root)
+            self.assertEqual({JOB}, set(store.jobs))
+            self.assertFalse((root / "jobs.json").exists())
+            self.assertTrue((root / "jobs.json.migrated").exists())
+            store.finish(JOB, job_summary(entry()))
+            self.assertEqual("success", JobStore(root).get(JOB)["summary"]["status"])
+
+    def test_favorites_filters_and_removal(self):
+        other = "1f8d2a4c-1111-4222-8333-944455556666"
+        with TemporaryDirectory() as tmp:
+            store = JobStore(Path(tmp))
+            store.add(JOB, "Portrait", "red fox in snow", params={"prompt": "red fox in snow, winter", "seed": 7})
+            store.add(other, "Landscape", "mountain lake")
+            store.save_thumb(other, WEBP)
+            self.assertTrue(store.mark(JOB, True))
+            self.assertFalse(store.mark("2f8d2a4c-1111-4222-8333-944455556666", True))
+            self.assertEqual([JOB], [i["id"] for i in store.list_jobs(favorite=True)["items"]])
+            self.assertEqual([JOB], [i["id"] for i in store.list_jobs(q="FOX winter")["items"]])
+            self.assertEqual([other], [i["id"] for i in store.list_jobs(workflow="Landscape")["items"]])
+            self.assertEqual(["Landscape", "Portrait"], store.list_jobs()["workflows"])
+            self.assertTrue(store.remove(other))
+            self.assertFalse(store.thumb_path(other).exists())
+            reloaded = JobStore(Path(tmp))
+            self.assertEqual({JOB}, set(reloaded.jobs))
+            self.assertTrue(reloaded.list_jobs()["items"][0]["favorite"])
+
+    def test_rekey_moves_record_and_thumb(self):
+        new = "3f8d2a4c-1111-4222-8333-944455556666"
+        with TemporaryDirectory() as tmp:
+            store = JobStore(Path(tmp))
+            store.add(JOB, "w", "p")
+            store.save_thumb(JOB, WEBP)
+            store.rekey(JOB, new)
+            self.assertEqual({new}, set(JobStore(Path(tmp)).jobs))
+            self.assertTrue(store.thumb_path(new).is_file())
 
 
 def key(n):
