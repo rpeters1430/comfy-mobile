@@ -22,7 +22,7 @@ docker build -t comfy-mobile .
 
 Running locally: `app/main.py` uses flat imports (`from workflow_sync import ...`) and serves `/app/static/index.html` by absolute path, because the Dockerfile copies `app/` to `/app` and runs `uvicorn main:app` from there. Tests import the modules as `app.workflow_*`. Nothing imports `main.py` in tests, so keep logic in the `workflow_*` modules where it can be tested. Running outside Docker: `cd app` and set the env vars plus `STATIC_DIR=static` (it defaults to the Docker path `/app/static`).
 
-Configuration is env-only: `COMFYUI_URL`, `STUDIO_TOKEN` (required, or every endpoint returns 401), `WORKFLOW_DIR` (bundled, mounted read-only), `WORKFLOW_SYNC_DIR` (writable), `DATA_DIR` (writable by uid 1000; job records, thumbnails, push keys; if it is missing those features are off), `PUSH_CONTACT` (VAPID `mailto:`), `MODELHARBOR_URL` + `MODELHARBOR_TOKEN` (optional; LoRA trigger words and strengths), `STATIC_DIR` (local runs only).
+Configuration is env-only: `COMFYUI_URL`, `STUDIO_TOKEN` (required, or every endpoint returns 401), `WORKFLOW_DIR` (bundled, mounted read-only), `WORKFLOW_SYNC_DIR` (writable), `DATA_DIR` (writable by uid 1000; job records, thumbnails, push keys; if it is missing those features are off), `PUSH_CONTACT` (VAPID `mailto:`), `MODELHARBOR_URL` + `MODELHARBOR_TOKEN` (optional; LoRA trigger words and strengths), `ADVISER_PROVIDER`/`ADVISER_MODEL`/`ADVISER_BASE_URL`/`ADVISER_API_KEY` plus `OLLAMA_URL` or `LEMONADE_URL` (optional AI adviser; `ollama` and `lemonade` are local providers that allow plain HTTP and an optional key, the hosted ones need HTTPS and a key), `STATIC_DIR` (local runs only).
 
 ## Architecture
 

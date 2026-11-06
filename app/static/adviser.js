@@ -35,7 +35,7 @@
         try {
           const c = await api('/adviser/config');
           field('ai-provider').value = c.provider; field('ai-base').value = c.base_url; field('ai-model').value = c.model;
-          field('ai-key').placeholder = c.has_key ? 'Saved on NAS; leave blank to keep it' : 'Not needed for local Ollama';
+          field('ai-key').placeholder = c.has_key ? 'Saved on NAS; leave blank to keep it' : 'Not needed for local Ollama; optional for Lemonade';
           setupLoaded = true;
         } catch (e) { connectionStatus.textContent = e.message; }
       };
@@ -57,7 +57,7 @@
         const b = field('ai-test-save'); b.disabled = true; connectionStatus.textContent = 'Calling this model to test structured AI output…';
         try {
           const r = await api('/adviser/config', { method: 'PUT', json: values() });
-          field('ai-key').value = ''; field('ai-key').placeholder = r.has_key ? 'Saved on NAS; leave blank to keep it' : 'Not needed for local Ollama';
+          field('ai-key').value = ''; field('ai-key').placeholder = r.has_key ? 'Saved on NAS; leave blank to keep it' : 'Not needed for local Ollama; optional for Lemonade';
           connectionStatus.textContent = `Connected and saved: ${r.provider} / ${r.model}. Ready for AI review.`;
         } catch (e) { connectionStatus.textContent = 'Connection not saved: ' + e.message; } finally { b.disabled = false; }
       };

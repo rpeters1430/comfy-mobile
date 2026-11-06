@@ -56,6 +56,9 @@ class WorkflowReview(BaseModel):
 DEFAULT_URLS = {'openai':'https://api.openai.com/v1',
                 'gemini':'https://generativelanguage.googleapis.com/v1beta/openai',
                 'openrouter':'https://openrouter.ai/api/v1'}
+PROVIDERS = ('ollama','lemonade','openai','gemini','openrouter','compatible')
+# Run on the user's own PC: plain HTTP on the LAN/Tailscale is fine and the key is optional.
+LOCAL_PROVIDERS = ('ollama','lemonade')
 
 
 @dataclass
@@ -68,7 +71,7 @@ class AIConfig:
     @classmethod
     def env(cls):
         provider = os.getenv('ADVISER_PROVIDER', 'ollama').lower()
-        defaults = {'ollama': os.getenv('OLLAMA_URL',''), 'openai':'https://api.openai.com/v1',
+        defaults = {'ollama': os.getenv('OLLAMA_URL',''), 'lemonade': os.getenv('LEMONADE_URL',''), 'openai':'https://api.openai.com/v1',
                     'gemini':'https://generativelanguage.googleapis.com/v1beta/openai',
                     'openrouter':'https://openrouter.ai/api/v1'}
         return cls(provider, os.getenv('ADVISER_MODEL',''),
@@ -76,14 +79,14 @@ class AIConfig:
                    os.getenv('ADVISER_API_KEY',''))
 
     def problem(self):
-        if self.provider not in ('ollama','openai','gemini','openrouter','compatible'):
+        if self.provider not in PROVIDERS:
             return 'Unknown adviser provider'
         if not self.model or not self.base_url:
             return 'Set ADVISER_MODEL and the provider URL'
         parsed = urlsplit(self.base_url)
         if parsed.scheme not in ('http','https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
             return 'Invalid adviser URL'
-        if self.provider != 'ollama' and (not self.api_key or parsed.scheme != 'https'):
+        if self.provider not in LOCAL_PROVIDERS and (not self.api_key or parsed.scheme != 'https'):
             return 'Hosted adviser requires an API key and HTTPS'
         return ''
 
@@ -167,7 +170,7 @@ class AI:
         problem=AIConfig(cfg.provider,'_model_list_',cfg.base_url,cfg.api_key).problem()
         if problem: raise AIError(problem)
         path='/api/tags' if cfg.provider=='ollama' else '/models'
-        headers={} if cfg.provider=='ollama' else {'Authorization':'Bearer '+cfg.api_key}
+        headers={'Authorization':'Bearer '+cfg.api_key} if cfg.provider!='ollama' and cfg.api_key else {}
         try:
             async with httpx.AsyncClient(transport=self.transport,timeout=httpx.Timeout(20,connect=4),follow_redirects=False,trust_env=False) as client:
                 async with client.stream('GET',cfg.base_url.rstrip('/')+path,headers=headers) as response:
@@ -197,9 +200,11 @@ class AI:
             payload.update(format=schema, options={'temperature':0,'num_predict':2400,'num_ctx':8192})
         else:
             url = cfg.base_url.rstrip('/') + '/chat/completions'
-            headers['Authorization'] = 'Bearer ' + cfg.api_key
-            payload.update(response_format={'type':'json_schema','json_schema':{'name':'model_settings','strict':True,'schema':schema}},
-                           max_completion_tokens=3000)
+            if cfg.api_key:
+                headers['Authorization'] = 'Bearer ' + cfg.api_key
+            payload['response_format']={'type':'json_schema','json_schema':{'name':'model_settings','strict':True,'schema':schema}}
+            # Lemonade's llama.cpp/OGA backends read max_tokens; hosted reasoning models want max_completion_tokens.
+            payload['max_tokens' if cfg.provider == 'lemonade' else 'max_completion_tokens'] = 3000
             if cfg.provider == 'openrouter':
                 payload['provider'] = {'require_parameters':True}
         try:

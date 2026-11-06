@@ -2,7 +2,7 @@
 
 Open a workflow on Create, select models/LoRAs and add inputs, then expand **AI settings review**.
 
-1. Open **AI connection setup** and choose local Ollama, OpenAI, Gemini, OpenRouter or another compatible endpoint.
+1. Open **AI connection setup** and choose local Ollama, local Lemonade, OpenAI, Gemini, OpenRouter or another compatible endpoint.
 2. Enter the API base URL for local/custom services. Hosted presets fill their default base URL. Enter a provider key when required.
 3. Use **Load models**, then select/type a model ID. Choose **Test & save connection**. This makes a real structured-output call to that model and saves only on success.
 4. Press **Review with AI**. This sends model names and effective technical controls to the selected model; it does not generate an image. Read the assessment and optional proposed trial changes, apply selected changes, then press Generate explicitly.
@@ -33,6 +33,17 @@ ADVISER_PROVIDER=ollama
 OLLAMA_URL=http://192.168.8.143:11434
 ADVISER_MODEL=YOUR_INSTALLED_MODEL_NAME
 ```
+
+Local Lemonade (OpenAI-compatible; use the base that ends in `/api/v1`, not `/chat/completions`):
+
+```dotenv
+ADVISER_PROVIDER=lemonade
+LEMONADE_URL=http://192.168.8.143:8000/api/v1
+ADVISER_MODEL=YOUR_LOADED_MODEL_ID
+ADVISER_API_KEY=YOUR_LEMONADE_API_KEY
+```
+
+Use the port your Lemonade server listens on, and make it listen on the LAN/Tailscale address rather than only `localhost`. Plain HTTP is allowed for this local provider. `ADVISER_API_KEY` is optional: set it to the key Lemonade was started with (`LEMONADE_API_KEY`) and it is sent as a Bearer token; leave it out if the server has no key. **Load models** lists Lemonade's `/models`. The model must support `response_format: json_schema` (llama.cpp GGUF models do).
 
 The names above use your supplied function's URL defaults. They are not a connectivity test. Docker must resolve/reach that SearXNG address; a reachable LAN URL or shared Docker network hostname also works. Enable `json` under SearXNG `search.formats`. Choose an installed instruction model; the app never downloads or silently selects a model. The configured AI must complete a real workflow review. Explicit extraction of published numeric settings is optional supporting research, not a replacement for that AI call.
 

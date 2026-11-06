@@ -133,9 +133,9 @@
         <p class="status">Ask your selected AI to review this workflow. Suggestions are optional and require your approval.</p>
         <details id="adviser-config">
           <summary>AI connection setup</summary>
-          <label>Provider<select id="ai-provider"><option value="ollama">Local Ollama</option><option value="openai">OpenAI</option><option value="gemini">Gemini</option><option value="openrouter">OpenRouter</option><option value="compatible">Other compatible API</option></select></label>
-          <label>API base URL<input id="ai-base" type="url" autocomplete="off" placeholder="Ollama PC URL, or leave blank for hosted default"></label>
-          <label>API key<input id="ai-key" type="password" autocomplete="new-password" placeholder="Not needed for local Ollama"></label>
+          <label>Provider<select id="ai-provider"><option value="ollama">Local Ollama</option><option value="lemonade">Local Lemonade</option><option value="openai">OpenAI</option><option value="gemini">Gemini</option><option value="openrouter">OpenRouter</option><option value="compatible">Other compatible API</option></select></label>
+          <label>API base URL<input id="ai-base" type="url" autocomplete="off" placeholder="Ollama/Lemonade PC URL, or leave blank for hosted default"></label>
+          <label>API key<input id="ai-key" type="password" autocomplete="new-password" placeholder="Not needed for local Ollama; optional for Lemonade"></label>
           <label>Model<input id="ai-model" list="ai-models" autocomplete="off" placeholder="Load models or enter an exact model ID"></label>
           <datalist id="ai-models"></datalist>
           <div class="row"><button type="button" class="secondary" id="ai-load-models">Load models</button><button type="button" class="secondary" id="ai-test-save">Test &amp; save connection</button></div>

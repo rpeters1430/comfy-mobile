@@ -40,7 +40,7 @@ Model research now handles Windows model paths when matching Civitai files, sear
 
 Optional **Research & review settings** reads published model settings through your SearXNG instance and model-card adapters. It preserves tables and split-line settings, shows extraction/AI diagnostics and source quotes, and proposes validated changes for an unambiguous base generation pass. Apply selected changes to the form, then press Generate. Reviews capture batch seeds and are checked again against the current workflow before submission.
 
-Use local Ollama or explicitly configure an OpenAI, Gemini, OpenRouter or compatible structured-output endpoint. Keys stay in NAS environment variables. No automatic paid fallback; normal generation works without research. See [configuration, provider examples and limitations](docs/adviser.md).
+Use local Ollama or Lemonade, or explicitly configure an OpenAI, Gemini, OpenRouter or compatible structured-output endpoint. Keys stay in NAS environment variables. No automatic paid fallback; normal generation works without research. See [configuration, provider examples and limitations](docs/adviser.md).
 
 ## New in v0.5.1
 

@@ -599,7 +599,7 @@ class ApplySettingsRequest(BaseModel):
     selected: list[str] = Field(min_length=1,max_length=32)
 
 class AIConnection(BaseModel):
-    provider: Literal['ollama','openai','gemini','openrouter','compatible']
+    provider: Literal['ollama','lemonade','openai','gemini','openrouter','compatible']
     model: str = Field(default='',max_length=300)
     base_url: str = Field(default='',max_length=1000)
     api_key: str = Field(default='',max_length=4000)

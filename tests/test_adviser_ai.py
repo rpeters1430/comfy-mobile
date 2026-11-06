@@ -26,6 +26,28 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
             cfg=AIConfig(provider=provider, model='chosen', api_key='test-key', base_url='https://provider.example/v1')
             self.assertEqual([], await AI(cfg,transport=httpx.MockTransport(respond)).extract({'file':'example','prompt':'secret prompt'}, []))
 
+    async def test_lemonade_local_http_with_optional_key(self):
+        for key in ('', 'lemon-key'):
+            seen = {}
+            def respond(req):
+                if req.method == 'GET':
+                    seen['models'] = (str(req.url), req.headers.get('authorization'))
+                    return httpx.Response(200, json={'data': [{'id': 'Qwen3-8B-GGUF'}]})
+                body = json.loads(req.content)
+                seen['chat'] = (str(req.url), req.headers.get('authorization'))
+                self.assertEqual('json_schema', body['response_format']['type'])
+                self.assertEqual(3000, body['max_tokens'])
+                self.assertNotIn('max_completion_tokens', body)
+                return httpx.Response(200, json={'choices':[{'finish_reason':'stop','message':{'content':'{"facts":[]}'}}]})
+            cfg = AIConfig(provider='lemonade', model='Qwen3-8B-GGUF', base_url='http://pc:8000/api/v1', api_key=key)
+            self.assertEqual('', cfg.problem())
+            ai = AI(cfg, transport=httpx.MockTransport(respond))
+            self.assertEqual(['Qwen3-8B-GGUF'], await ai.models())
+            self.assertEqual([], await ai.extract({'file': 'example'}, []))
+            auth = 'Bearer ' + key if key else None
+            self.assertEqual(('http://pc:8000/api/v1/models', auth), seen['models'])
+            self.assertEqual(('http://pc:8000/api/v1/chat/completions', auth), seen['chat'])
+
     async def test_missing_key_and_malformed_json(self):
         with self.assertRaises(AIError):
             await AI(AIConfig(provider='openai',model='chosen')).extract({'file':'x'}, [])
