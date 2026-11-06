@@ -10,11 +10,11 @@ import time
 
 if __package__:
     from .research import Research, candidates, verify_facts, VARIANT
-    from .adviser_ai import AI, AIError, AIConfig, DEFAULT_URLS
+    from .adviser_ai import AI, AIError, AIConfig, DEFAULT_URLS, LOCAL_PROVIDERS
     from .adviser_store import Store
 else:
     from research import Research, candidates, verify_facts, VARIANT
-    from adviser_ai import AI, AIError, AIConfig, DEFAULT_URLS
+    from adviser_ai import AI, AIError, AIConfig, DEFAULT_URLS, LOCAL_PROVIDERS
     from adviser_store import Store
 
 
@@ -214,7 +214,7 @@ class Adviser:
         cfg=self.config()
         return {'provider':cfg.provider,'model':cfg.model,'ai_configured':not bool(cfg.problem()),
                 'search_configured':bool(os.getenv('SEARXNG_URL','')),
-                'problem':cfg.problem(), 'hosted':cfg.provider!='ollama'}
+                'problem':cfg.problem(), 'hosted':cfg.provider not in LOCAL_PROVIDERS}
 
     def get(self,key,owner):
         row=self.store.get('review',key,owner=owner)
