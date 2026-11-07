@@ -6,7 +6,7 @@
     return { id: record.id, workflow: record.workflow, created: record.created * 1000,
       prompt: prompt ?? record.prompt ?? '', workflowId: workflow_id, images: images || [], seed,
       stage: stage || 'render', review, controls: settings, details: record.details || null,
-      finished: !['pending', 'unknown'].includes(record.status), done: record.status === 'success' };
+      favorite: Boolean(record.favorite), finished: !['pending', 'unknown'].includes(record.status), done: record.status === 'success' };
   }
   function mergeHistory(local, remote) {
     const jobs = new Map(local.map(job => [job.id, job]));
@@ -111,7 +111,52 @@
       triggers: c.caption_suffix ? c.caption_suffix.split(',').map(t => t.trim()).filter(Boolean) : []
     };
   }
-  const api = { nasJob, mergeHistory, captionText, presetJob, preferredWorkflows, photoDetails, modelGroups, choicesFromJob };
+  // Wildcards, expanded on the phone once per run: {a|b|c} picks one option (innermost first, so they nest) and
+  // __name__ picks one line of the shared snippet with that name (a one-line snippet is inserted as is). Snippets
+  // may use other snippets, up to 5 deep. Braces without a | (and unknown names) are left alone.
+  const SNIPPET_REF = /__([A-Za-z0-9][A-Za-z0-9_-]{0,39})__/g;
+  const CHOICE = /\{([^{}]*\|[^{}]*)\}/;
+  function hasWildcards(text) { return CHOICE.test(text || '') || new RegExp(SNIPPET_REF.source).test(text || ''); }
+  function expandPrompt(text, snippets = [], rand = Math.random) {
+    const byName = new Map(snippets.map(s => [s.name.toLowerCase(), s.text]));
+    const pick = list => list[Math.min(list.length - 1, Math.floor(rand() * list.length))];
+    let out = String(text || '');
+    for (let depth = 0; depth < 5 && new RegExp(SNIPPET_REF.source).test(out); depth++) {
+      out = out.replace(SNIPPET_REF, (whole, name) => {
+        const body = byName.get(name.toLowerCase());
+        if (body == null) return whole;
+        const lines = body.split('\n').map(l => l.trim()).filter(Boolean);
+        return lines.length > 1 ? pick(lines) : lines[0] || '';
+      });
+    }
+    for (let guard = 0; guard < 200 && CHOICE.test(out); guard++) {
+      out = out.replace(CHOICE, (_, inner) => pick(inner.split('|')).trim());
+    }
+    return out;
+  }
+  // Server-sent events from fetch(): complete `data:` messages in buffer and the incomplete rest.
+  function sseEvents(buffer) {
+    const parts = buffer.replace(/\r\n/g, '\n').split('\n\n');
+    const rest = parts.pop();
+    const events = [];
+    for (const part of parts) {
+      const data = part.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trimStart()).join('\n');
+      if (!data) continue;
+      try { events.push(JSON.parse(data)); } catch (e) {}
+    }
+    return { events, rest };
+  }
+  // The gallery filters, for jobs kept only on this device (NAS jobs are filtered by the server).
+  function galleryMatches(job, filters = {}) {
+    if (filters.favorite && !job.favorite) return false;
+    if (filters.workflow && job.workflow !== filters.workflow) return false;
+    const words = String(filters.q || '').toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return true;
+    const text = [job.workflow, job.prompt, job.review?.positive, job.seed].filter(x => x != null).join(' ').toLowerCase();
+    return words.every(w => text.includes(w));
+  }
+  const api = { nasJob, mergeHistory, captionText, presetJob, preferredWorkflows, photoDetails, modelGroups, choicesFromJob,
+    hasWildcards, expandPrompt, sseEvents, galleryMatches };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.MobileTools = api;
 })(globalThis);

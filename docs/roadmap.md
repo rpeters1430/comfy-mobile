@@ -106,7 +106,24 @@ Periodic polling, recording remote deletions as archived instead of deleting, ke
 | Wake-on-LAN for the PC from the NAS | Medium | S |
 | ✅ Batch: 1–8 runs with random or consecutive seeds; Run again / Same seed on every result | Medium | S |
 | Before/after compare slider for image-to-image and edit | Low | S |
-| Job history stored on the NAS (ComfyUI history is lost when it restarts) | Medium | M |
+| ✅ Job history stored on the NAS (ComfyUI history is lost when it restarts) | Medium | M |
+
+### 0.8.0 (from a look at other mobile ComfyUI clients: ComfyChair, CueForge, Mobile Comfy Creator, ComfyUIMini)
+
+| Feature | State |
+| --- | --- |
+| Live progress stream instead of per-job polling; websocket-woken job watcher | ✅ |
+| Gzip; object_info fingerprint keeps catalog checks; SQLite job store | ✅ |
+| Shared queue view with Run next | ✅ |
+| Hold jobs (and photos) on the NAS while the PC is off, wake and start them later | ✅ |
+| Use a result as the next input | ✅ |
+| Gallery search, workflow filter, favorites, multi-select share/favorite/remove | ✅ |
+| Wildcards `{a\|b}` and shared `__snippets__` | ✅ |
+| Home-screen shortcuts, app badge | ✅ |
+| Mask editor for inpainting workflows | Next |
+| One-tap Upscale / Expand on results | Next |
+| Prompt enhance / describe image through the AI adviser connection | Next |
+| Fast / Balanced / Best quality chips for image workflows | Next |
 
 ## Suggested milestones
 

@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Header, Request, Query
 from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
+from starlette.middleware.gzip import GZipMiddleware
 
 if __package__:
     from .adviser import Adviser, fingerprint
@@ -17,8 +18,9 @@ if __package__:
     from .workflow_conversion import convert_ui, ConversionError
     from .workflow_controls import ControlError, MAX_EXTRA_LORAS, _options, apply_controls, find_controls, run_details
     from .workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, view_query
-    from .job_store import JobStore
+    from .job_store import JOB_ID, JobStore
     from .preset_store import PresetStore
+    from .deferred import HELD_ID, DeferredJobs
     from .caption_review import CaptionError, capability, caption_graph, apply_review, append_caption
     from .wake import WakePC, WakeError
     from .push import Push, PushError
@@ -34,8 +36,9 @@ else:
     from workflow_conversion import convert_ui, ConversionError
     from workflow_controls import ControlError, MAX_EXTRA_LORAS, _options, apply_controls, find_controls, run_details
     from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, view_query
-    from job_store import JobStore
+    from job_store import JOB_ID, JobStore
     from preset_store import PresetStore
+    from deferred import HELD_ID, DeferredJobs
     from caption_review import CaptionError, capability, caption_graph, apply_review, append_caption
     from wake import WakePC, WakeError
     from push import Push, PushError
@@ -55,6 +58,7 @@ DATA_DIR = Path(os.getenv('DATA_DIR','/data'))
 workflow_sync = WorkflowSync(COMFY, SYNC_DIR, WF_DIR, DATA_DIR / 'workflow-push.json')
 job_store = JobStore(DATA_DIR)
 preset_store = PresetStore(DATA_DIR)
+deferred = DeferredJobs(DATA_DIR)
 adviser = Adviser(DATA_DIR)
 wake_pc = WakePC(os.getenv('WOL_MAC', ''), os.getenv('WOL_BROADCAST', ''))
 push = Push(DATA_DIR, os.getenv('PUSH_CONTACT','mailto:image-studio@localhost'))
@@ -82,7 +86,7 @@ async def lifespan(app: FastAPI):
         limits=httpx.Limits(max_keepalive_connections=20, max_connections=50)
     )
     tasks = [asyncio.create_task(watch_jobs()), asyncio.create_task(listen(COMFY, CLIENT_ID, progress)),
-             asyncio.create_task(sync_workflows_periodically())]
+             asyncio.create_task(sync_workflows_periodically()), asyncio.create_task(run_deferred())]
     yield
     if DATA_DIR.is_dir():
         try: await adviser.shutdown()
@@ -93,8 +97,21 @@ async def lifespan(app: FastAPI):
         await _http_client.aclose()
         _http_client = None
 
-VERSION = '0.7.1'
+VERSION = '0.8.0'
 app = FastAPI(title='Image Studio Mobile', version=VERSION, lifespan=lifespan)
+
+class Compress(GZipMiddleware):
+    '''Gzip for the page, scripts and JSON. Media, live previews and the progress stream pass through untouched,
+    so video seeking (Range) and streamed events keep working whatever Starlette's own exclusions are.'''
+    async def __call__(self, scope, receive, send):
+        if scope['type'] == 'http' and scope.get('path', '').endswith(('/view', '/preview', '/stream')):
+            return await self.app(scope, receive, send)
+        await super().__call__(scope, receive, send)
+
+app.add_middleware(Compress, minimum_size=1024, compresslevel=6)
+
+class ComfyOffline(HTTPException):
+    '''ComfyUI could not be reached at all (the PC is off or asleep), unlike a slow or failing request.'''
 
 async def request(method, path, expect_json=True, **kwargs):
     client = _http_client
@@ -122,6 +139,8 @@ async def request(method, path, expect_json=True, **kwargs):
         elif response.status_code >= 500:
             detail['reason'] = 'ComfyUI server error'
         raise HTTPException(502, detail) from e
+    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+        raise ComfyOffline(502, f'ComfyUI request failed: {type(e).__name__}') from e
     except (httpx.RequestError, ValueError) as e:
         raise HTTPException(502, f'ComfyUI request failed: {type(e).__name__}') from e
     finally:
@@ -135,10 +154,12 @@ async def get_object_info(force_refresh: bool = False) -> dict:
     if not force_refresh and _object_info_cache["data"] is not None and now < _object_info_cache["expires_at"]:
         return _object_info_cache["data"]
     data = await request('GET', '/object_info')
-    _object_info_cache["data"] = data
-    _object_info_cache["expires_at"] = now + 60.0
-    # Runnable flags depend on ComfyUI's nodes and models, so they go stale with the old object_info.
-    _catalog_inspect_cache.clear()
+    digest = hashlib.sha256(json.dumps(data, separators=(',', ':')).encode()).hexdigest()
+    # Runnable flags depend on ComfyUI's nodes and models, so they go stale with a changed object_info. An unchanged
+    # one (the usual case, refetched every minute) keeps them, so the catalog doesn't reconvert every workflow.
+    if digest != _object_info_cache.get("digest"):
+        _catalog_inspect_cache.clear()
+    _object_info_cache.update(data=data, expires_at=now + 60.0, digest=digest)
     return data
 
 _catalog_inspect_cache: dict = {}
@@ -181,20 +202,44 @@ async def finish_job(job_id: str, entry: dict) -> None:
         payload['image'] = signed(job_id, {'outputs': [first]})['outputs'][0]['url'] + '&thumb=1'
     await asyncio.to_thread(push.send, payload)
 
+_queue_cache: dict = {'at': 0.0, 'data': None}
+
+def queue_entries(q: dict, key: str) -> list:
+    '''ComfyUI's queue items ([number, prompt_id, prompt, extra_data, outputs]) in run order. Pending items come
+    back in heap order, so they are sorted by number.'''
+    items = [item for item in (q.get(key) or []) if isinstance(item, list) and len(item) > 1 and isinstance(item[1], str)]
+    return sorted(items, key=lambda item: item[0] if isinstance(item[0], (int, float)) else 0)
+
+async def queue_snapshot(max_age: float = 1.0) -> dict:
+    '''Running and pending prompt ids, shared by the watcher and every progress stream for up to max_age seconds.'''
+    if _queue_cache['data'] is not None and time.monotonic() - _queue_cache['at'] < max_age:
+        return _queue_cache['data']
+    q = await request('GET', '/queue')
+    q = q if isinstance(q, dict) else {}
+    data = {'running': [item[1] for item in queue_entries(q, 'queue_running')],
+            'pending': [item[1] for item in queue_entries(q, 'queue_pending')]}
+    _queue_cache.update(at=time.monotonic(), data=data)
+    return data
+
+# Without websocket news (ComfyUI restarting) the watcher still checks this often.
+WATCH_INTERVAL = 10
+
 async def watch_jobs():
-    '''Follow jobs started from the app until ComfyUI reports them done, even when no phone is polling.'''
+    '''Follow jobs started from the app until ComfyUI reports them done, even when no phone is polling. ComfyUI's
+    websocket wakes it when a prompt ends, so a finished job is stored and pushed within moments.'''
+    progress.ended = asyncio.Event()  # bound to this event loop
     while True:
-        await asyncio.sleep(3)
+        try:
+            await asyncio.wait_for(progress.ended.wait(), timeout=WATCH_INTERVAL)
+        except asyncio.TimeoutError:
+            pass
+        progress.ended.clear()
         try:
             watching = job_store.watching()
             if not watching:
                 continue
-            queued = set()
-            if len(watching) > 1:
-                q = await request('GET', '/queue')
-                if isinstance(q, dict):
-                    queued = {item[1] for key in ('queue_pending', 'queue_running')
-                              for item in q.get(key, []) if isinstance(item, list) and len(item) > 1}
+            snap = await queue_snapshot(0)
+            queued = set(snap['running']) | set(snap['pending'])
             for job_id in watching:
                 if job_id in queued:
                     continue
@@ -442,9 +487,28 @@ async def prepare_job(job: Job):
         raise HTTPException(400,str(exc)) from exc
     return graph, info, applied, name, source_hash
 
-@app.post('/api/jobs')
-async def jobs(job: Job, authorization: str | None = Header(default=None)):
-    auth(authorization)
+def workflow_label(name: str) -> str:
+    return name.rsplit('/',1)[-1].removesuffix('.json')
+
+def detail_text(detail) -> str:
+    if isinstance(detail, dict):
+        return '; '.join([str(detail.get('message') or 'Request failed'), *map(str, detail.get('errors') or [])])
+    return str(detail)
+
+async def send_held_uploads(names: list[str]) -> None:
+    '''Photos uploaded while the PC was off wait on the NAS; ComfyUI gets them just before the job that uses them.'''
+    for name in dict.fromkeys(names):
+        data = deferred.held_upload(name)
+        if data is None:
+            continue
+        # The name is our own random one, so overwriting only replaces an earlier copy of this same photo.
+        result = await request('POST', '/upload/image', files={'image': (name, data)}, data={'type': 'input', 'overwrite': 'true'})
+        if result.get('name') != name or result.get('subfolder'):
+            raise HTTPException(502, 'ComfyUI stored a held photo under an unexpected name')
+        deferred.release_upload(name)
+
+async def queue_job(job: Job) -> dict:
+    '''Convert, check and queue one job on ComfyUI and record it on the NAS. Shared by /api/jobs and held jobs.'''
     graph, info, applied, name, source_hash = await prepare_job(job)
     details = run_details(graph, info)
     if job.adviser_token:
@@ -453,14 +517,25 @@ async def jobs(job: Job, authorization: str | None = Header(default=None)):
         if not approval or job.adviser_index >= len(approval['hashes']) or approval['hashes'][job.adviser_index] != actual or approval['seeds'][job.adviser_index] != job.seed or approval['intents'][job.adviser_index] != job_intent(job):
             raise HTTPException(409,'Approved workflow, settings or batch seeds changed; review again or run manually')
         details['adviser'] = {**approval['audit'],'batch_index':job.adviser_index}
+    await send_held_uploads(job.images)
     result=await request('POST','/prompt',json={'prompt':graph,'client_id':CLIENT_ID})
     if result.get('prompt_id'):
         progress.expect(result['prompt_id'], graph)
         try:
-            job_store.add(result['prompt_id'], name.rsplit('/',1)[-1].removesuffix('.json'), job.prompt, params=job.model_dump(exclude={'adviser_token','adviser_index'}), details=details)
+            job_store.add(result['prompt_id'], workflow_label(name), job.prompt, params=job.model_dump(exclude={'adviser_token','adviser_index'}), details=details)
         except OSError:
             log.exception('Could not record job')
     return {'prompt_id':result.get('prompt_id'),'node_errors':result.get('node_errors',{}),'details':details,**applied}
+
+@app.post('/api/jobs')
+async def jobs(job: Job, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    try:
+        return await queue_job(job)
+    except ComfyOffline as exc:
+        # The phone offers to hold the job on the NAS until the PC is back.
+        raise HTTPException(503, {'message': 'ComfyUI is offline', 'offline': True,
+                                  'can_hold': deferred.enabled and not job.adviser_token}) from exc
 
 @app.post('/api/jobs/check')
 async def check_job(job: Job, authorization: str | None = Header(default=None)):
@@ -699,10 +774,80 @@ async def upload(req: Request, authorization: str | None = Header(default=None))
         name=upload_name(bytes(body))
     except JobError as exc:
         raise HTTPException(400,str(exc)) from exc
-    result=await request('POST','/upload/image',files={'image':(name,bytes(body))},data={'type':'input','overwrite':'false'})
+    try:
+        result=await request('POST','/upload/image',files={'image':(name,bytes(body))},data={'type':'input','overwrite':'false'})
+    except ComfyOffline:
+        if not deferred.enabled: raise
+        # Kept on the NAS for a job held until the PC is back (see send_held_uploads).
+        try:
+            deferred.hold_upload(name, bytes(body))
+        except OSError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        return {'name':name,'held':True}
     if result.get('name')!=name or result.get('subfolder'):
         raise HTTPException(502,'ComfyUI stored the upload under an unexpected name')
     return {'name':name}
+
+# A stream lasts this long, then the phone reconnects (keeps a forgotten tab from holding a connection forever).
+STREAM_FOR = 600
+
+async def stream_status(prompt_id: str, snap: dict | None, seen: dict) -> dict:
+    if snap is None:
+        return {'id': prompt_id, 'state': 'offline'}
+    if prompt_id in snap['running']:
+        return {'id': prompt_id, 'state': 'running', **(progress.status(prompt_id) or {'value': 0, 'max': 0, 'node': None, 'frame': 0})}
+    if prompt_id in snap['pending']:
+        return {'id': prompt_id, 'state': 'pending', 'position': snap['pending'].index(prompt_id) + 1}
+    stored = job_store.get(prompt_id)
+    if stored and stored['summary']:
+        return {'id': prompt_id, 'state': 'done'}
+    # Neither queued nor finished on the NAS yet: ask ComfyUI's history, at most every 2 s per job.
+    state = seen.setdefault(prompt_id, {'history_at': 0.0, 'missing': 0})
+    if time.monotonic() - state['history_at'] >= 2:
+        state['history_at'] = time.monotonic()
+        try:
+            data = await request('GET', f'/history/{prompt_id}')
+        except HTTPException:
+            return {'id': prompt_id, 'state': 'checking'}
+        if prompt_id in data:
+            return {'id': prompt_id, 'state': 'done'}
+        # A few misses in a row, so a job finishing between the two requests isn't reported lost.
+        state['missing'] += 1
+        if state['missing'] >= 3:
+            return {'id': prompt_id, 'state': 'missing'}
+    return {'id': prompt_id, 'state': 'checking'}
+
+@app.get('/api/jobs/stream')
+async def job_stream(req: Request, ids: str = Query(max_length=16 * 37), authorization: str | None = Header(default=None)):
+    '''Server-sent events with the state of the phone's open jobs: queued position, steps and preview frame while
+    running, then done or missing. Replaces polling /queue, /progress and /outputs every 2 s per job. A state is
+    sent when it changes and at least every 2 s, so elapsed times keep ticking.'''
+    auth(authorization)
+    wanted = [i for i in dict.fromkeys(ids.split(',')) if re.fullmatch(r'[0-9a-fA-F-]{36}', i)][:16]
+    if not wanted: raise HTTPException(400, 'No valid job ids')
+    async def events():
+        open_ids, seen, last, sent_at = list(wanted), {}, {}, {}
+        started = time.monotonic()
+        yield 'retry: 2000\n\n'
+        while open_ids and time.monotonic() - started < STREAM_FOR:
+            if await req.is_disconnected():
+                return
+            try:
+                snap = await queue_snapshot()
+            except HTTPException:
+                snap = None
+            now = time.monotonic()
+            for prompt_id in list(open_ids):
+                status = await stream_status(prompt_id, snap, seen)
+                if status != last.get(prompt_id) or now - sent_at.get(prompt_id, 0) >= 2:
+                    last[prompt_id], sent_at[prompt_id] = status, now
+                    yield f'data: {json.dumps(status)}\n\n'
+                if status['state'] in ('done', 'missing'):
+                    open_ids.remove(prompt_id)
+            if open_ids:
+                await asyncio.sleep(0.5)
+    return StreamingResponse(events(), media_type='text/event-stream',
+                             headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no'})
 
 @app.get('/api/jobs/{prompt_id}')
 async def job_status(prompt_id: str, authorization: str | None = Header(default=None)):
@@ -770,8 +915,8 @@ async def job_outputs_batch(body: JobIds, authorization: str | None = Header(def
     auth(authorization)
     ids=[i for i in dict.fromkeys(body.ids) if re.fullmatch(r'[0-9a-fA-F-]{36}',i)]
     try:
-        q=await request('GET','/queue')
-        queued={item[1] for key in ('queue_running','queue_pending') for item in q.get(key,[]) if isinstance(item,list) and len(item)>1}
+        snap=await queue_snapshot()
+        queued=set(snap['running'])|set(snap['pending'])
     except HTTPException:
         queued=None
     limit=asyncio.Semaphore(6)
@@ -872,10 +1017,41 @@ async def push_test(authorization: str | None = Header(default=None)):
 
 @app.get('/api/library/jobs')
 def library_jobs(limit: int = Query(default=30, ge=1, le=60), offset: int = Query(default=0, ge=0, le=500),
-                 authorization: str | None = Header(default=None)):
+                 q: str = Query(default='', max_length=200), workflow: str = Query(default='', max_length=200),
+                 favorite: bool = False, authorization: str | None = Header(default=None)):
     auth(authorization)
     if not job_store.enabled: raise HTTPException(503, 'Gallery needs a writable DATA_DIR')
-    return job_store.list_jobs(limit, offset)
+    return job_store.list_jobs(limit, offset, q.strip(), workflow, favorite)
+
+class FavoriteBody(BaseModel):
+    favorite: bool
+
+class BulkBody(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=100)
+    action: Literal['favorite', 'unfavorite', 'remove']
+
+def library_change(job_id: str, action: str) -> bool:
+    if not JOB_ID.fullmatch(job_id): return False
+    return job_store.remove(job_id) if action == 'remove' else job_store.mark(job_id, action == 'favorite')
+
+@app.post('/api/library/jobs/bulk')
+def library_bulk(body: BulkBody, authorization: str | None = Header(default=None)):
+    '''Favorite, unfavorite or remove several gallery entries. Removing never touches files on the ComfyUI PC.'''
+    auth(authorization)
+    if not job_store.enabled: raise HTTPException(503, 'Gallery needs a writable DATA_DIR')
+    return {'changed': sum(library_change(i, body.action) for i in dict.fromkeys(body.ids))}
+
+@app.post('/api/library/jobs/{job_id}/favorite')
+def library_favorite(job_id: str, body: FavoriteBody, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    if not library_change(job_id, 'favorite' if body.favorite else 'unfavorite'): raise HTTPException(404, 'Job not found')
+    return {'favorite': body.favorite}
+
+@app.delete('/api/library/jobs/{job_id}')
+def library_remove(job_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    if not library_change(job_id, 'remove'): raise HTTPException(404, 'Job not found')
+    return {'removed': True}
 
 @app.get('/api/library/jobs/{job_id}')
 def library_job(job_id: str, authorization: str | None = Header(default=None)):
@@ -883,7 +1059,7 @@ def library_job(job_id: str, authorization: str | None = Header(default=None)):
     job = job_store.get(job_id)
     if not job: raise HTTPException(404, 'Job not found')
     return {'id': job_id, **{k: job.get(k) for k in ('workflow', 'prompt', 'created', 'params', 'details')},
-            'status': (job.get('summary') or {}).get('status', 'pending')}
+            'favorite': bool(job.get('favorite')), 'status': (job.get('summary') or {}).get('status', 'pending')}
 
 class PresetBody(BaseModel):
     id: str | None = Field(default=None, pattern=r'^[0-9a-f-]{36}$')
@@ -936,6 +1112,166 @@ async def validate_preset(preset_id: str, authorization: str | None = Header(def
     except (ValueError, OSError, ConversionError, ControlError) as exc:
         return {'valid': False, 'errors': [str(exc)]}
 
+
+class SnippetBody(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    text: str = Field(min_length=1, max_length=4000)
+
+@app.get('/api/snippets')
+def list_snippets(authorization: str | None = Header(default=None)):
+    auth(authorization); presets_ready()
+    return {'items': preset_store.snippets()}
+
+@app.post('/api/snippets')
+def save_snippet(body: SnippetBody, authorization: str | None = Header(default=None)):
+    auth(authorization); presets_ready()
+    try:
+        return preset_store.save_snippet(body.name.strip(), body.text)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+@app.delete('/api/snippets/{snippet_id}')
+def delete_snippet(snippet_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization); presets_ready()
+    if not re.fullmatch(r'[0-9a-f-]{36}', snippet_id) or not preset_store.delete_snippet(snippet_id):
+        raise HTTPException(404, 'Snippet not found')
+    return {'deleted': True}
+
+# ---------- Shared queue: every device's jobs in ComfyUI order, with Run next ----------
+
+def queue_row(item: list, position: int) -> dict:
+    job = job_store.get(item[1])
+    row = {'id': item[1], 'position': position, 'mine': bool(job)}
+    if job:
+        row.update(workflow=job['workflow'], prompt=job['prompt'], created=job['created'])
+    else:
+        # Queued on the PC itself or by another client: nothing about it is shown beyond that it exists.
+        row.update(workflow='Started outside the app', prompt='', created=None)
+    return row
+
+@app.get('/api/queue/jobs')
+async def queue_jobs(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    q = await request('GET', '/queue')
+    q = q if isinstance(q, dict) else {}
+    running = [{**queue_row(item, 0), 'progress': progress.status(item[1])} for item in queue_entries(q, 'queue_running')]
+    pending = [queue_row(item, i + 1) for i, item in enumerate(queue_entries(q, 'queue_pending'))]
+    return {'running': running, 'pending': pending, 'held': deferred.public() if deferred.enabled else []}
+
+@app.post('/api/queue/{prompt_id}/next')
+async def run_next(prompt_id: str, authorization: str | None = Header(default=None)):
+    '''Move an app job to the front of ComfyUI's pending queue. ComfyUI has no reorder call, so the job is taken
+    out and queued again with front=true under the same id (a ComfyUI that ignores prompt_id gives it a new one,
+    which the job record follows).'''
+    auth(authorization)
+    if not JOB_ID.fullmatch(prompt_id): raise HTTPException(400, 'Invalid job id')
+    if not job_store.get(prompt_id): raise HTTPException(404, 'Only jobs started from the app can be moved')
+    pending = queue_entries(await request('GET', '/queue'), 'queue_pending')
+    item = next((i for i in pending if i[1] == prompt_id), None)
+    if item is None: raise HTTPException(409, 'This job is no longer waiting')
+    if pending[0][1] == prompt_id: return {'moved': False, 'id': prompt_id, 'reason': 'It is already next'}
+    if len(item) < 3 or not isinstance(item[2], dict): raise HTTPException(502, 'ComfyUI did not return the queued prompt')
+    graph = item[2]
+    extra = item[3] if len(item) > 3 and isinstance(item[3], dict) else {}
+    await request('POST', '/queue', expect_json=False, json={'delete': [prompt_id]})
+    # It may have started (or even finished) between the two calls; never queue it twice.
+    q = await request('GET', '/queue')
+    if any(i[1] == prompt_id for key in ('queue_running', 'queue_pending') for i in queue_entries(q, key)):
+        return {'moved': False, 'id': prompt_id, 'reason': 'It started before it could be moved'}
+    if prompt_id in await request('GET', f'/history/{prompt_id}'):
+        return {'moved': False, 'id': prompt_id, 'reason': 'It already ran'}
+    body = {'prompt': graph, 'client_id': extra.get('client_id') or CLIENT_ID, 'front': True, 'prompt_id': prompt_id,
+            'extra_data': {k: v for k, v in extra.items() if k != 'client_id'}}
+    result = await request('POST', '/prompt', json=body)
+    new_id = result.get('prompt_id') or prompt_id
+    if new_id != prompt_id:
+        try: job_store.rekey(prompt_id, new_id)
+        except OSError: log.exception('Could not follow a re-queued job')
+    progress.expect(new_id, graph)
+    _queue_cache['data'] = None
+    return {'moved': True, 'id': new_id}
+
+# ---------- Jobs held on the NAS while the PC is off ----------
+
+class HoldBody(BaseModel):
+    jobs: list[Job] = Field(min_length=1, max_length=8)
+    wake: bool = True
+
+def deferred_ready():
+    if not deferred.enabled: raise HTTPException(503, 'Holding jobs needs a writable DATA_DIR')
+
+@app.get('/api/deferred')
+def list_deferred(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return {'enabled': deferred.enabled, 'items': deferred.public() if deferred.enabled else []}
+
+@app.post('/api/deferred')
+def hold_jobs(body: HoldBody, authorization: str | None = Header(default=None)):
+    '''Keep jobs on the NAS and queue them when ComfyUI answers again; optionally send a Wake-on-LAN packet.'''
+    auth(authorization); deferred_ready()
+    items = []
+    for job in body.jobs:
+        if job.adviser_token:
+            raise HTTPException(400, 'An approved AI review must run while the PC is online')
+        try:
+            _, name = load_named_workflow(job.workflow_id)
+        except (ValueError, OSError, json.JSONDecodeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if any(not UPLOAD_NAME.fullmatch(image) for image in job.images):
+            raise HTTPException(400, 'Held jobs only take photos uploaded through the app')
+        try:
+            items.append(deferred.add(job.model_dump(exclude={'adviser_token', 'adviser_index'}), workflow_label(name)))
+        except (ValueError, OSError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+    woke = None
+    if body.wake and wake_pc.status()['enabled']:
+        try:
+            wake_pc.send(); woke = True
+        except (WakeError, OSError):
+            woke = False  # sent recently (cooldown) or the NAS can't broadcast; the jobs still wait
+    return {'items': [{k: v for k, v in i.items() if k != 'job'} for i in items], 'woke': woke}
+
+@app.delete('/api/deferred/{item_id}')
+def remove_deferred(item_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization); deferred_ready()
+    if not HELD_ID.fullmatch(item_id) or not deferred.remove(item_id): raise HTTPException(404, 'Held job not found')
+    return {'removed': True}
+
+DEFERRED_INTERVAL = 15
+
+async def start_deferred() -> int:
+    '''Queue held jobs, oldest first, if ComfyUI is reachable. Returns how many started.'''
+    items = deferred.waiting()
+    if not items:
+        return 0
+    try:
+        await request('GET', '/system_stats')
+    except HTTPException:
+        return 0
+    started = 0
+    for item in items:
+        try:
+            await queue_job(Job(**item['job']))
+        except ComfyOffline:
+            break  # went away again; try later
+        except (HTTPException, ValueError) as exc:
+            error = detail_text(exc.detail) if isinstance(exc, HTTPException) else str(exc)
+            deferred.failed(item['id'], error)
+            if push.enabled:
+                await asyncio.to_thread(push.send, {'title': f"{item['workflow']} could not start", 'body': error[:200],
+                                                    'tag': 'held-' + item['id'], 'url': '/?tab=queue'})
+        else:
+            deferred.started(item['id'])
+            started += 1
+    return started
+
+async def run_deferred():
+    while True:
+        await asyncio.sleep(DEFERRED_INTERVAL)
+        try:
+            await start_deferred()
+        except Exception:
+            log.exception('Starting held jobs failed')
 
 async def fetch_webp(params):
     timeout = httpx.Timeout(12, connect=4)

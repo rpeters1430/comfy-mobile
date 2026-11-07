@@ -91,6 +91,20 @@
           <button class="ghost" id="save-prompt" type="button">★ Save</button>
           <button class="ghost" id="delete-prompt" type="button" aria-label="Delete selected saved prompt">🗑</button>
         </div>
+        <p id="wildcard-hint" class="status hide" role="status"></p>
+        <details class="controls" id="snippets-box">
+          <summary>Snippets &amp; wildcards</summary>
+          <p class="status">Write <code>{red|blue|green}</code> in a prompt to pick one option per run. Save a list below (one option per line) and add it with its name, like <code>__colors__</code>. Snippets are shared by every device.</p>
+          <div class="aspects" id="snippet-chips" role="group" aria-label="Insert snippet"></div>
+          <label for="snippet-select">Edit a snippet</label>
+          <select id="snippet-select"><option value="">No snippets yet</option></select>
+          <label for="snippet-name">Name</label>
+          <input id="snippet-name" maxlength="40" placeholder="colors" autocomplete="off" spellcheck="false">
+          <label for="snippet-text">Text (one option per line for a list)</label>
+          <textarea id="snippet-text" maxlength="4000" placeholder="crimson&#10;teal&#10;golden hour" spellcheck="false"></textarea>
+          <div class="row"><button class="secondary" id="snippet-save" type="button">Save snippet</button><button class="ghost" id="snippet-delete" type="button">Delete</button></div>
+          <p id="snippet-status" class="status" role="status"></p>
+        </details>
       </div>
       <p id="no-prompt" class="status hide">This workflow writes its own prompt from your image.</p>
       <details class="controls hide" id="controls-box">
@@ -160,9 +174,44 @@
     <div class="panel">
       <div class="row between"><h2>Gallery</h2><div class="row"><button class="ghost hide" id="remove-gone" type="button"></button><button class="ghost" id="clear-gallery" type="button">Clear device list</button></div></div>
       <p class="status">NAS history and this device. Tap a job to view details or run again.</p>
+      <div class="wf-search-wrap gallery-search">
+        <span class="wf-search-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
+        <input type="search" id="gallery-search" placeholder="Search prompts, workflows or seeds…" autocomplete="off" aria-label="Search gallery">
+      </div>
+      <div class="row gallery-filters">
+        <select id="gallery-workflow" aria-label="Filter by workflow"><option value="">All workflows</option></select>
+        <button class="chip" id="gallery-favorites" aria-pressed="false" type="button">★ Favorites</button>
+        <button class="chip" id="gallery-select" aria-pressed="false" type="button">Select</button>
+      </div>
+      <div class="bulk-bar hide" id="bulk-bar" role="group" aria-label="Selected jobs">
+        <span id="bulk-count" class="status" role="status">0 selected</span>
+        <div class="row">
+          <button class="secondary" id="bulk-share" type="button">↗ Share</button>
+          <button class="secondary" id="bulk-favorite" type="button">★ Favorite</button>
+          <button class="ghost" id="bulk-remove" type="button">Remove</button>
+        </div>
+      </div>
       <p id="gallery-status" class="status" role="status"></p>
       <div class="gallery" id="gallery"></div>
       <button id="gallery-more" class="secondary hide" type="button">Load older jobs</button>
+    </div>
+  </section>
+
+  <!-- Tab: Queue -->
+  <section id="tab-queue" class="hide">
+    <div class="panel">
+      <div class="row between"><h2>Queue</h2><button class="secondary" id="queue-refresh" type="button">Refresh</button></div>
+      <p class="status">Jobs on the ComfyUI PC from every device. Move one of yours to the front with <strong>Run next</strong>.</p>
+      <p id="queue-status" class="status" role="status"></p>
+      <h3>Running</h3>
+      <div id="queue-running" class="queue-list"></div>
+      <h3>Waiting on the PC</h3>
+      <div id="queue-pending" class="queue-list"></div>
+    </div>
+    <div class="panel hide" id="held-panel">
+      <div class="row between"><h2>Held on the NAS</h2><button class="secondary hide" id="held-wake" type="button">Wake PC</button></div>
+      <p class="status">Saved while the ComfyUI PC was off. They start by themselves, oldest first, once it is back.</p>
+      <div id="queue-held" class="queue-list"></div>
     </div>
   </section>
 
@@ -206,6 +255,7 @@
   <div class="nav-brand" aria-hidden="true">✦</div>
   <button data-tab="create" aria-current="page" type="button"><span class="nav-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.1 6.9L21 12l-6.9 2.1L12 21l-2.1-6.9L3 12l6.9-2.1z"/></svg></span>Create</button>
   <button data-tab="gallery" type="button"><span class="nav-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span>Gallery</button>
+  <button data-tab="queue" type="button"><span class="nav-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg><span class="nav-count hide" id="queue-count" aria-label="open jobs"></span></span>Queue</button>
   <button data-tab="settings" type="button"><span class="nav-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></span>Settings</button>
 </nav>
 
@@ -218,6 +268,14 @@
     <div class="row"><button class="primary" id="check-fix" value="fix">Fix &amp; generate</button><button class="secondary" value="anyway">Generate anyway</button><button class="ghost" value="cancel">Cancel</button></div>
   </form>
 </dialog>
+<dialog id="hold-dialog" aria-labelledby="hold-title">
+  <form method="dialog">
+    <h2 id="hold-title">ComfyUI PC is offline</h2>
+    <p class="status" id="hold-text"></p>
+    <label class="switch hide" id="hold-wake-row"><input type="checkbox" id="hold-wake" checked> Wake the PC now</label>
+    <div class="row"><button class="primary" value="hold">Hold on NAS</button><button class="ghost" value="cancel">Cancel</button></div>
+  </form>
+</dialog>
 <dialog id="image-viewer" aria-labelledby="viewer-title">
   <div class="row between"><h2 id="viewer-title">Image viewer</h2><button id="viewer-close" class="secondary" type="button">Close</button></div>
   <div class="row between" id="viewer-paging"><button id="viewer-previous" class="secondary" type="button">Previous</button><span id="viewer-count" class="status"></span><button id="viewer-next" class="secondary" type="button">Next</button></div>
@@ -226,7 +284,7 @@
   <label id="compare-label" for="compare-range">Before / after</label>
   <input id="compare-range" type="range" min="0" max="100" value="50" aria-label="Reveal generated image">
   <label id="viewer-zoom-label" for="viewer-zoom">Zoom</label><input id="viewer-zoom" type="range" min="1" max="3" step="0.25" value="1">
-  <div class="row" id="viewer-tools"><button id="viewer-compare" class="secondary hide" type="button">Compare with input</button><div id="viewer-actions"></div></div>
+  <div class="row" id="viewer-tools"><button id="viewer-compare" class="secondary hide" type="button">Compare with input</button><button id="viewer-favorite" class="ghost hide" type="button" aria-pressed="false">☆ Favorite</button><div id="viewer-actions"></div></div>
   <details id="photo-details"><summary>Photo details</summary><dl id="photo-metadata"></dl><div id="photo-text"></div></details>
   <button id="viewer-job" class="ghost" type="button">Open job details / run again</button>
 </dialog>

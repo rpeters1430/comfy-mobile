@@ -1,4 +1,4 @@
-# Comfy Mobile — v0.7.1
+# Comfy Mobile — v0.8.0
 
 Mobile-first ComfyUI dashboard running on a NAS, connecting to ComfyUI on another machine.
 
@@ -21,6 +21,19 @@ If the phone still shows an older version, reload the tab and check that the upd
 - **Phone wallpapers**: Pixel (including Pixel 10/Pro/Pro XL), iPhone and Galaxy presets, rendered near the model's native pixel budget and fit to the exact screen for native presets. Standard tall presets keep conservative 9:16 render-and-crop behavior; Pixel Cinematic-ready renders close to the final portrait aspect instead of trimming a 9:16 image. Composition guidance only; Pixel's on-device zoom still crops the edges. Normal wallpaper mode is unchanged.
 - **Notifications and gallery**: The NAS watches each job and sends a push notification when it finishes, even with the app closed (needs HTTPS). Finished jobs and thumbnails are kept on the NAS, so the gallery survives ComfyUI restarts.
 - **Workflow Sync**: Safe, one-way pull of workflows directly from ComfyUI's user-data directory to your NAS.
+
+## New in v0.8.0
+
+- **Queue tab:** see what is running and waiting on the ComfyUI PC from every device. **Run next** moves one of your waiting jobs to the front; **Remove**/**Stop** cancel it. Jobs started on the PC itself are listed only as "Started outside the app". The app icon (where the launcher supports badges) and the Queue tab show how many of your jobs are unfinished.
+- **Hold jobs while the PC is off:** if ComfyUI can't be reached when you tap Generate, the app offers to keep the jobs on the NAS (up to 3 days). Photos you add while the PC is off are kept on the NAS too. With Wake-on-LAN configured it can wake the PC at the same time. The NAS starts held jobs, oldest first, as soon as ComfyUI answers, and they show up in the Queue tab until then. A held job that can no longer run (a model was removed) is marked failed and sends a notification.
+- **Use as input:** every image result (job card and full-screen viewer) can go straight into the open workflow's next empty photo slot, or into any workflow that takes a photo.
+- **Gallery search, filters and favorites:** search prompts, workflow names and seeds, filter by workflow or ★ favorites, and **Select** several jobs to share, favorite or remove them together. Favorites and removals are shared by every device. Removing only drops the gallery entry; the files stay on the ComfyUI PC.
+- **Wildcards and snippets:** `{red|blue|green}` in a prompt picks one option per run, so a batch of 4 gives 4 variations. Save named snippets (shared on the NAS) under **Snippets & wildcards** and insert them as `__name__`; a snippet with several lines picks one line per run. Wildcards can't be combined with an approved AI settings review, which covers exact prompts.
+- **Home-screen shortcuts:** long-press the installed app icon for New image, Gallery and Queue.
+- **Faster:** job cards follow one live progress stream from the NAS instead of polling ComfyUI every 2 seconds per job, and the NAS hears from ComfyUI's websocket the moment a job ends, so notifications arrive sooner. The page and scripts are gzip-compressed (`app.js` goes from about 140 KB to 39 KB). The workflow list no longer re-checks every workflow each minute unless ComfyUI's nodes or models actually changed. Job history moved to SQLite, so finishing a job writes one record instead of rewriting the whole history.
+- Fixed: **Load settings** on a finished job card did nothing (a script error).
+
+Upgrading: on first start, `data/jobs.json` is imported into `data/jobs.sqlite3` and kept as `data/jobs.json.migrated`. Keep the whole data folder as before.
 
 ## New in v0.7.1
 
@@ -58,7 +71,7 @@ A broken synced workflow no longer hides a working bundled copy with the same na
 - **Wake PC:** configure the NAS as described below, then use **Wake PC** in Settings. The app waits up to two minutes for ComfyUI. A wake packet does not start ComfyUI automatically; configure the PC's startup separately.
 - **Compare and zoom:** image results offer **Compare / full screen** (or **Full screen & zoom** for text-to-image). Drag the before/after slider and zoom up to 3×. Multi-image workflows compare the first input. Inputs use WebP previews; full output files remain on the ComfyUI PC and need it online.
 
-Presets use `data/presets.sqlite3`. Jobs and thumbnails retain the existing `data/jobs.json` and `data/thumbs` paths; input previews are saved in `data/inputs`. Keep the entire data folder when updating. All devices with the same studio token share the same history/presets.
+Presets use `data/presets.sqlite3`. Jobs live in `data/jobs.sqlite3` (imported from `data/jobs.json` by 0.8.0) and thumbnails in `data/thumbs`; held jobs and their photos in `data/deferred.json` and `data/held`; input previews are saved in `data/inputs`. Keep the entire data folder when updating. All devices with the same studio token share the same history/presets.
 
 ## Wake-on-LAN configuration
 
