@@ -35,7 +35,7 @@
         "pony_v7_base_int8_convrot.safetensors",
         "default"
       ],
-      "title": "\u2705 PONY V7 (AuraFlow) | pony_v7_base_int8_convrot",
+      "title": "✅ PONY V7 (AuraFlow) | pony_v7_base_int8_convrot",
       "color": "#a26a28",
       "bgcolor": null
     },
@@ -107,7 +107,7 @@
         "stable_diffusion",
         "default"
       ],
-      "title": "\u2705 PONY V7 TEXT ENCODER \u2014 Pile T5-XL",
+      "title": "✅ PONY V7 TEXT ENCODER — Pile T5-XL",
       "color": "#a26a28",
       "bgcolor": null
     },
@@ -181,7 +181,7 @@
       "widgets_values": [
         "pony_v7_sdxl_vae_fp16.safetensors"
       ],
-      "title": "\u2705 PONY V7 VAE \u2014 SDXL VAE",
+      "title": "✅ PONY V7 VAE — SDXL VAE",
       "color": "#a26a28",
       "bgcolor": null
     },
@@ -449,9 +449,9 @@
       "outputs": [],
       "properties": {},
       "widgets_values": [
-        "# MODEL FAMILY: PONY V7 (AuraFlow)\n\n**Compatible model examples / model location:**\ndiffusion_models/pony_v7_base_int8_convrot.safetensors (UNETLoader; int8 + ConvRot made locally, ~1 s/step at 1024\u00b2).. Not compatible with Pony XL / SDXL checkpoints or SDXL LoRAs.\n\n**Important:** CLIPLoader = `pony_v7_pile_t5xl_fp16.safetensors` (Pile T5-XL, auto-detected; the type dropdown doesn't matter) followed by T5 Tokenizer Options 768/768; VAELoader = `pony_v7_sdxl_vae_fp16.safetensors`. 768-1536px, 30+ steps, CFG ~3.5, euler / simple.\n\n**Prompt order:** special tags (`score_9`, `style_cluster_N`, `rating_safe/explicit`), then a one-phrase factual description (`<species> <gender> <name> from <source>`), then style, then extra tags. Quality tags are much weaker than in V6.\n\n**Ollama caption model vs image model:** In `Qwen3VLAbliteratedPromptPair`, `huihui_ai/qwen3-vl-abliterated:8b-instruct` is an **Ollama image-analysis model**, not your generation checkpoint.\n\n**ComfyUI limitation:** Standard dropdowns still list all matching file types from shared folders; this note and labeled loader indicate what is appropriate, but do not restrict dropdown contents."
+        "# MODEL FAMILY: PONY V7 (AuraFlow)\n\n**Compatible model examples / model location:**\ndiffusion_models/pony_v7_base_int8_convrot.safetensors (UNETLoader; int8 + ConvRot made locally, ~1 s/step at 1024²).. Not compatible with Pony XL / SDXL checkpoints or SDXL LoRAs.\n\n**Important:** CLIPLoader = `pony_v7_pile_t5xl_fp16.safetensors` (Pile T5-XL, auto-detected; the type dropdown doesn't matter) followed by T5 Tokenizer Options 768/768; VAELoader = `pony_v7_sdxl_vae_fp16.safetensors`. 768-1536px, 30+ steps, CFG ~3.5, euler / simple.\n\n**Prompt order:** special tags (`score_9`, `style_cluster_N`, `rating_safe/explicit`), then a one-phrase factual description (`<species> <gender> <name> from <source>`), then style, then extra tags. Quality tags are much weaker than in V6.\n\n**Ollama caption model vs image model:** In `Qwen3VLAbliteratedPromptPair`, `joycaption-beta:latest` is an **Ollama image-analysis model**, not your generation checkpoint.\n\n**ComfyUI limitation:** Standard dropdowns still list all matching file types from shared folders; this note and labeled loader indicate what is appropriate, but do not restrict dropdown contents."
       ],
-      "title": "MODEL GUIDE \u2014 READ BEFORE SELECTING",
+      "title": "MODEL GUIDE — READ BEFORE SELECTING",
       "color": "#222",
       "bgcolor": "#161616"
     }

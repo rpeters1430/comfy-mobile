@@ -113,7 +113,7 @@
         "Node name for S&R": "Qwen3VLAbliteratedPromptPair"
       },
       "widgets_values": [
-        "huihui_ai/qwen3-vl-abliterated:8b-instruct",
+        "joycaption-beta:latest",
         "Stable Diffusion Prompt",
         "medium-length",
         "",
@@ -791,7 +791,7 @@
       "outputs": [],
       "properties": {},
       "widgets_values": [
-        "# MODEL FAMILY: STABLE DIFFUSION 1.5\n\n**Compatible model examples / model location:**\nlimitlessvision_v40.safetensors / savMIXSD15_v62.safetensors\n\n**Important:** Select SD 1.5 checkpoints and SD 1.5 LoRAs only; SDXL files are incompatible.\n\n**Ollama caption model vs image model:** In `Qwen3VLAbliteratedPromptPair`, `huihui_ai/qwen3-vl-abliterated:8b-instruct` is an **Ollama image-analysis model**, not your generation checkpoint.\n\n**ComfyUI limitation:** Standard dropdowns still list all matching file types from shared folders; this note and labeled loader indicate what is appropriate, but do not restrict dropdown contents."
+        "# MODEL FAMILY: STABLE DIFFUSION 1.5\n\n**Compatible model examples / model location:**\nlimitlessvision_v40.safetensors / savMIXSD15_v62.safetensors\n\n**Important:** Select SD 1.5 checkpoints and SD 1.5 LoRAs only; SDXL files are incompatible.\n\n**Ollama caption model vs image model:** In `Qwen3VLAbliteratedPromptPair`, `joycaption-beta:latest` is an **Ollama image-analysis model**, not your generation checkpoint.\n\n**ComfyUI limitation:** Standard dropdowns still list all matching file types from shared folders; this note and labeled loader indicate what is appropriate, but do not restrict dropdown contents."
       ],
       "color": "#222",
       "bgcolor": "#161616",
