@@ -35,7 +35,7 @@
         "z_image_turbo_int8_convrot.safetensors",
         "default"
       ],
-      "title": "\u2705 Z-IMAGE TURBO DiT | z_image_turbo_int8_convrot",
+      "title": "✅ Z-IMAGE TURBO DiT | z_image_turbo_int8_convrot",
       "color": "#a26a28",
       "bgcolor": null
     },
@@ -146,7 +146,7 @@
         "lumina2",
         "default"
       ],
-      "title": "\u2705 Z-IMAGE TEXT ENCODER \u2014 qwen_3_4b (type lumina2)",
+      "title": "✅ Z-IMAGE TEXT ENCODER — qwen_3_4b (type lumina2)",
       "color": "#a26a28",
       "bgcolor": null
     },
@@ -180,7 +180,7 @@
       "widgets_values": [
         "ae.safetensors"
       ],
-      "title": "\u2705 Z-IMAGE VAE \u2014 ae",
+      "title": "✅ Z-IMAGE VAE — ae",
       "color": "#a26a28",
       "bgcolor": null
     },
@@ -447,9 +447,9 @@
       "outputs": [],
       "properties": {},
       "widgets_values": [
-        "# MODEL FAMILY: Z-IMAGE TURBO\n\n**Compatible model examples / model location:**\ndiffusion_models/z_image_turbo_int8_convrot.safetensors (official Comfy-Org int8). Z-Image finetunes from Civitai also load here.\n\n**Important:** CLIPLoader = `qwen_3_4b_fp8_mixed.safetensors` with type **lumina2**; VAELoader = `ae.safetensors`; ModelSamplingAuraFlow shift 3; latent = EmptySD3LatentImage. Turbo: 8 steps, CFG 1, res_multistep / simple (the negative is unused at CFG 1). Natural-language prompts.\n\n**Ollama caption model vs image model:** In `Qwen3VLAbliteratedPromptPair`, `huihui_ai/qwen3-vl-abliterated:8b-instruct` is an **Ollama image-analysis model**, not your generation checkpoint.\n\n**ComfyUI limitation:** Standard dropdowns still list all matching file types from shared folders; this note and labeled loader indicate what is appropriate, but do not restrict dropdown contents."
+        "# MODEL FAMILY: Z-IMAGE TURBO\n\n**Compatible model examples / model location:**\ndiffusion_models/z_image_turbo_int8_convrot.safetensors (official Comfy-Org int8). Z-Image finetunes from Civitai also load here.\n\n**Important:** CLIPLoader = `qwen_3_4b_fp8_mixed.safetensors` with type **lumina2**; VAELoader = `ae.safetensors`; ModelSamplingAuraFlow shift 3; latent = EmptySD3LatentImage. Turbo: 8 steps, CFG 1, res_multistep / simple (the negative is unused at CFG 1). Natural-language prompts.\n\n**Ollama caption model vs image model:** In `Qwen3VLAbliteratedPromptPair`, `joycaption-beta:latest` is an **Ollama image-analysis model**, not your generation checkpoint.\n\n**ComfyUI limitation:** Standard dropdowns still list all matching file types from shared folders; this note and labeled loader indicate what is appropriate, but do not restrict dropdown contents."
       ],
-      "title": "MODEL GUIDE \u2014 READ BEFORE SELECTING",
+      "title": "MODEL GUIDE — READ BEFORE SELECTING",
       "color": "#222",
       "bgcolor": "#161616"
     }
