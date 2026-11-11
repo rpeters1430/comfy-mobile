@@ -26,7 +26,7 @@ class WorkflowSyncTests(unittest.TestCase):
             return httpx.Response(200, json=workflow)
         def client(**kwargs):
             return factory(transport=httpx.MockTransport(handler), **kwargs)
-        with TemporaryDirectory() as tmp, patch("app.workflow_sync.httpx.AsyncClient", client):
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp, patch("app.workflow_sync.httpx.AsyncClient", client):
             result = asyncio.run(WorkflowSync("http://localhost:8188", Path(tmp)).sync())
             self.assertEqual(result["status"], "partial")
             self.assertEqual(result["downloaded"], 1)
@@ -35,7 +35,7 @@ class WorkflowSyncTests(unittest.TestCase):
 
 
     def test_sync_download_and_skip(self):
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             self.run_sync_test(Path(tmp))
 
     def run_sync_test(self, tmp_path):
@@ -74,7 +74,7 @@ class WorkflowPushTests(unittest.TestCase):
             return httpx.Response(200, content=remote[name])
         def client(**kwargs):
             return factory(transport=httpx.MockTransport(handler), **kwargs)
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             bundled, data = Path(tmp) / "bundled", Path(tmp) / "data"
             bundled.mkdir(); data.mkdir()
             for name in ("same.json", "stale.json", "edited.json", "new.json", "deleted.json"):

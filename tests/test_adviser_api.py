@@ -19,7 +19,7 @@ INFO={
 
 class AdviserApiTests(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)
+        self.tmp=tempfile.TemporaryDirectory(ignore_cleanup_errors=True); self.root=Path(self.tmp.name)
         self.path=self.root/'one.json'; self.path.write_text(json.dumps(GRAPH))
         self.adviser=Adviser(self.root)
         self.patches=[patch.object(main,'TOKEN','adviser-test'), patch.object(main,'WF_DIR',self.root),

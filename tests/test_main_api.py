@@ -77,7 +77,7 @@ class ApiTests(unittest.TestCase):
 
         job = "0f8d2a4c-1111-4222-8333-944455556666"
         webp = b"RIFF\x10\x00\x00\x00WEBPVP8 " + b"\x00" * 8
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             store = JobStore(Path(tmp))
             store.add(job, "01_SDXL", "a cat")
             store.finish(job, job_summary({"status": {"status_str": "success", "completed": True},

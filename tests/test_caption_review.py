@@ -75,7 +75,7 @@ class CaptionApiTests(unittest.TestCase):
    self.assertEqual('/prompt', path)
    submitted.append(kwargs['json']['prompt'])
    return {'prompt_id': '0f8d2a4c-1111-4222-8333-944455556666'}
-  with TemporaryDirectory() as tmp:
+  with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
    root = Path(tmp)
    (root / 'review.json').write_text(json.dumps(graph()))
    store = JobStore(root)

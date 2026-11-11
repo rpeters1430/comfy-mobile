@@ -867,7 +867,7 @@
       ],
       "flags": {},
       "order": 17,
-      "mode": 0,
+      "mode": 4,
       "inputs": [
         {
           "name": "model",
@@ -902,7 +902,7 @@
         "Node name for S&R": "LoraLoader"
       },
       "widgets_values": [
-        "SD15/DetailedEyes_V3.safetensors",
+        "SDXL/DetailedEyes_V3.safetensors",
         0.7,
         0.7
       ]

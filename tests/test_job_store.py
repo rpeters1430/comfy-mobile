@@ -33,7 +33,7 @@ class SummaryTests(unittest.TestCase):
 
 class JobStoreTests(unittest.TestCase):
     def test_records_survive_reload_and_finish(self):
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             store = JobStore(Path(tmp))
             store.add(JOB, "01_SDXL", "a cat")
             self.assertEqual([JOB], store.watching())
@@ -43,14 +43,14 @@ class JobStoreTests(unittest.TestCase):
             self.assertEqual([], reloaded.watching())
 
     def test_old_unfinished_jobs_are_marked_lost(self):
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             store = JobStore(Path(tmp))
             store.add(JOB, "w", "")
             self.assertEqual([], store.watching(now=store.get(JOB)["created"] + WATCH_FOR + 1))
             self.assertEqual("lost", store.get(JOB)["summary"]["status"])
 
     def test_keeps_only_recent_jobs_and_their_thumbs(self):
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             store = JobStore(Path(tmp))
             ids = [f"{i:08x}-0000-4000-8000-000000000000" for i in range(MAX_JOBS + 1)]
             with patch("app.job_store.time.time", side_effect=range(len(ids))):
@@ -62,7 +62,7 @@ class JobStoreTests(unittest.TestCase):
             self.assertEqual(WEBP, store.thumb_path(ids[-1]).read_bytes())
 
     def test_rejects_bad_ids_and_non_webp_thumbs(self):
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             store = JobStore(Path(tmp))
             store.add("../../etc", "w", "")
             self.assertEqual({}, store.jobs)
@@ -79,7 +79,7 @@ class JobStoreTests(unittest.TestCase):
         self.assertEqual({}, store.jobs)
 
     def test_imports_legacy_json_once(self):
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             root = Path(tmp)
             (root / "jobs.json").write_text(json.dumps({JOB: {"workflow": "w", "prompt": "p", "created": 5,
                                                               "summary": None, "params": None}, "../x": {}}))
@@ -92,7 +92,7 @@ class JobStoreTests(unittest.TestCase):
 
     def test_favorites_filters_and_removal(self):
         other = "1f8d2a4c-1111-4222-8333-944455556666"
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             store = JobStore(Path(tmp))
             store.add(JOB, "Portrait", "red fox in snow", params={"prompt": "red fox in snow, winter", "seed": 7})
             store.add(other, "Landscape", "mountain lake")
@@ -111,7 +111,7 @@ class JobStoreTests(unittest.TestCase):
 
     def test_rekey_moves_record_and_thumb(self):
         new = "3f8d2a4c-1111-4222-8333-944455556666"
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             store = JobStore(Path(tmp))
             store.add(JOB, "w", "p")
             store.save_thumb(JOB, WEBP)
@@ -136,7 +136,7 @@ class PushTests(unittest.TestCase):
             self.assertFalse(push_host_allowed(url), url)
 
     def test_subscribe_validates_and_dedupes(self):
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             push = Push(Path(tmp), "mailto:a@b.c")
             endpoint = "https://fcm.googleapis.com/fcm/send/abc"
             push.subscribe(endpoint, key(65), key(16))
@@ -149,7 +149,7 @@ class PushTests(unittest.TestCase):
             self.assertEqual([], push.subscriptions())
 
     def test_key_is_generated_once(self):
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             first = Push(Path(tmp), "mailto:a@b.c").public_key()
             self.assertEqual(65, len(base64.urlsafe_b64decode(first + "=")))
             self.assertEqual(first, Push(Path(tmp), "mailto:a@b.c").public_key())
@@ -160,7 +160,7 @@ class PushTests(unittest.TestCase):
         class Gone:
             status_code = 410
 
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             push = Push(Path(tmp), "mailto:a@b.c")
             push.subscribe("https://fcm.googleapis.com/fcm/send/old", key(65), key(16))
             push.subscribe("https://fcm.googleapis.com/fcm/send/new", key(65), key(16))

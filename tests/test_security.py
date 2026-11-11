@@ -21,7 +21,7 @@ JOB = '0f8d2a4c-1111-4222-8333-944455556666'
 class SecurityTests(unittest.TestCase):
     def test_catalog_enforces_containment_and_size(self):
         graph = '{"1":{"class_type":"SaveImage","inputs":{}}}'
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             root = Path(tmp) / 'workflows'
             root.mkdir()
             secret_file = Path(tmp) / 'secret.json'
@@ -45,7 +45,7 @@ class SecurityTests(unittest.TestCase):
             self.assertEqual(['ok.json'], [w['id'] for w in response.json()['workflows']])
 
     def test_atomic_write_does_not_follow_predictable_partial_symlink(self):
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             root = Path(tmp)
             victim = root / 'victim'
             victim.write_bytes(b'untouched')
@@ -62,7 +62,7 @@ class SecurityTests(unittest.TestCase):
             self.assertEqual(b'new', (root / 'jobs.json').read_bytes())
 
     def test_atomic_files_are_private_even_with_permissive_umask(self):
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             path = Path(tmp) / 'private.pem'
             old = os.umask(0)
             try:
@@ -113,7 +113,7 @@ class SecurityTests(unittest.TestCase):
 
     def test_push_subscribe_returns_400_for_malformed_url(self):
         from app.push import Push
-        with TemporaryDirectory() as tmp, patch.object(main, 'TOKEN', 'secret'), \
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp, patch.object(main, 'TOKEN', 'secret'), \
              patch.object(main, 'push', Push(Path(tmp), 'mailto:a@b.c')):
             response = TestClient(main.app).post('/api/push/subscribe',
                 headers={'Authorization': 'Bearer secret'},
@@ -158,7 +158,7 @@ class SecurityTests(unittest.TestCase):
                 return httpx.Response(200, stream=Body())
             def client(**kwargs):
                 return factory(transport=httpx.MockTransport(handler), **kwargs)
-            with TemporaryDirectory() as tmp, patch('app.workflow_sync.httpx.AsyncClient', client):
+            with TemporaryDirectory(ignore_cleanup_errors=True) as tmp, patch('app.workflow_sync.httpx.AsyncClient', client):
                 result = asyncio.run(WorkflowSync('http://comfy', Path(tmp)).sync())
             self.assertLessEqual(len(consumed), MAX_BYTES // 65536 + 1)
             self.assertEqual('error' if listing else 'partial', result['status'])
@@ -173,14 +173,14 @@ class SecurityTests(unittest.TestCase):
             return httpx.Response(200, stream=Bomb(), headers={'Content-Encoding': 'gzip'})
         def client(**kwargs):
             return factory(transport=httpx.MockTransport(handler), **kwargs)
-        with TemporaryDirectory() as tmp, patch('app.workflow_sync.httpx.AsyncClient', client), \
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp, patch('app.workflow_sync.httpx.AsyncClient', client), \
              patch('httpx._decoders.GZipDecoder.decode', side_effect=AssertionError('must not decompress')):
             result = asyncio.run(WorkflowSync('http://comfy', Path(tmp)).sync())
         self.assertEqual('error', result['status'])
 
     def test_legacy_active_outputs_do_not_break_gallery(self):
         from app.job_store import JobStore
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             store = JobStore(Path(tmp))
             store.add(JOB, 'workflow', '')
             store.finish(JOB, {'status': 'success', 'completed': True, 'errors': [], 'outputs': [

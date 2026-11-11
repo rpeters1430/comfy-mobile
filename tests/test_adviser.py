@@ -29,7 +29,7 @@ class AdviserTests(unittest.TestCase):
         self.assertEqual([],propose(g,CONTROLS,[{'file':'Example_v1.safetensors','facts':[FACT]}])[0])
 
     def test_store_expiry_owner_cache_and_restart(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
             store=Store(Path(folder))
             store.put('review','id',{'owner':'a','status':'done'},ttl=600)
             self.assertIsNone(store.get('review','id',owner='b'))
@@ -50,7 +50,7 @@ class TaskTests(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import AsyncMock, patch
         from app.adviser import Adviser
         source={'id':'s1','url':'https://example.org/model','text':'Example v1. Inference steps: 20-25.','excerpt':'Inference steps: 20-25.','verified':True}
-        with tempfile.TemporaryDirectory() as folder:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
             adviser=Adviser(Path(folder))
             async def finish():
                 for _ in range(100):
@@ -105,7 +105,7 @@ class RealAIRegressionTests(unittest.IsolatedAsyncioTestCase):
         import asyncio
         from unittest.mock import patch
         from app.adviser import Adviser
-        with tempfile.TemporaryDirectory() as folder,patch.dict('os.environ',{'ADVISER_MODEL':'','ADVISER_BASE_URL':'','OLLAMA_URL':''}):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder,patch.dict('os.environ',{'ADVISER_MODEL':'','ADVISER_BASE_URL':'','OLLAMA_URL':''}):
             adviser=Adviser(Path(folder))
             row=adviser.start('owner',GRAPH,CONTROLS,'source',[42])
             for _ in range(100):
@@ -121,7 +121,7 @@ class RealAIRegressionTests(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import AsyncMock,patch
         from app.adviser import Adviser
         reply={'summary':'AI assessed the actual workflow','changes':[{'node':'2','field':'steps','value':'25','reason':'Trial setting, not an author recommendation.'}]}
-        with tempfile.TemporaryDirectory() as folder,patch.dict('os.environ',{'ADVISER_MODEL':'local','OLLAMA_URL':'http://pc:11434'}),patch('app.adviser.AI.review',AsyncMock(return_value=reply)) as review:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder,patch.dict('os.environ',{'ADVISER_MODEL':'local','OLLAMA_URL':'http://pc:11434'}),patch('app.adviser.AI.review',AsyncMock(return_value=reply)) as review:
             adviser=Adviser(Path(folder)); row=adviser.start('owner',GRAPH,CONTROLS,'source',[42])
             for _ in range(100):
                 await asyncio.sleep(.001)

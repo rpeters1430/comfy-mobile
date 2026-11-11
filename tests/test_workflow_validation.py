@@ -28,7 +28,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse(inspect_workflow(graph, self.schema)["runnable"])
 
     def test_traversal_rejected(self):
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             with self.assertRaises(ValueError):
                 load_workflow(Path(tmp), "../private.json")
 

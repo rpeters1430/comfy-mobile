@@ -13,7 +13,7 @@ AUTH = {'Authorization': 'Bearer test-token'}
 
 class LibraryTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = TemporaryDirectory()
+        self.tmp = TemporaryDirectory(ignore_cleanup_errors=True)
         self.root = Path(self.tmp.name)
         self.store = JobStore(self.root)
         self.patch = patch.object(main, 'TOKEN', 'test-token')
@@ -127,7 +127,7 @@ class WakeAndInputTests(unittest.TestCase):
 
     def test_inputs_are_bound_to_job_and_can_use_nas_copy(self):
         from app.workflow_jobs import UPLOAD_NAME
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             store = JobStore(Path(tmp))
             name = 'mobile_' + 'a' * 32 + '.png'
             self.assertTrue(UPLOAD_NAME.fullmatch(name))
@@ -148,7 +148,7 @@ class ConcurrencyTests(unittest.TestCase):
     def test_concurrent_presets_and_job_records_survive_reload(self):
         from concurrent.futures import ThreadPoolExecutor
         from app.preset_store import PresetStore
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             root = Path(tmp)
             jobs = JobStore(root)
             def write(index):
@@ -168,7 +168,7 @@ class ConcurrencyTests(unittest.TestCase):
 class PresetSnapshotTests(unittest.TestCase):
     def test_validation_returns_the_exact_latest_record_to_load(self):
         from app.preset_store import PresetStore
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             root = Path(tmp)
             (root / 'one.json').write_text(json.dumps({'1': {'class_type': 'SaveImage', 'inputs': {}}}))
             presets = PresetStore(root)
