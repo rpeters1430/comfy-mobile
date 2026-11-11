@@ -31,7 +31,7 @@ def offline(*args, **kwargs):
 
 class Base(unittest.TestCase):
     def setUp(self):
-        self.tmp = TemporaryDirectory()
+        self.tmp = TemporaryDirectory(ignore_cleanup_errors=True)
         self.root = Path(self.tmp.name)
         (self.root / 'wf').mkdir()
         (self.root / 'wf' / 'one.json').write_text(json.dumps({'1': {'class_type': 'KSampler', 'inputs': {}}}))
@@ -136,7 +136,7 @@ class HoldTests(Base):
 class HeldPhotoTests(unittest.TestCase):
     def test_eviction_keeps_photos_that_waiting_jobs_need(self):
         import app.deferred as d
-        with TemporaryDirectory() as tmp, patch.object(d, 'MAX_HELD_UPLOADS', 2):
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp, patch.object(d, 'MAX_HELD_UPLOADS', 2):
             store = DeferredJobs(Path(tmp))
             needed, spare, new = ('mobile_' + c * 32 + '.png' for c in 'abc')
             store.hold_upload(needed, PNG)
