@@ -25,6 +25,8 @@ let swReg = null;
 let controls = null;   // models & LoRAs from /validate
 let controlsReady = false;
 let captionCapability = null;
+// Whether this workflow can name known anime/game characters in its caption (characters.py).
+let characterSupport = null;
 let sharedPresets = [];
 let nasJobs = [];
 let galleryOffset = 0;
@@ -204,6 +206,7 @@ async function selectWorkflow(wf, restored = null) {
   selected = wf;
   controlsReady = false;
   captionCapability = null;
+  characterSupport = null;
   $('review-before').checked = false;
   $('caption-review-box').classList.add('hide');
   $('negative-prompt-box')?.classList.add('hide');
@@ -625,6 +628,7 @@ async function loadControls(wf, restored = null) {
     if (selected !== wf) return;
     if (!validation.runnable) throw Error((validation.errors || []).join('; ') || 'Workflow is unavailable');
     captionCapability = validation.caption_review;
+    characterSupport = validation.characters?.supported ? validation.characters : null;
     $('caption-review-box').classList.toggle('hide', !wf.image_inputs);
     $('review-before').disabled = !captionCapability?.supported;
     $('caption-review-hint').textContent = captionCapability?.supported ? 'Preview the caption, edit it, then generate.' : captionCapability?.reason || 'Caption review is unavailable for this workflow.';
@@ -689,6 +693,7 @@ async function loadControls(wf, restored = null) {
     choices.caption[cap.node] = values;
   }
   choices.settings = MobileTools.restoreSettings(controls.settings, saved.settings);
+  choices.characters = saved.characters !== false;  // on unless turned off for this workflow
   try {
     renderControls();
   } catch (e) {
@@ -1050,9 +1055,17 @@ function captionSection(cap, changed) {
   const extras = !toggles.length ? null : toggles.length > 10
     ? el('details', { class: 'controls' }, el('summary', {}, `Extra options `, el('small', {}, `${on} of ${toggles.length} on`)), el('div', { class: 'aspects' }, toggles))
     : el('div', { class: 'aspects' }, toggles);
+  let naming = null;
+  if (characterSupport?.node === cap.node) {
+    const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(choices.characters) }, '🎭 Name known characters');
+    chip.onclick = () => { choices.characters = !choices.characters; chip.setAttribute('aria-pressed', String(choices.characters)); saveControls(); renderSummary(); };
+    naming = el('div', { style: 'margin-top:8px' }, el('div', { class: 'aspects' }, chip),
+      el('small', { class: 'status', style: 'display:block;margin-top:2px' },
+        'A Booru tagger looks at the photo first; anime and game characters it recognises (e.g. Tifa Lockhart) are named in the caption.'));
+  }
   return el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, 'Auto caption'),
     el('small', { class: 'status' }, 'Shared across all auto-caption workflows, except style.'),
-    el('div', { class: 'settings-grid' }, selects), extras);
+    el('div', { class: 'settings-grid' }, selects), naming, extras);
 }
 
 /* ---------- Workflow updates from the PC ---------- */
@@ -1206,6 +1219,7 @@ function controlsText(c) {
   const cap = capNode && c.caption?.[capNode.node];
   const capStyle = capNode && captionStyle(capNode);
   if (capStyle && cap?.[capStyle]) parts.push(cap[capStyle]);
+  if (characterSupport && c.characters !== false) parts.push('🎭 characters');
   const tweaked = Object.keys(MobileTools.settingsPayload(controls?.settings, c.settings)).length;
   if (tweaked) parts.push(`${tweaked} node${tweaked > 1 ? 's' : ''} adjusted`);
   return parts.join(' · ');
@@ -1236,6 +1250,7 @@ function controlsPayload(c) {
   return {
     models, loras, extra_loras: c.extra.map(x => ({ name: x.name, strength: x.strength })), sampling, caption,
     ...(Object.keys(settings).length ? { settings } : {}),
+    ...(characterSupport && c.characters !== false ? { characters: true } : {}),
     ...(c.skipDetailers && controls.detailers?.length ? { skip_detailers: true } : {}),
     ...(videoPayload(c) ? { video: videoPayload(c) } : {}),
     ...(size && (size.width !== controls.size.width || size.height !== controls.size.height) ? { size } : {}),
@@ -1817,7 +1832,8 @@ function showResults(job, entry, r) {
 
   const finals = r.outputs.filter(o => o.kind !== 'text' && !o.preview);
   const previews = r.outputs.filter(o => o.kind !== 'text' && o.preview);
-  const texts = r.outputs.filter(o => o.kind === 'text');
+  const named = r.outputs.find(o => o.kind === 'text' && o.node === 'mobile_characters');
+  const texts = r.outputs.filter(o => o.kind === 'text' && o !== named);
   const nodes = finals.map(item => el('figure', { class: 'result' },
     el('a', { href: item.url, target: '_blank', rel: 'noopener' }, mediaFor(item)), resultActions(item),
       item.kind === 'image' ? el('button', { class: 'secondary', type: 'button', onclick: () => viewImage(job, item) }, job.images?.length ? 'Compare / full screen' : 'Full screen & zoom') : null));
@@ -1836,6 +1852,7 @@ function showResults(job, entry, r) {
     ));
   }
 
+  if (named) nodes.unshift(el('p', { class: 'status' }, named.text.trim() ? `🎭 Recognised: ${named.text}` : '🎭 No known character recognised'));
   if (job.stage === 'caption' && ok) nodes.unshift(captionEditor(job, r.outputs));
 
   if (previews.length) {
@@ -2744,7 +2761,8 @@ async function openGalleryPhoto(job) {
     state.items = finals.length ? finals : media;
     state.summary = summary;
     $('photo-text').replaceChildren(...summary.outputs.filter(o => o.kind === 'text')
-      .map(o => el('div', { class: 'photo-captured-text' }, el('strong', {}, `Workflow text (${o.node})`), el('p', {}, o.text))));
+      .map(o => el('div', { class: 'photo-captured-text' }, el('strong', {}, o.node === 'mobile_characters' ? 'Recognised characters' : `Workflow text (${o.node})`),
+        el('p', {}, o.text || (o.node === 'mobile_characters' ? 'None' : '')))));
     if (state.items.length) showViewerItem(0);
     else {
       $('viewer-status').textContent = summary.status === 'pending' ? 'This job is still queued or running. Open job details to follow progress.' : 'This job has no image or video output. Open job details for captions or errors.';

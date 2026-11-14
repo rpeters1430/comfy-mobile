@@ -34,3 +34,8 @@ test('reports what changed on the PC since last time', () => {
   assert.deepEqual(news.addedLabels, ['LoRA detail']);
   assert.deepEqual(news.removedLabels, ['PAG: Enabled', 'PAG: Mode', 'PAG: Steps']);
 });
+
+test('run again keeps whether the job named characters', () => {
+  assert.equal(tools.choicesFromJob({ controls: { characters: true } }).characters, true);
+  assert.equal(tools.choicesFromJob({ controls: {} }).characters, false);
+});

@@ -22,6 +22,7 @@ if __package__:
     from .preset_store import PresetStore
     from .deferred import HELD_ID, DeferredJobs
     from .caption_review import CaptionError, capability, caption_graph, apply_review, append_caption
+    from . import characters
     from .wake import WakePC, WakeError
     from .push import Push, PushError
     from .progress import ProgressTracker, listen
@@ -40,6 +41,7 @@ else:
     from preset_store import PresetStore
     from deferred import HELD_ID, DeferredJobs
     from caption_review import CaptionError, capability, caption_graph, apply_review, append_caption
+    import characters
     from wake import WakePC, WakeError
     from push import Push, PushError
     from progress import ProgressTracker, listen
@@ -372,7 +374,8 @@ async def validate_workflow(workflow_id: str, authorization: str | None = Header
             graph = convert_ui(graph, info)
         except ConversionError as exc:
             return {'format': 'ui', 'runnable': False, 'errors': [str(exc)], 'warnings': []}
-    return {**inspect_workflow(graph, info), 'controls': find_controls(graph, info), 'caption_review': capability(graph, info)}
+    return {**inspect_workflow(graph, info), 'controls': find_controls(graph, info), 'caption_review': capability(graph, info),
+            'characters': characters.support(graph, info)}
 
 
 @app.get('/api/comfy/workflows/discovery')
@@ -477,6 +480,7 @@ class Job(BaseModel):
     auto_loras: str = Field(default='', max_length=1000)  # the phone's note on what auto LoRAs added; recorded only
     # Any other node setting the workflow exposes (node_settings), checked against ComfyUI's schema.
     settings: dict[str,dict[str,bool|int|float|str]] = Field(default_factory=dict,max_length=64)
+    characters: bool = False  # name known anime/game characters in the caption (characters.py)
 
 async def prepare_job(job: Job):
     try:
@@ -499,6 +503,8 @@ async def prepare_job(job: Job):
                        job.fit.model_dump(exclude_none=True) if job.fit else None, job.skip_detailers, job.video, negative_prompt=job.negative_prompt,
                        settings=job.settings)
         applied=apply_job(graph,job.prompt,job.images,job.seed)
+        if job.characters and not characters.add_tagger(graph, info):
+            raise JobError(characters.support(graph, info)['reason'])
         if job.stage == 'caption':
             if job.review: raise CaptionError('Caption preview cannot include approved text')
             graph = caption_graph(graph, info)
@@ -507,6 +513,7 @@ async def prepare_job(job: Job):
             graph = apply_review(graph, info, job.review.positive, job.review.negative)
         elif job.caption_suffix.strip():
             append_caption(graph, info, job.caption_suffix.strip())
+        characters.add_preview(graph, info)  # an approved caption drops the tagger, so nothing to show then
         final_check = inspect_workflow(graph, info)
         if not final_check['runnable']: raise JobError('; '.join(final_check['errors']))
     except (ControlError, JobError, CaptionError) as exc:

@@ -106,6 +106,7 @@
       sampling: structuredClone(c.sampling || {}),
       caption: structuredClone(c.caption || {}),
       settings: structuredClone(c.settings || {}),
+      characters: Boolean(c.characters),  // Run again keeps what the job did
       ...(c.size ? { adviserSize: { ...c.size } } : {}),
       upscaler: c.fit?.upscaler || '',
       skipDetailers: Boolean(c.skipDetailers ?? c.skip_detailers),
