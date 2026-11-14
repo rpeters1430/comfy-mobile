@@ -44,20 +44,34 @@ class WorkflowSync:
         self.lock = asyncio.Lock()
         self.last_result = None
 
-    async def sync(self):
+    async def sync(self, reset: bool = False):
         if self.lock.locked():
             return {"status": "busy", "last_result": self.last_result}
         async with self.lock:
             try:
-                result = await self._sync()
+                result = await self._sync(reset=reset)
             except (httpx.HTTPError, ValueError, OSError) as exc:
                 result = {"status": "error", "reason": type(exc).__name__}
             self.last_result = result
             return result
 
-    async def _sync(self):
+    def _load_push_state(self, reset: bool) -> dict[str, str]:
+        if reset or not self.state or not self.state.exists():
+            return {}
+        try:
+            raw = json.loads(self.state.read_bytes())
+        except (OSError, json.JSONDecodeError):
+            return {}
+        if not isinstance(raw, dict):
+            return {}
+        previous_url = raw.get("_comfy_url")
+        if isinstance(previous_url, str) and previous_url != self.comfy_url:
+            return {}  # Switched to a different ComfyUI host: treat as a fresh target.
+        return {k: v for k, v in raw.items() if k != "_comfy_url" and isinstance(v, str)}
+
+    async def _sync(self, reset: bool = False):
         self.destination.mkdir(parents=True, exist_ok=True)
-        counts = {"pushed": 0, "downloaded": 0, "unchanged": 0, "failed": 0}
+        counts = {"pushed": 0, "downloaded": 0, "unchanged": 0, "removed": 0, "failed": 0}
         async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=5.0), follow_redirects=False) as client:
             entries = json.loads(await bounded_get(client, f"{self.comfy_url}/userdata", params={"dir": "workflows"}))
             if not isinstance(entries, list) or len(entries) > MAX_WORKFLOWS:
@@ -71,7 +85,8 @@ class WorkflowSync:
                     counts["failed"] += 1
             valid_names = set(valid_names)
             if self.bundled and self.state and self.state.parent.is_dir():
-                await self._push(client, valid_names, counts)
+                record = self._load_push_state(reset)
+                await self._push(client, valid_names, counts, record)
             for name in sorted(valid_names):
                 try:
                     # ComfyUI uses one encoded path parameter: workflows%2Ffilename.json
@@ -94,17 +109,18 @@ class WorkflowSync:
                     counts["downloaded"] += 1
                 except (httpx.HTTPError, ValueError, OSError, json.JSONDecodeError):
                     counts["failed"] += 1
+            if not counts["failed"]:
+                for existing in sorted(self.destination.glob("*.json")):
+                    if not existing.is_symlink() and existing.name not in valid_names:
+                        existing.unlink()
+                        counts["removed"] += 1
         return {"status": "ok" if not counts["failed"] else "partial", **counts, "remote_count": len(entries)}
 
     def _url(self, name):
         # ComfyUI uses one encoded path parameter: workflows%2Ffilename.json
         return f"{self.comfy_url}/userdata/{quote('workflows/' + name, safe='')}"
 
-    async def _push(self, client, remote_names, counts):
-        try:
-            record = json.loads(self.state.read_bytes()) if self.state.exists() else {}
-        except (OSError, json.JSONDecodeError):
-            record = {}
+    async def _push(self, client, remote_names, counts, record):
         for path in sorted(self.bundled.glob("*.json")):
             name = path.name
             if not SAFE_NAME.fullmatch(name) or path.is_symlink():
@@ -130,4 +146,4 @@ class WorkflowSync:
                 counts["pushed"] += 1
             except (httpx.HTTPError, ValueError, OSError):
                 counts["failed"] += 1
-        write_atomic(self.state, json.dumps(record, sort_keys=True).encode())
+        write_atomic(self.state, json.dumps({**record, "_comfy_url": self.comfy_url}, sort_keys=True).encode())

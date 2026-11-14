@@ -296,10 +296,23 @@ async def health(authorization: str | None = Header(default=None)):
     info = await request('GET','/system_stats')
     return {'comfyui':'online','devices':info.get('devices',[]),'version':VERSION}
 
+_last_sync_at: float = 0.0
+
+async def _run_workflow_sync(reset: bool = False) -> dict:
+    global _last_sync_at
+    result = await workflow_sync.sync(reset=reset)
+    if result.get('status') != 'busy':
+        _last_sync_at = time.monotonic()
+    if result.get('pushed') or result.get('downloaded') or result.get('removed'):
+        _catalog_inspect_cache.clear()
+    return result
+
 @app.get('/api/catalog')
 async def catalog(authorization: str | None = Header(default=None)):
     auth(authorization)
     info = await get_object_info()
+    if time.monotonic() - _last_sync_at > 15.0 and not workflow_sync.lock.locked():
+        await _run_workflow_sync()
     names = {'checkpoints':('CheckpointLoaderSimple','ckpt_name'), 'loras':('LoraLoader','lora_name'), 'upscalers':('UpscaleModelLoader','model_name')}
     out = {}
     for key,(cls,field) in names.items():
@@ -387,17 +400,15 @@ async def comfy_workflow_discovery(authorization: str | None = Header(default=No
 async def sync_workflows_periodically():
     """Keep the PC and the app's workflows in step without a manual sync (errors are kept in last_result)."""
     while True:
-        result = await workflow_sync.sync()
-        if result.get('pushed') or result.get('downloaded'):
-            _catalog_inspect_cache.clear()
-        await asyncio.sleep(900)
+        await _run_workflow_sync()
+        await asyncio.sleep(60)
 
 @app.post('/api/comfy/workflows/sync')
-async def sync_comfy_workflows(authorization: str | None = Header(default=None)):
+async def sync_comfy_workflows(reset: bool = False, authorization: str | None = Header(default=None)):
     auth(authorization)
-    result = await workflow_sync.sync()
-    _catalog_inspect_cache.clear()
     _object_info_cache["expires_at"] = 0.0
+    result = await _run_workflow_sync(reset=reset)
+    _catalog_inspect_cache.clear()
     return result
 
 @app.get('/api/comfy/workflows/sync/status')

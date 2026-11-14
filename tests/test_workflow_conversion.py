@@ -343,6 +343,17 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(result["1"]["inputs"]["text"], "{{prompt}}")
         self.assertEqual(result["2"]["inputs"]["text"], "bad stuff")
 
+    def test_cross_os_subfolder_path_resolves_before_basename_ambiguity(self):
+        schema = {
+            "CheckpointLoaderSimple": {"input": {"required": {
+                "ckpt_name": [["SDXL/model.safetensors", "other/model.safetensors"], {}]}}},
+        }
+        graph = {"nodes": [
+            {"id": 1, "type": "CheckpointLoaderSimple", "inputs": [], "widgets_values": ["SDXL\\model.safetensors"]},
+        ], "links": []}
+        result = convert_ui(graph, schema)
+        self.assertEqual(result["1"]["inputs"]["ckpt_name"], "SDXL/model.safetensors")
+
 
 if __name__ == "__main__":
     unittest.main()

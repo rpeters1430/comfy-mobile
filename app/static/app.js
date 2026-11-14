@@ -1995,8 +1995,10 @@ async function refresh() {
     catalog = { ...cat, workflows: MobileTools.preferredWorkflows(cat.workflows) };
     if (selected) {
       const fresh = catalog.workflows.find(w => w.id === selected.id && w.runnable);
-      if (fresh) Object.assign(selected, fresh); // preserve an in-flight settings request's selection
-      else { selected = null; controlsReady = false; }
+      if (fresh) {
+        Object.assign(selected, fresh); // preserve an in-flight settings request's selection
+        loadControls(selected);
+      } else { selected = null; controlsReady = false; }
     }
     if (!selected) $('form').classList.add('hide');
     const device = health.devices?.[0];
@@ -2123,22 +2125,36 @@ $('notify-test').onclick = async () => {
   }
 };
 
-$('sync-now').onclick = async () => {
-  const button = $('sync-now');
-  button.disabled = true;
-  $('sync-status').textContent = 'Synchronizing…';
+async function runWorkflowSync(reset = false) {
+  const buttons = [$('sync-now'), $('sync-reset')];
+  buttons.forEach(b => { b.disabled = true; });
+  $('sync-status').textContent = reset ? 'Resetting sync…' : 'Synchronizing…';
   try {
-    const r = await api('/comfy/workflows/sync', { method: 'POST' });
-    $('sync-status').textContent = r.status === 'busy' ? 'A sync is already running'
-      : `${r.downloaded} downloaded · ${r.unchanged} unchanged · ${r.failed} failed (of ${r.remote_count} in ComfyUI)`;
-    showToast('Sync complete');
-    await refresh();
+    const r = await api(reset ? '/comfy/workflows/sync?reset=true' : '/comfy/workflows/sync', { method: 'POST' });
+    if (r.status === 'busy') {
+      $('sync-status').textContent = 'A sync is already running';
+    } else if (r.status === 'error') {
+      $('sync-status').textContent = 'Sync failed: ' + (r.reason || 'ComfyUI unreachable');
+    } else {
+      const parts = [
+        ...(r.pushed ? [`${r.pushed} pushed`] : []),
+        `${r.downloaded} downloaded`,
+        `${r.unchanged} unchanged`,
+        ...(r.removed ? [`${r.removed} removed`] : []),
+        `${r.failed} failed`,
+      ];
+      $('sync-status').textContent = `${parts.join(' · ')} (of ${r.remote_count} in ComfyUI)`;
+      showToast(reset ? 'Sync reset complete' : 'Sync complete');
+      await refresh();
+    }
   } catch (e) {
     $('sync-status').textContent = 'Sync failed: ' + e.message;
   } finally {
-    button.disabled = false;
+    buttons.forEach(b => { b.disabled = false; });
   }
-};
+}
+$('sync-now').onclick = () => runWorkflowSync(false);
+$('sync-reset').onclick = () => runWorkflowSync(true);
 
 /* ---------- Web Share Target Photo Handling ---------- */
 async function loadShared() {

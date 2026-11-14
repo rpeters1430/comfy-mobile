@@ -20,10 +20,14 @@ def _enum_options(definition):
 
 
 def _resolve_choice(value, options):
-    """Map a bare model filename onto the unique subfolder entry ComfyUI lists for it."""
+    """Map a bare or cross-OS model path onto ComfyUI's matching option."""
     if value in options or not isinstance(value, str) or "." not in value:
         return value
-    base = value.replace("\\", "/").rsplit("/", 1)[-1]
+    norm = value.replace("\\", "/")
+    for o in options:
+        if isinstance(o, str) and o.replace("\\", "/") == norm:
+            return o
+    base = norm.rsplit("/", 1)[-1]
     matches = [o for o in options if isinstance(o, str) and o.replace("\\", "/").rsplit("/", 1)[-1] == base]
     return matches[0] if len(matches) == 1 else value
 
