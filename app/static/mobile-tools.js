@@ -39,9 +39,8 @@
     return job;
   }
   function preferredWorkflows(workflows) {
-    const synced = new Map(workflows.filter(w => w.id.startsWith('synced/')).map(w => [w.name, w]));
-    return workflows.filter(w => w.id.startsWith('synced/') || !synced.has(w.name) || (w.runnable && !synced.get(w.name)?.runnable))
-      .map(w => !w.id.startsWith('synced/') && w.runnable && synced.has(w.name) ? { ...w, bundled_fallback: true } : w);
+    const synced = workflows.filter(w => w.id.startsWith('synced/'));
+    return synced.length ? synced : workflows;
   }
   function photoDetails(job, item, resolution) {
     const details = job.details || {}, settings = job.controls || {};

@@ -66,16 +66,14 @@ test('photo details use recorded settings and approved prompt without guessing d
  assert.equal(auto['Auto LoRAs'],'TechWearXL (matched techwear, hood)');
 });
 
-test('broken synced copy does not hide a working bundled workflow, but hides duplicate broken bundled copy', () => {
+test('synced workflows from ComfyUI replace bundled workflows when present', () => {
  const { preferredWorkflows } = require('../app/static/mobile-tools.js');
  const workflows = [
   {id:'synced/one.json',name:'one',runnable:false}, {id:'one.json',name:'one',runnable:true},
-  {id:'synced/two.json',name:'two',runnable:true}, {id:'two.json',name:'two',runnable:true},
-  {id:'synced/three.json',name:'three',runnable:false}, {id:'three.json',name:'three',runnable:false}];
+  {id:'synced/two.json',name:'two',runnable:true}, {id:'two.json',name:'two',runnable:true}];
  const selected = preferredWorkflows(workflows);
- assert.deepEqual(selected.map(w=>w.id),['synced/one.json','one.json','synced/two.json','synced/three.json']);
- assert.equal(selected.find(w=>w.id==='one.json').bundled_fallback,true);
- assert.equal(workflows[1].bundled_fallback,undefined);
+ assert.deepEqual(selected.map(w=>w.id),['synced/one.json','synced/two.json']);
+ assert.deepEqual(preferredWorkflows([{id:'one.json',name:'one',runnable:true}]).map(w=>w.id),['one.json']);
 });
 
 test('model groups put the base family first, drop root duplicates and label odd folders', () => {
