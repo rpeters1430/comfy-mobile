@@ -354,6 +354,51 @@ class ConversionTests(unittest.TestCase):
         result = convert_ui(graph, schema)
         self.assertEqual(result["1"]["inputs"]["ckpt_name"], "SDXL/model.safetensors")
 
+    def test_loramanager_custom_widgets_and_header_dict(self):
+        schema = {
+            "CheckpointLoaderSimple": {"input": {"required": {"ckpt_name": [["model.safetensors"], {}]}}},
+            "Lora Loader (LoraManager)": {"input": {"required": {
+                "model": ["MODEL"],
+                "text": ["AUTOCOMPLETE_TEXT_LORAS", {}],
+                "loras": ["LORAS", {}],
+            }, "optional": {}}},
+        }
+        graph = {"nodes": [
+            {"id": 1, "type": "CheckpointLoaderSimple", "inputs": [], "widgets_values": ["model.safetensors"]},
+            {"id": 2, "type": "Lora Loader (LoraManager)", "inputs": [
+                {"name": "model", "type": "MODEL", "link": 1},
+                {"name": "text", "type": "AUTOCOMPLETE_TEXT_LORAS", "widget": {"name": "text"}, "link": None},
+                {"name": "loras", "type": "LORAS", "widget": {"name": "loras"}, "link": None},
+                {"name": "clip", "type": "CLIP", "link": 2},
+            ], "widgets_values": [{"version": 1, "textWidgetName": "text"}, "<lora:detail:0.6>", [{"name": "detail", "strength": 0.6}]]},
+        ], "links": [
+            [1, 1, 0, 2, 0, "MODEL"],
+            [2, 1, 1, 2, 3, "CLIP"],
+        ]}
+        result = convert_ui(graph, schema)
+        self.assertEqual(result["2"]["inputs"]["text"], "<lora:detail:0.6>")
+        self.assertEqual(result["2"]["inputs"]["loras"], {"__value__": [{"name": "detail", "strength": 0.6}]})
+
+    def test_ollama_empty_model_choices_allowed_while_loader_empty_choices_rejected(self):
+        schema = {
+            "OllamaConnectivityV2": {"input": {"required": {
+                "url": ["STRING", {"default": "http://127.0.0.1:11434"}],
+                "model": [[], {}],
+            }}},
+            "UNETLoader": {"input": {"required": {"unet_name": [[], {}]}}},
+        }
+        ollama_graph = {"nodes": [
+            {"id": 1, "type": "OllamaConnectivityV2", "inputs": [], "widgets_values": ["http://127.0.0.1:11434", "joycaption-beta:latest"]},
+        ], "links": []}
+        result = convert_ui(ollama_graph, schema)
+        self.assertEqual(result["1"]["inputs"]["model"], "joycaption-beta:latest")
+
+        unet_graph = {"nodes": [
+            {"id": 1, "type": "UNETLoader", "inputs": [], "widgets_values": ["missing.safetensors"]},
+        ], "links": []}
+        with self.assertRaises(ConversionError):
+            convert_ui(unet_graph, schema)
+
 
 if __name__ == "__main__":
     unittest.main()

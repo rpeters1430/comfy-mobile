@@ -38,13 +38,15 @@ AUTOGROW = "COMFY_AUTOGROW_V3"
 SUBGRAPH_INPUT, SUBGRAPH_OUTPUT = "-10", "-20"
 
 
-def _map_widgets(fields, values):
+def _map_widgets(fields, values, widget_inputs=()):
     """Map widgets_values onto inputs in schema order.
 
     ComfyUI keeps a slot for every widget, even when it is linked (but `forceInput` inputs
     are sockets with no widget, so they have none), and serializes a
     control widget (randomize/fixed) after seed-like INTs. A V3 dynamic combo is followed
     by its chosen option's sub-widgets, sent to the API as `<combo>.<sub>` keys.
+    Custom node widgets (e.g. LoraManager's AUTOCOMPLETE_TEXT_LORAS / LORAS) are included
+    when the node's input entry marks them with a `widget` descriptor.
     Returns (values by key, schema of the chosen dynamic sub-inputs, their required keys).
     """
     mapped, extra, required = {}, {}, []
@@ -56,11 +58,13 @@ def _map_widgets(fields, values):
             if not (isinstance(definition, list) and definition):
                 continue
             dtype = definition[0]
-            if not (dtype in WIDGET_TYPES or dtype == DYNAMIC_COMBO or isinstance(dtype, list)):
+            if not (dtype in WIDGET_TYPES or dtype == DYNAMIC_COMBO or isinstance(dtype, list) or (not nested and name in widget_inputs)):
                 continue
             options = definition[1] if len(definition) > 1 and isinstance(definition[1], dict) else {}
             if options.get("forceInput"):
                 continue  # a socket only: the frontend gives it no widget, so it has no saved value
+            if pos < len(values) and dtype == "AUTOCOMPLETE_TEXT_LORAS" and isinstance(values[pos], dict) and "textWidgetName" in values[pos]:
+                pos += 1  # LoraManager serializes a leading config/version dict before its text widget
             if pos >= len(values):
                 return
             key = prefix + name
@@ -257,7 +261,12 @@ def convert_ui(data, object_info):
             widget_map = widget_values
         elif isinstance(widget_values, list):
             # Never drop or shift slots to make values fit.
-            widget_map, dynamic_fields, dynamic_required = _map_widgets(fields, widget_values)
+            widget_inputs = {
+                item.get("name")
+                for item in node.get("inputs", [])
+                if isinstance(item, dict) and item.get("widget") and item.get("name")
+            }
+            widget_map, dynamic_fields, dynamic_required = _map_widgets(fields, widget_values, widget_inputs)
             fields = {**fields, **dynamic_fields}
             required += dynamic_required
         else:
@@ -314,7 +323,7 @@ def convert_ui(data, object_info):
                 continue  # filled with an uploaded file at job time; see image_inputs()
             if choices is not None:
                 value = inputs[field] = _resolve_choice(value, choices)
-                if value not in choices:
+                if value not in choices and (choices or not (kind.startswith("Ollama") and field == "model")):
                     raise ConversionError(f"{kind}.{field}: saved value {value!r} is not available in ComfyUI")
             if dtype == "INT" and (isinstance(value, bool) or not isinstance(value, int)):
                 raise ConversionError(f"{kind}.{field}: expected integer, got {value!r}")

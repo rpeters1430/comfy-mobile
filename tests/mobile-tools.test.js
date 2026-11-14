@@ -66,13 +66,14 @@ test('photo details use recorded settings and approved prompt without guessing d
  assert.equal(auto['Auto LoRAs'],'TechWearXL (matched techwear, hood)');
 });
 
-test('broken synced copy does not hide a working bundled workflow', () => {
+test('broken synced copy does not hide a working bundled workflow, but hides duplicate broken bundled copy', () => {
  const { preferredWorkflows } = require('../app/static/mobile-tools.js');
  const workflows = [
   {id:'synced/one.json',name:'one',runnable:false}, {id:'one.json',name:'one',runnable:true},
-  {id:'synced/two.json',name:'two',runnable:true}, {id:'two.json',name:'two',runnable:true}];
+  {id:'synced/two.json',name:'two',runnable:true}, {id:'two.json',name:'two',runnable:true},
+  {id:'synced/three.json',name:'three',runnable:false}, {id:'three.json',name:'three',runnable:false}];
  const selected = preferredWorkflows(workflows);
- assert.deepEqual(selected.map(w=>w.id),['synced/one.json','one.json','synced/two.json']);
+ assert.deepEqual(selected.map(w=>w.id),['synced/one.json','one.json','synced/two.json','synced/three.json']);
  assert.equal(selected.find(w=>w.id==='one.json').bundled_fallback,true);
  assert.equal(workflows[1].bundled_fallback,undefined);
 });

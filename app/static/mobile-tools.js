@@ -40,7 +40,7 @@
   }
   function preferredWorkflows(workflows) {
     const synced = new Map(workflows.filter(w => w.id.startsWith('synced/')).map(w => [w.name, w]));
-    return workflows.filter(w => w.id.startsWith('synced/') || !synced.get(w.name)?.runnable)
+    return workflows.filter(w => w.id.startsWith('synced/') || !synced.has(w.name) || (w.runnable && !synced.get(w.name)?.runnable))
       .map(w => !w.id.startsWith('synced/') && w.runnable && synced.has(w.name) ? { ...w, bundled_fallback: true } : w);
   }
   function photoDetails(job, item, resolution) {
