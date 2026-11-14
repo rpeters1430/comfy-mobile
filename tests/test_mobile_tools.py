@@ -90,8 +90,8 @@ class LibraryTests(unittest.TestCase):
         (self.root / 'one.json').write_text(json.dumps({'1': {'class_type': 'NewNode', 'inputs': {}}}))
         infos = iter([{}, {'NewNode': {'input': {'required': {}}}}])
         async def fetch(*args, **kwargs): return next(infos)
-        with patch.object(main, 'WF_DIR', self.root), patch.object(main, 'SYNC_DIR', self.root / 'none'), \
-             patch.object(main, 'request', fetch), patch.object(main, '_catalog_inspect_cache', {}), \
+        with patch.object(main, 'WF_DIR', self.root / 'none'), patch.object(main, 'SYNC_DIR', self.root), \
+             patch.object(main, '_last_sync_at', __import__('time').monotonic()), patch.object(main, 'request', fetch), patch.object(main, '_catalog_inspect_cache', {}), \
              patch.dict(main._object_info_cache, {'data': None, 'expires_at': 0.0}):
             self.assertFalse(self.client.get('/api/catalog', headers=AUTH).json()['workflows'][0]['runnable'])
             main._object_info_cache['expires_at'] = 0.0  # the 60 s object_info cache ran out

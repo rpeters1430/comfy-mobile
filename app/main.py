@@ -298,9 +298,9 @@ async def health(authorization: str | None = Header(default=None)):
 
 _last_sync_at: float = 0.0
 
-async def _run_workflow_sync(reset: bool = False) -> dict:
+async def _run_workflow_sync(reset: bool = False, automatic: bool = False) -> dict:
     global _last_sync_at
-    result = await workflow_sync.sync(reset=reset)
+    result = await workflow_sync.sync(reset=reset, automatic=automatic)
     if result.get('status') != 'busy':
         _last_sync_at = time.monotonic()
     if result.get('pushed') or result.get('downloaded') or result.get('removed'):
@@ -310,18 +310,22 @@ async def _run_workflow_sync(reset: bool = False) -> dict:
 @app.get('/api/catalog')
 async def catalog(authorization: str | None = Header(default=None)):
     auth(authorization)
+    if workflow_sync.paused:
+        return {'models': {'checkpoints': [], 'loras': [], 'upscalers': []}, 'workflows': [],
+                'updated_at': int(time.time()), 'note': 'Workflows cleared. Press Sync now to import from the PC.'}
     info = await get_object_info()
     if time.monotonic() - _last_sync_at > 15.0 and not workflow_sync.lock.locked():
-        await _run_workflow_sync()
+        await _run_workflow_sync(automatic=True)
     names = {'checkpoints':('CheckpointLoaderSimple','ckpt_name'), 'loras':('LoraLoader','lora_name'), 'upscalers':('UpscaleModelLoader','model_name')}
     out = {}
     for key,(cls,field) in names.items():
         inp = info.get(cls,{}).get('input',{}).get('required',{}).get(field,[])
         out[key] = inp[0] if inp and isinstance(inp[0],list) else []
     workflows=[]
-    for source_dir in (SYNC_DIR, WF_DIR):
+    for source_dir in (SYNC_DIR,):
       if source_dir.exists():
-        for path in sorted(source_dir.rglob('*.json')):
+        for path in sorted(source_dir.rglob('*')):
+            if path.suffix.lower() != '.json': continue
             if path.is_symlink() or len(workflows)>=200: continue
             rel=path.relative_to(source_dir).as_posix()
             if source_dir == SYNC_DIR:
@@ -395,12 +399,12 @@ async def comfy_workflow_discovery(authorization: str | None = Header(default=No
         if isinstance(name, str) and name.lower().endswith('.json') and '..' not in name and not name.startswith('/'):
             workflow_names.append(name)
     return {'available': True, 'workflows': workflow_names, 'count': len(workflow_names),
-            'note': 'Read-only discovery; synchronization is not enabled yet'}
+            'note': 'Saved PC workflows available for download'}
 
 async def sync_workflows_periodically():
-    """Keep the PC and the app's workflows in step without a manual sync (errors are kept in last_result)."""
+    """Refresh PC downloads unless reset has paused automatic imports."""
     while True:
-        await _run_workflow_sync()
+        await _run_workflow_sync(automatic=True)
         await asyncio.sleep(60)
 
 @app.post('/api/comfy/workflows/sync')
@@ -408,6 +412,13 @@ async def sync_comfy_workflows(reset: bool = False, authorization: str | None = 
     auth(authorization)
     _object_info_cache["expires_at"] = 0.0
     result = await _run_workflow_sync(reset=reset)
+    _catalog_inspect_cache.clear()
+    return result
+
+@app.post('/api/comfy/workflows/reset')
+async def reset_comfy_workflows(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    result = await _run_workflow_sync(reset=True)
     _catalog_inspect_cache.clear()
     return result
 

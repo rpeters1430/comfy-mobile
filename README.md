@@ -1,5 +1,8 @@
 # Comfy Mobile — v0.8.0
 
+Workflow management uses the PC as the source of truth. **Reset workflows** clears the app's downloaded library (including subfolders) immediately, even while the PC is offline. Automatic imports remain paused across restarts until **Sync now** succeeds. Sync downloads saved ComfyUI workflows and removes local copies deleted on the PC; it never uploads bundled workflows or changes PC files. Bundled examples are no longer included in the app's workflow catalog. History, images and presets are retained.
+
+
 Mobile-first ComfyUI dashboard running on a NAS, connecting to ComfyUI on another machine.
 
 ## Docker image
@@ -61,7 +64,7 @@ Tap a Gallery photo to open its full-size image in a full-screen detail screen, 
 
 New jobs record effective model and sampler values as a small metadata snapshot. Older jobs show the settings available in their saved request and mark missing information as **Not recorded**. Full originals still live on the ComfyUI PC. If an original is unavailable, the viewer tries the saved NAS preview and labels it as a preview.
 
-A broken synced workflow no longer hides a working bundled copy with the same name. The bundled copy is labelled as a fallback; the synced copy remains in Unavailable with its original error. This does not rewrite the ComfyUI workflow or silently guess missing links/models. Repair/re-save that workflow in ComfyUI and sync again when ready.
+The workflow catalog now shows saved PC workflows only. Unavailable workflows retain their validation errors. This does not rewrite the ComfyUI workflow or silently guess missing links/models. Repair/re-save that workflow in ComfyUI and sync again when ready.
 
 ## New in v0.5.0
 

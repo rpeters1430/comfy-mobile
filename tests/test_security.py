@@ -38,11 +38,11 @@ class SecurityTests(unittest.TestCase):
             (root / 'ok.json').write_text(graph)
             async def info():
                 return {'SaveImage': {'input': {'required': {}}}}
-            with symlink_patch, patch.object(main, 'TOKEN', 'secret'), patch.object(main, 'WF_DIR', root), \
-                 patch.object(main, 'SYNC_DIR', Path(tmp) / 'absent'), \
+            with symlink_patch, patch.object(main, 'TOKEN', 'secret'), patch.object(main, 'WF_DIR', Path(tmp) / 'absent'), \
+                 patch.object(main, 'SYNC_DIR', root), patch.object(main, '_last_sync_at', __import__('time').monotonic()), \
                  patch.object(main, 'get_object_info', info), patch.object(main, '_catalog_inspect_cache', {}):
                 response = TestClient(main.app).get('/api/catalog', headers={'Authorization': 'Bearer secret'})
-            self.assertEqual(['ok.json'], [w['id'] for w in response.json()['workflows']])
+            self.assertEqual(['synced/ok.json'], [w['id'] for w in response.json()['workflows']])
 
     def test_atomic_write_does_not_follow_predictable_partial_symlink(self):
         with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
