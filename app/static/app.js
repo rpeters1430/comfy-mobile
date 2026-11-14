@@ -1110,8 +1110,10 @@ function settingsGroup(group, open) {
       area.oninput = () => { values[field.name] = area.value; changed(); };
       grid.push(el('div', { style: 'grid-column:1/-1' }, el('label', {}, label), area));
     } else {
-      const input = el('input', { type: 'number', inputmode: field.type === 'int' ? 'numeric' : 'decimal', 'aria-label': label, title: tip,
-        step: field.step ?? (field.type === 'int' ? 1 : 'any'), min: field.min ?? null, max: field.max ?? null });
+      // No browser min/max/step: ComfyUI's step is only a slider hint (denoise 0.35 is "off step" counted from its
+      // 0.0001 minimum), and an invalid number box silently blocks Generate, since the browser can't show its warning
+      // inside a closed section. settingFits below and the server check the range instead.
+      const input = el('input', { type: 'number', inputmode: field.type === 'int' ? 'numeric' : 'decimal', 'aria-label': label, title: tip, step: 'any' });
       input.value = values[field.name];
       input.onchange = () => {
         const value = Number(input.value);
@@ -1248,6 +1250,15 @@ function galleryJobs() { try { return JSON.parse(load(GALLERY_KEY) || '[]'); } c
 function rememberJob(job) { store(GALLERY_KEY, JSON.stringify([job, ...galleryJobs().filter(j => j.id !== job.id)].slice(0, 60))); }
 
 const openJobs = new Map();
+
+// The browser blocks a form with an invalid field and points at it, which shows nothing when the field sits in a
+// closed section. Open the sections around it and say what is wrong, so Generate never just does nothing.
+$('form').addEventListener('invalid', event => {
+  const field = event.target;
+  for (let node = field.parentElement; node; node = node.parentElement) if (node.tagName === 'DETAILS') node.open = true;
+  const label = field.getAttribute('aria-label') || field.name || field.id || 'A field';
+  $('form-error').textContent = `${label}: ${field.validationMessage || 'invalid value'}`;
+}, true);
 
 $('form').onsubmit = async event => {
   event.preventDefault();
