@@ -3,14 +3,19 @@ import math
 import re
 
 if __package__:
+    from app import node_settings
     from app.settings_check import LABELS, family
     from app.workflow_conversion import _enum_options
 else:  # flat imports inside the Docker image
+    import node_settings
     from settings_check import LABELS, family
     from workflow_conversion import _enum_options
 
 MODEL_FIELDS = {"CheckpointLoaderSimple": "ckpt_name", "UNETLoader": "unet_name"}
 LORA_LOADERS = ("LoraLoader", "LoraLoaderModelOnly")
+# LoRA Manager's text loader reads `<lora:name:strength>` (or `<lora:name:model:clip>`) from a string primitive.
+LORA_TAG = re.compile(r"<lora:([^:<>]+):(-?\d+(?:\.\d+)?)(?::(-?\d+(?:\.\d+)?))?>", re.I)
+STRING_PRIMITIVES = ("PrimitiveString", "PrimitiveStringMultiline")
 MAX_EXTRA_LORAS = 4
 MAX_STRENGTH = 5.0
 # Plain values the phone may change on each sampler-type node.
@@ -22,11 +27,15 @@ SAMPLER_FIELDS = {
     "BasicScheduler": ("steps", "scheduler", "denoise"),
 }
 LIMITS = {"steps": (1, 150), "cfg": (0.0, 30.0), "denoise": (0.01, 1.0)}
-# Auto-caption (VLM) nodes: the choices and switches the Open WebUI function exposed as caption Valves.
+# Auto-caption (VLM) nodes. Known classes always count; any other node whose class or category names a caption or
+# Ollama model, takes an image and returns text first counts too, so a newly added caption node needs no code change.
 CAPTION_CLASSES = ("Qwen3VLAbliteratedPromptPair", "Qwen3VLAbliteratedCaption", "JoyCaptionPromptPair")
-CAPTION_CHOICES = ("model", "caption_type", "length", "content_mode")
-CAPTION_TOGGLES = ("vulgar_slang", "lighting", "camera_angle", "shot_type", "composition", "depth_of_field",
-                   "camera_settings", "aesthetic_quality", "mention_mood")
+CAPTION_WORDS = re.compile(r"caption|ollama|vlm|llava|florence", re.I)
+# Every unlinked dropdown and on/off switch of a caption node is offered, except plumbing ones.
+CAPTION_SKIP = re.compile(r"(^|_)(debug|keep|unload|memory|quantization|device|precision|dtype|attention|url|host|"
+                          r"seed)(_|$)", re.I)
+# The field that picks the caption style, which the phone keeps per workflow rather than sharing.
+CAPTION_STYLES = ("caption_type", "prompt_style", "preset")
 MAX_SIDE, MAX_PIXELS = 2880, 2048 * 2048
 # Final image outputs that a fit-to-screen resize can be put in front of.
 SAVE_CLASSES = ("SaveImage", "SaveImageAdvanced")
@@ -59,6 +68,85 @@ def _lora_anchor(graph, models):
         if len(loras) != 1:
             return current
         current = loras[0]
+
+
+def _stem(name):
+    return re.sub(r"\.(safetensors|ckpt|pt|pth|bin)$", "", re.split(r"[\\/]", name)[-1], flags=re.I).lower()
+
+
+def _syntax_sources(graph):
+    """String primitives feeding a LoRA Manager text loader's lora_syntax socket."""
+    sources = []
+    for node in graph.values():
+        source = node["inputs"].get("lora_syntax") if "LoraManager" in node["class_type"] else None
+        if (isinstance(source, list) and len(source) == 2 and source[0] in graph and source[0] not in sources
+                and graph[source[0]]["class_type"] in STRING_PRIMITIVES and isinstance(graph[source[0]]["inputs"].get("value"), str)):
+            sources.append(source[0])
+    return sources
+
+
+def _syntax_loras(graph, lora_options):
+    """Each `<lora:...>` tag that names exactly one installed LoRA, as a LoRA picker. Others stay as written."""
+    by_stem = {}
+    for option in lora_options:
+        by_stem.setdefault(_stem(option), []).append(option)
+    found = []
+    for source in _syntax_sources(graph):
+        for index, tag in enumerate(LORA_TAG.finditer(graph[source]["inputs"]["value"])):
+            matches = by_stem.get(_stem(tag.group(1)), [])
+            if len(matches) == 1:
+                found.append({"node": f"{source}#{index}", "value": matches[0], "strength": float(tag.group(2)),
+                              "syntax": {"node": source, "index": index}})
+    return found
+
+
+def _apply_syntax_loras(graph, by_lora, changes):
+    """Rewrite the tags the phone changed; strength 0 removes the tag, as a LoRA turned off."""
+    per_source = {}
+    for node_id, choice in changes.items():
+        per_source.setdefault(by_lora[node_id]["syntax"]["node"], {})[by_lora[node_id]["syntax"]["index"]] = choice
+    for source, edits in per_source.items():
+        counter = iter(range(10 ** 6))
+
+        def rewrite(tag):
+            choice = edits.get(next(counter))
+            if choice is None:
+                return tag.group(0)
+            strength = _strength(choice["strength"])
+            if strength == 0:
+                return ""
+            written = tag.group(1)
+            name = re.split(r"[\\/]", choice["name"])[-1] if not re.search(r"[\\/]", written) else choice["name"].replace("\\", "/")
+            if not re.search(r"\.(safetensors|ckpt|pt|pth|bin)$", written, re.I):
+                name = re.sub(r"\.(safetensors|ckpt|pt|pth|bin)$", "", name, flags=re.I)
+            clip = tag.group(3)
+            if clip is not None and float(clip) == float(tag.group(2)):
+                clip = f"{strength:g}"
+            return f"<lora:{name}:{strength:g}" + (f":{clip}" if clip is not None else "") + ">"
+
+        graph[source]["inputs"]["value"] = re.sub(r"\s{2,}", " ", LORA_TAG.sub(rewrite, graph[source]["inputs"]["value"])).strip()
+
+
+def _owned(found, graph):
+    """(node, field) pairs a dedicated control already offers, which the generic settings list leaves out."""
+    owned = {(m["node"], m["field"]) for m in found["models"]}
+    for lora in found["loras"]:
+        if "syntax" in lora:
+            owned.add((lora["syntax"]["node"], "value"))
+        else:
+            owned |= {(lora["node"], f) for f in ("lora_name", "strength_model", "strength_clip")}
+    for smp in found["samplers"]:
+        owned |= {(smp["node"], f) for f in SAMPLER_FIELDS.get(smp["class"], ())}
+    for node_id in _latents(graph):
+        owned |= {(node_id, "width"), (node_id, "height")}
+    for cap in found["captions"]:
+        owned |= {(cap["node"], f) for f in cap["values"]}
+    for key in ("seconds_at", "width_at", "height_at", "megapixels_at"):
+        if found["video"] and key in found["video"]:
+            owned.add(tuple(found["video"][key]))
+    if found["negative_prompt"]:
+        owned.add((found["negative_prompt"]["node"], "text"))
+    return owned
 
 
 def _sampler_role(node):
@@ -148,19 +236,53 @@ def _skip_detailers(graph, found):
                     node["inputs"][field] = source
 
 
+def _schema_inputs(object_info, class_type):
+    schema = object_info.get(class_type, {}).get("input", {})
+    return {**(schema.get("required") or {}), **(schema.get("optional") or {})}
+
+
+def is_caption_node(class_type, object_info):
+    if class_type in CAPTION_CLASSES:
+        return True
+    schema = object_info.get(class_type) or {}
+    if not CAPTION_WORDS.search(f"{class_type} {schema.get('category', '')}"):
+        return False
+    if str(schema.get("category", "")).startswith("partner/"):
+        return False
+    outputs = schema.get("output") or []
+    takes_image = any(isinstance(d, list) and d and d[0] == "IMAGE" for d in _schema_inputs(object_info, class_type).values())
+    return takes_image and bool(outputs) and outputs[0] == "STRING"
+
+
+def _tooltip(definition):
+    extra = definition[1] if isinstance(definition, list) and len(definition) > 1 and isinstance(definition[1], dict) else {}
+    tip = extra.get("tooltip")
+    return tip[:300] if isinstance(tip, str) else None
+
+
 def _captions(graph, object_info):
     found = []
     for node_id, node in graph.items():
-        if node["class_type"] not in CAPTION_CLASSES:
+        if not is_caption_node(node["class_type"], object_info):
             continue
-        inputs, values, options = node["inputs"], {}, {}
-        for field in CAPTION_CHOICES:
-            choices = _options(object_info, node["class_type"], field)
-            if isinstance(inputs.get(field), str) and choices:
-                values[field], options[field] = inputs[field], choices
-        values.update({f: inputs[f] for f in CAPTION_TOGGLES if isinstance(inputs.get(f), bool)})
+        inputs, values, options, tips = node["inputs"], {}, {}, {}
+        for field, definition in _schema_inputs(object_info, node["class_type"]).items():
+            if CAPTION_SKIP.search(field) or field not in inputs:
+                continue
+            value = inputs[field]
+            choices = list(_enum_options(definition) or []) if isinstance(definition, list) and definition else []
+            if isinstance(value, str) and choices:
+                values[field], options[field] = value, choices
+            elif isinstance(value, bool):
+                values[field] = value
+            else:
+                continue
+            if _tooltip(definition):
+                tips[field] = _tooltip(definition)
         if values:
-            found.append({"node": node_id, "class": node["class_type"], "values": values, "options": options})
+            style = next((f for f in CAPTION_STYLES if f in options), None)
+            found.append({"node": node_id, "class": node["class_type"], "values": values, "options": options,
+                          "tips": tips, "style": style})
     return found
 
 
@@ -296,11 +418,12 @@ def find_controls(graph: dict, object_info: dict) -> dict:
     latents = _latents(graph)
     size, from_photo = _base_size(graph, latents[0]) if latents else (None, False)
     lora_options = _options(object_info, "LoraLoaderModelOnly", "lora_name") or _options(object_info, "LoraLoader", "lora_name")
+    loras += _syntax_loras(graph, lora_options)
     # Same family rules as the settings check, so the phone's grouping and its warnings agree.
     names = {name for m in models for name in m["options"]} | set(lora_options)
     families = {name: LABELS[fam] for name in names if (fam := family(name))}
     saves = bool(_saves(graph))
-    return {"models": models, "loras": loras, "lora_options": lora_options, "families": families,
+    found = {"models": models, "loras": loras, "lora_options": lora_options, "families": families,
             "can_add_lora": _lora_anchor(graph, models) is not None,
             "samplers": _samplers(graph), "size": size, "size_from_photo": from_photo, "captions": _captions(graph, object_info),
             "can_fit": saves and "ImageScale" in object_info,
@@ -309,6 +432,9 @@ def find_controls(graph: dict, object_info: dict) -> dict:
             "upscale_options": _options(object_info, "UpscaleModelLoader", "model_name"),
             "sampler_options": _options(object_info, "KSampler", "sampler_name"),
             "scheduler_options": _options(object_info, "KSampler", "scheduler"), "negative_prompt": _negative_prompt(graph)}
+    # Everything else the workflow lets you set, so new nodes added on the PC show up on the phone too.
+    found["settings"] = node_settings.find(graph, object_info, _owned(found, graph))
+    return found
 
 
 def _strength(value):
@@ -440,12 +566,18 @@ def _apply_fit(graph, found, fit, object_info):
 def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, extra_loras: list,
                    sampling: dict | None = None, size: dict | None = None, caption: dict | None = None,
                    fit: dict | None = None, skip_detailers: bool = False, video: dict | None = None,
-                   negative_prompt: str | None = None) -> None:
+                   negative_prompt: str | None = None, settings: dict | None = None) -> None:
     """Apply phone choices in place. Only nodes and options found by find_controls are accepted."""
     if not (models or loras or extra_loras or sampling or size or caption or fit or skip_detailers or video
-            or negative_prompt is not None):
+            or negative_prompt is not None or settings):
         return
     found = find_controls(graph, object_info)
+    if settings:
+        # First, while every node is still there (skipping detailers removes some).
+        try:
+            node_settings.apply(graph, found["settings"], settings)
+        except node_settings.SettingsError as exc:
+            raise ControlError(str(exc)) from exc
     if skip_detailers:
         if not found["detailers"]:
             raise ControlError("This workflow has no face detailer to skip")
@@ -475,11 +607,15 @@ def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, ex
         if name not in control["options"]:
             raise ControlError(f"Model not found in ComfyUI: {name}")
         graph[node_id]["inputs"][control["field"]] = name
+    syntax = {}
     for node_id, choice in loras.items():
         if node_id not in by_lora:
             raise ControlError(f"Node {node_id} is not a LoRA loader in this workflow")
         if choice["name"] not in lora_options:
             raise ControlError(f"LoRA not found in ComfyUI: {choice['name']}")
+        if "syntax" in by_lora[node_id]:
+            syntax[node_id] = choice
+            continue
         inputs = graph[node_id]["inputs"]
         strength = _strength(choice["strength"])
         # The CLIP strength follows the model strength when they matched; turning a LoRA off zeroes both,
@@ -487,6 +623,8 @@ def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, ex
         if "strength_clip" in inputs and (inputs["strength_clip"] == inputs["strength_model"] or strength == 0):
             inputs["strength_clip"] = strength
         inputs["lora_name"], inputs["strength_model"] = choice["name"], strength
+    if syntax:
+        _apply_syntax_loras(graph, by_lora, syntax)
     if not extra_loras:
         return
     if len(extra_loras) > MAX_EXTRA_LORAS:

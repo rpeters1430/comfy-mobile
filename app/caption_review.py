@@ -1,9 +1,9 @@
 """Split supported VLM caption workflows into preview and approved rendering graphs."""
 import copy
 try:
-    from app.workflow_controls import CAPTION_CLASSES
+    from app.workflow_controls import is_caption_node
 except ImportError:
-    from workflow_controls import CAPTION_CLASSES
+    from workflow_controls import is_caption_node
 
 
 class CaptionError(ValueError):
@@ -15,7 +15,7 @@ def link(value):
 
 
 def capability(graph, info):
-    nodes = [key for key, node in graph.items() if node['class_type'] in CAPTION_CLASSES]
+    nodes = [key for key, node in graph.items() if is_caption_node(node['class_type'], info)]
     if len(nodes) != 1:
         return {'supported': False, 'reason': 'Review needs exactly one supported caption node.'}
     key = nodes[0]

@@ -59,6 +59,8 @@
       ['Models', models || 'Not recorded'], ['LoRAs', loras || 'Not recorded'],
       ...(settings.auto_loras ? [['Auto LoRAs', settings.auto_loras.replace(/^Auto LoRAs: /, '')]] : []),
       ['Sampling', sampling || 'Not recorded'],
+      ...(Object.keys(settings.settings || {}).length ? [['Workflow settings changed', Object.entries(settings.settings)
+        .map(([node, values]) => `Node ${node}: ` + Object.entries(values).map(([f, v]) => `${fieldLabel(f)} ${v}`).join(', ')).join('\n')]] : []),
       ['Output fit', settings.fit?.aspect ? `Center-cropped to ${settings.fit.aspect.join(':')}` : settings.fit ? `${settings.fit.width} × ${settings.fit.height}` : 'Workflow default'],
       ...(details.adviser ? [['Settings review', details.adviser.review_id], ['Approved changes', details.adviser.changes.map(p => p.label + ': ' + p.evidence.map(e => e.quote).join('; ')).join('\n')]] : []),
       ['Job ID', job.id || 'Not recorded']];
@@ -103,6 +105,7 @@
       extra: [...(c.extra || c.extra_loras || [])],
       sampling: structuredClone(c.sampling || {}),
       caption: structuredClone(c.caption || {}),
+      settings: structuredClone(c.settings || {}),
       ...(c.size ? { adviserSize: { ...c.size } } : {}),
       upscaler: c.fit?.upscaler || '',
       skipDetailers: Boolean(c.skipDetailers ?? c.skip_detailers),
@@ -154,8 +157,71 @@
     const text = [job.workflow, job.prompt, job.review?.positive, job.seed].filter(x => x != null).join(' ').toLowerCase();
     return words.every(w => text.includes(w));
   }
+  // A readable name for a node setting: "include_lighting" -> "Lighting", "exclude_text" -> "No text".
+  function fieldLabel(name) {
+    const words = String(name).replace(/^include_/, '').replace(/^exclude_/, 'no_').replace(/[_.]+/g, ' ').trim();
+    return words.charAt(0).toUpperCase() + words.slice(1);
+  }
+  // A saved node setting is only restored while it still fits the workflow's current schema.
+  function settingFits(field, value) {
+    if (field.type === 'int' || field.type === 'float') {
+      return typeof value === 'number' && Number.isFinite(value) && (field.type === 'float' || Number.isInteger(value))
+        && !(field.min != null && value < field.min) && !(field.max != null && value > field.max);
+    }
+    if (field.type === 'bool') return typeof value === 'boolean';
+    if (field.type === 'combo') return field.options.includes(value);
+    return typeof value === 'string' && value.length <= 10000 && !value.includes('{{prompt}}');
+  }
+  function restoreSettings(groups, saved) {
+    const out = {};
+    for (const group of groups || []) {
+      out[group.node] = {};
+      for (const field of group.fields) {
+        const value = saved?.[group.node]?.[field.name];
+        out[group.node][field.name] = value !== undefined && settingFits(field, value) ? value : field.value;
+      }
+    }
+    return out;
+  }
+  function settingsPayload(groups, values) {
+    const out = {};
+    for (const group of groups || []) {
+      const changes = {};
+      for (const field of group.fields) {
+        const value = values?.[group.node]?.[field.name];
+        if (value !== undefined && value !== field.value) changes[field.name] = value;
+      }
+      if (Object.keys(changes).length) out[group.node] = changes;
+    }
+    return out;
+  }
+  // Everything the phone can change in a workflow, as key -> label, so an update on the PC can say what changed.
+  function controlKeys(controls) {
+    const keys = {};
+    const short = name => String(name).split(/[\\/]/).pop().replace(/\.(safetensors|ckpt|pt|pth|bin)$/i, '');
+    for (const m of controls?.models || []) keys[`model:${m.node}`] = m.field === 'unet_name' ? 'Diffusion model picker' : 'Checkpoint picker';
+    for (const l of controls?.loras || []) keys[`lora:${l.node}`] = `LoRA ${short(l.value)}`;
+    for (const smp of controls?.samplers || []) for (const f of Object.keys(smp.values)) keys[`sampler:${smp.node}:${f}`] = `Sampler ${fieldLabel(f).toLowerCase()}`;
+    for (const cap of controls?.captions || []) for (const f of Object.keys(cap.values)) keys[`caption:${cap.node}:${f}`] = `Caption: ${fieldLabel(f)}`;
+    for (const g of controls?.settings || []) for (const f of g.fields) keys[`setting:${g.node}:${f.name}`] = `${g.title}: ${fieldLabel(f.name)}`;
+    for (const d of controls?.detailers || []) keys[`detailer:${d}`] = 'Skip face detailer';
+    if (controls?.size) keys.size = 'Image size';
+    if (controls?.video) keys.video = 'Video length and size';
+    if (controls?.negative_prompt) keys.negative = 'Negative prompt';
+    if (controls?.can_add_lora) keys.extra_loras = 'Extra LoRAs';
+    return keys;
+  }
+  // What appeared and disappeared since the phone last opened this workflow; null the first time.
+  function controlChanges(previous, current) {
+    if (!previous || typeof previous !== 'object') return null;
+    const added = Object.keys(current).filter(k => !(k in previous));
+    const removed = Object.keys(previous).filter(k => !(k in current));
+    if (!added.length && !removed.length) return null;
+    return { added, removed, addedLabels: added.map(k => current[k]), removedLabels: removed.map(k => previous[k]) };
+  }
   const api = { nasJob, mergeHistory, captionText, presetJob, preferredWorkflows, photoDetails, modelGroups, choicesFromJob,
-    hasWildcards, expandPrompt, sseEvents, galleryMatches };
+    hasWildcards, expandPrompt, sseEvents, galleryMatches, fieldLabel, settingFits, restoreSettings, settingsPayload,
+    controlKeys, controlChanges };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.MobileTools = api;
 })(globalThis);

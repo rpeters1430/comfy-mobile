@@ -403,6 +403,7 @@ button:disabled { opacity: 0.38; cursor: not-allowed; }
 .badge.video { color: var(--md-on-tertiary-container); background: var(--md-tertiary-container); }
 .badge.synced { color: var(--md-on-secondary-container); background: var(--md-secondary-container); }
 .badge.ready { color: var(--md-on-success-container); background: var(--md-success-container); }
+.badge.updated { color: var(--md-on-primary-container); background: var(--md-primary-container); }
 .wf.off { opacity: 0.5; }
 details.unavailable { margin-top: 12px; }
 
@@ -1055,3 +1056,9 @@ dialog::backdrop { background: var(--md-scrim); }
   line-height: 18px;
   text-align: center;
 }
+
+/* All workflow settings (one section per node) */
+details.node-settings { margin-top: 12px; }
+details.node-group { margin-top: 8px; }
+details.node-group summary .badge { margin-right: 6px; vertical-align: middle; }
+.lora.news { border-color: var(--md-primary); }

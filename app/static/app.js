@@ -6,6 +6,9 @@ const PROMPTS_KEY = 'image-studio-mobile:prompts:v1';
 const CONTROLS_KEY = 'image-studio-mobile:controls:v1';
 const CAPTION_KEY = 'image-studio-mobile:caption:v1';
 const STYLE_KEY = 'image-studio-mobile:style:v1';
+// Per workflow: the PC file's modified time last opened here, and what could be changed then (see controlKeys).
+const SEEN_KEY = 'image-studio-mobile:workflow-seen:v1';
+const CONTROL_KEYS_KEY = 'image-studio-mobile:control-keys:v1';
 const SHARED_CACHE = 'shared-images';
 const MAX_SIDE = 2048;
 
@@ -126,6 +129,8 @@ function workflowButton(wf) {
   const badges = [];
   if (wf.bundled_fallback) badges.push(el('span', { class: 'badge' }, 'bundled · synced copy needs repair'));
   if (wf.id.startsWith('synced/')) badges.push(el('span', { class: 'badge synced' }, 'synced'));
+  const seen = loadJson(SEEN_KEY)[wf.id];
+  if (seen && wf.modified && wf.modified > seen) badges.push(el('span', { class: 'badge updated' }, 'updated on PC'));
   if (kind === 'video') badges.push(el('span', { class: 'badge video' }, 'video'));
   if (wf.image_inputs) badges.push(el('span', { class: 'badge' }, wf.image_inputs === 1 ? '1 image' : `${wf.image_inputs} images`));
   if (wf.runnable) badges.push(el('span', { class: 'badge ready' }, wf.takes_prompt ? 'prompt' : 'auto caption'));
@@ -180,7 +185,17 @@ if ($('wf-search')) {
   };
 }
 
+function loadJson(key) { try { return JSON.parse(load(key) || '{}') || {}; } catch (e) { return {}; } }
+function markSeen(wf) {
+  if (!wf.modified) return;
+  const seen = loadJson(SEEN_KEY);
+  seen[wf.id] = wf.modified;
+  store(SEEN_KEY, JSON.stringify(seen));
+}
+
 async function selectWorkflow(wf, restored = null) {
+  markSeen(wf);
+  if (selected?.id !== wf.id) openGroups.clear();
   for (const slot of slots) if (slot.preview) URL.revokeObjectURL(slot.preview);
   adviserUI.reset();
   captionDraft = null;
@@ -621,7 +636,9 @@ async function loadControls(wf, restored = null) {
     settingsLoadError('The workflow validation response did not contain a usable controls list.', wf);
     return;
   }
-  if (!found.models.length && !found.loras.length && !found.samplers.length && !found.size && !found.captions.length) {
+  noteControlChanges(wf, found);
+  if (!found.models.length && !found.loras.length && !found.samplers.length && !found.size && !found.captions.length
+      && !found.settings?.length) {
     // A runnable workflow without adjustable nodes is valid; do not block Generate.
     controlsReady = true;
     $('controls-box').classList.add('hide');
@@ -664,12 +681,14 @@ async function loadControls(wf, restored = null) {
   const shared = savedCaption();
   for (const cap of controls.captions) {
     const values = { ...cap.values };
-    const pick = restored ? saved.caption?.[cap.node] || {} : { ...shared, caption_type: saved.caption?.[cap.node]?.caption_type };
+    const style = captionStyle(cap);
+    const pick = restored ? saved.caption?.[cap.node] || {} : { ...shared, ...(style ? { [style]: saved.caption?.[cap.node]?.[style] } : {}) };
     for (const [field, value] of Object.entries(pick))
       if (field in values && (cap.options[field] ? cap.options[field].includes(value) : typeof value === 'boolean'))
         values[field] = value;
     choices.caption[cap.node] = values;
   }
+  choices.settings = MobileTools.restoreSettings(controls.settings, saved.settings);
   try {
     renderControls();
   } catch (e) {
@@ -721,6 +740,7 @@ function renderControls() {
   if (!controls || !choices) return;
   const rows = [];
   const base = baseFamily();
+  if (controlNews) rows.push(controlNewsBox());
 
   for (const m of controls.models) {
     const select = modelSelect(m.options, choices.models[m.node], familyOf(choices.models[m.node]), m.field === 'unet_name' ? 'Diffusion model' : 'Checkpoint');
@@ -791,6 +811,18 @@ function renderControls() {
     chip.onclick = () => { choices.skipDetailers = !choices.skipDetailers; chip.setAttribute('aria-pressed', String(choices.skipDetailers)); saveControls(); renderSummary(); };
     rows.push(el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, 'Speed'), el('div', { class: 'aspects' }, chip),
       el('small', { class: 'status', style: 'display:block;margin-top:2px' }, 'Face detailing re-renders every detected face, about 1–2 minutes each. Skip it for a quick run.')));
+  }
+
+  const groups = controls.settings || [];
+  for (const group of groups.filter(g => g.pinned)) rows.push(settingsGroup(group, true));
+  const rest = groups.filter(g => !g.pinned);
+  if (rest.length) {
+    const changed = rest.filter(g => groupChanged(g)).length;
+    rows.push(el('details', { class: 'controls node-settings', open: rest.some(g => isNewGroup(g)) || openGroups.has('*') || null, ontoggle: keepOpen('*') },
+      el('summary', {}, 'All workflow settings ', el('small', {}, `${rest.length} nodes` + (changed ? ` · ${changed} changed` : ''))),
+      el('small', { class: 'status', style: 'display:block;margin:4px 0 8px' },
+        'Every setting in the workflow, grouped by node title. Title a node “📱 …” in ComfyUI to pin it to the top.'),
+      rest.map(g => settingsGroup(g, false))));
   }
 
   const reset = el('button', { class: 'ghost', type: 'button', style: 'margin-top:12px;width:100%' }, 'Reset settings to defaults');
@@ -974,17 +1006,27 @@ function samplerSection(smp, title, changed) {
 
 function savedCaption() { try { return JSON.parse(load(CAPTION_KEY) || '{}'); } catch (e) { return {}; } }
 const CAPTION_LABELS = {
-  model: 'Caption model', caption_type: 'Caption style', length: 'Length', content_mode: 'Content',
+  model: 'Caption model', caption_type: 'Caption style', prompt_style: 'Caption style', preset: 'Caption style',
+  length: 'Length', caption_length: 'Length', content_mode: 'Content',
   vulgar_slang: 'Vulgar slang', lighting: 'Lighting', camera_angle: 'Camera angle', shot_type: 'Shot type',
   composition: 'Composition', depth_of_field: 'Depth of field', camera_settings: 'Camera settings',
   aesthetic_quality: 'Aesthetic quality', mention_mood: 'Mood'
 };
+// Caption nodes are found from ComfyUI's schema, so new fields get a readable label from their name.
+function captionLabel(field) {
+  if (CAPTION_LABELS[field]) return CAPTION_LABELS[field];
+  const words = field.replace(/^include_/, '').replace(/^exclude_/, 'no_').replace(/_/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+const captionStyle = cap => cap.style || (cap.options.caption_type ? 'caption_type' : null);
 
 function captionSection(cap, changed) {
   const values = choices.caption[cap.node];
+  const tips = cap.tips || {};
+  const style = captionStyle(cap);
   const update = (field, value) => {
     values[field] = value;
-    if (field !== 'caption_type') {
+    if (field !== style) {
       const shared = savedCaption();
       shared[field] = value;
       store(CAPTION_KEY, JSON.stringify(shared));
@@ -992,19 +1034,101 @@ function captionSection(cap, changed) {
     changed();
   };
   const selects = Object.keys(cap.options).map(field => {
-    const select = el('select', { 'aria-label': CAPTION_LABELS[field] }, cap.options[field].map(o => new Option(o, o)));
+    const options = cap.options[field].includes(values[field]) ? cap.options[field] : [values[field], ...cap.options[field]];
+    const select = el('select', { 'aria-label': captionLabel(field), title: tips[field] || null }, options.map(o => new Option(o, o)));
     select.value = values[field];
     select.onchange = () => update(field, select.value);
-    return el('div', { style: field === 'model' || field === 'caption_type' ? 'grid-column:1/-1' : null }, el('label', {}, CAPTION_LABELS[field]), select);
+    return el('div', { style: field === 'model' || field === style ? 'grid-column:1/-1' : null }, el('label', {}, captionLabel(field)), select);
   });
   const toggles = Object.keys(values).filter(f => typeof values[f] === 'boolean').map(field => {
-    const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(values[field]) }, CAPTION_LABELS[field] || field);
+    const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(values[field]), title: tips[field] || null }, captionLabel(field));
     chip.onclick = () => { chip.setAttribute('aria-pressed', String(!values[field])); update(field, !values[field]); };
     return chip;
   });
+  // Nodes with many switches (JoyCaption's extra options) fold them away so the section stays short.
+  const on = Object.keys(values).filter(f => values[f] === true).length;
+  const extras = !toggles.length ? null : toggles.length > 10
+    ? el('details', { class: 'controls' }, el('summary', {}, `Extra options `, el('small', {}, `${on} of ${toggles.length} on`)), el('div', { class: 'aspects' }, toggles))
+    : el('div', { class: 'aspects' }, toggles);
   return el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, 'Auto caption'),
     el('small', { class: 'status' }, 'Shared across all auto-caption workflows, except style.'),
-    el('div', { class: 'settings-grid' }, selects), toggles.length ? el('div', { class: 'aspects' }, toggles) : null);
+    el('div', { class: 'settings-grid' }, selects), extras);
+}
+
+/* ---------- Workflow updates from the PC ---------- */
+let controlNews = null;
+function noteControlChanges(wf, found) {
+  const all = loadJson(CONTROL_KEYS_KEY);
+  const current = MobileTools.controlKeys(found);
+  controlNews = MobileTools.controlChanges(all[wf.id], current);
+  all[wf.id] = current;
+  store(CONTROL_KEYS_KEY, JSON.stringify(all));
+}
+function isNewGroup(group) { return !!controlNews?.added.some(k => k.startsWith(`setting:${group.node}:`)); }
+function controlNewsBox() {
+  const list = (labels) => labels.slice(0, 8).join(', ') + (labels.length > 8 ? ` and ${labels.length - 8} more` : '');
+  const close = el('button', { class: 'ghost', type: 'button' }, 'Got it');
+  close.onclick = () => { controlNews = null; renderControls(); };
+  return el('div', { class: 'lora news', role: 'status' },
+    el('div', { class: 'row between' }, el('label', { style: 'margin:0' }, 'Updated on the PC'), close),
+    controlNews.addedLabels.length ? el('small', { class: 'status', style: 'display:block' }, 'New: ' + list(controlNews.addedLabels)) : null,
+    controlNews.removedLabels.length ? el('small', { class: 'status', style: 'display:block' }, 'Removed: ' + list(controlNews.removedLabels)) : null);
+}
+
+/* ---------- All workflow settings (node_settings.py) ---------- */
+// Sections stay open across re-renders (changing a model or LoRA redraws the whole panel).
+const openGroups = new Set();
+function keepOpen(key) { return function () { this.open ? openGroups.add(key) : openGroups.delete(key); }; }
+function groupChanged(group) {
+  return group.fields.some(f => choices.settings?.[group.node]?.[f.name] !== f.value);
+}
+function settingsGroup(group, open) {
+  const values = choices.settings[group.node];
+  const count = el('small', {});
+  const refresh = () => {
+    const n = group.fields.filter(f => values[f.name] !== f.value).length;
+    count.textContent = n ? `${n} changed` : `${group.fields.length} setting${group.fields.length > 1 ? 's' : ''}`;
+  };
+  const changed = () => { refresh(); saveControls(); renderSummary(); };
+  const grid = [], chips = [];
+  for (const field of group.fields) {
+    const label = MobileTools.fieldLabel(field.name);
+    const tip = field.tip || null;
+    if (field.type === 'bool') {
+      const chip = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(values[field.name]), title: tip }, label);
+      chip.onclick = () => { values[field.name] = !values[field.name]; chip.setAttribute('aria-pressed', String(values[field.name])); changed(); };
+      chips.push(chip);
+    } else if (field.type === 'combo') {
+      const options = field.options.includes(values[field.name]) ? field.options : [values[field.name], ...field.options];
+      const select = el('select', { 'aria-label': label, title: tip }, options.map(o => new Option(o, o)));
+      select.value = values[field.name];
+      select.onchange = () => { values[field.name] = select.value; changed(); };
+      grid.push(el('div', { style: 'grid-column:1/-1' }, el('label', {}, label), select));
+    } else if (field.type === 'text') {
+      const area = el('textarea', { 'aria-label': label, title: tip, rows: 3, maxlength: 10000 });
+      area.value = values[field.name];
+      area.oninput = () => { values[field.name] = area.value; changed(); };
+      grid.push(el('div', { style: 'grid-column:1/-1' }, el('label', {}, label), area));
+    } else {
+      const input = el('input', { type: 'number', inputmode: field.type === 'int' ? 'numeric' : 'decimal', 'aria-label': label, title: tip,
+        step: field.step ?? (field.type === 'int' ? 1 : 'any'), min: field.min ?? null, max: field.max ?? null });
+      input.value = values[field.name];
+      input.onchange = () => {
+        const value = Number(input.value);
+        if (input.value === '' || !MobileTools.settingFits(field, value)) { input.value = values[field.name]; return showToast(`${label}: out of range`); }
+        values[field.name] = value; changed();
+      };
+      grid.push(el('div', {}, el('label', {}, label), input));
+    }
+  }
+  const undo = el('button', { class: 'ghost', type: 'button' }, 'Defaults');
+  undo.onclick = () => { for (const f of group.fields) values[f.name] = f.value; saveControls(); renderSummary(); renderControls(); };
+  refresh();
+  return el('details', { class: 'controls node-group', open: open || isNewGroup(group) || openGroups.has(group.node) || null, ontoggle: keepOpen(group.node) },
+    el('summary', {}, (group.pinned ? '📱 ' : '') + group.title + ' ', isNewGroup(group) ? el('span', { class: 'badge updated' }, 'new') : null, count),
+    grid.length ? el('div', { class: 'settings-grid' }, grid) : null,
+    chips.length ? el('div', { class: 'aspects' }, chips) : null,
+    el('div', { class: 'row', style: 'justify-content:flex-end' }, undo));
 }
 
 const VIDEO_KEYS = ['seconds', 'width', 'height', 'megapixels'];
@@ -1076,8 +1200,12 @@ function controlsText(c) {
   const base = controls?.samplers.find(smp => smp.role === 'base');
   const v = base && c.sampling?.[base.node];
   if (v && 'steps' in v) parts.push(`${v.steps} steps` + ('cfg' in v ? ` · CFG ${v.cfg}` : ''));
-  const cap = controls?.captions[0] && c.caption?.[controls.captions[0].node];
-  if (cap?.caption_type) parts.push(cap.caption_type);
+  const capNode = controls?.captions[0];
+  const cap = capNode && c.caption?.[capNode.node];
+  const capStyle = capNode && captionStyle(capNode);
+  if (capStyle && cap?.[capStyle]) parts.push(cap[capStyle]);
+  const tweaked = Object.keys(MobileTools.settingsPayload(controls?.settings, c.settings)).length;
+  if (tweaked) parts.push(`${tweaked} node${tweaked > 1 ? 's' : ''} adjusted`);
   return parts.join(' · ');
 }
 function renderSummary() { $('controls-summary').textContent = controlsText(choices); }
@@ -1102,8 +1230,10 @@ function controlsPayload(c) {
   }
   const size = c.adviserSize || (c.aspect ? chosenSize(c) : null);
   const fit = fitSize(c);
+  const settings = MobileTools.settingsPayload(controls.settings, c.settings);
   return {
     models, loras, extra_loras: c.extra.map(x => ({ name: x.name, strength: x.strength })), sampling, caption,
+    ...(Object.keys(settings).length ? { settings } : {}),
     ...(c.skipDetailers && controls.detailers?.length ? { skip_detailers: true } : {}),
     ...(videoPayload(c) ? { video: videoPayload(c) } : {}),
     ...(size && (size.width !== controls.size.width || size.height !== controls.size.height) ? { size } : {}),

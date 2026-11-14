@@ -336,6 +336,9 @@ def convert_ui(data, object_info):
             if isinstance(value, list) and field not in linked:
                 inputs[field] = {"__value__": value}
         result[str(node["id"])] = {"class_type": kind, "inputs": inputs}
+        # As ComfyUI's own frontend sends it; the phone groups a node's settings under this title.
+        if isinstance(node.get("title"), str) and node["title"].strip():
+            result[str(node["id"])]["_meta"] = {"title": node["title"].strip()[:120]}
     if not result:
         raise ConversionError("No executable nodes")
     # Never submit dangling connections.

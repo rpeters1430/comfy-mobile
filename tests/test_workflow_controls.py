@@ -188,6 +188,35 @@ class ControlTests(unittest.TestCase):
             with self.subTest(caption=caption), self.assertRaises(ControlError):
                 apply_controls(self.captioned(), INFO, {}, {}, [], caption=caption)
 
+    def test_finds_new_caption_nodes_from_schema(self):
+        # A caption node the code has never heard of (JoyCaption via Ollama) is picked up from its schema.
+        info = {**INFO, "JoyCaptionOllamaPrompt": {"category": "text/joycaption", "output": ["STRING", "STRING", "STRING"], "input": {
+            "required": {"image": ["IMAGE", {}], "model": ["COMBO", {"options": ["joycaption-beta:latest", "qwen3-vl:8b"]}],
+                         "caption_type": ["COMBO", {"options": ["Descriptive", "Stable Diffusion Prompt"]}],
+                         "caption_length": ["COMBO", {"options": ["short", "long"]}],
+                         "include_lighting": ["BOOLEAN", {"tooltip": "Include information about lighting."}],
+                         "keep_alive": ["COMBO", {"options": ["0", "5m"]}], "max_tokens": ["INT", {}]}}}}
+        graph = {"2": {"class_type": "JoyCaptionOllamaPrompt", "inputs": {
+            "image": ["1", 0], "model": "joycaption-beta:latest", "caption_type": "Descriptive", "caption_length": "long",
+            "include_lighting": False, "keep_alive": "5m", "max_tokens": 300}}}
+        [cap] = find_controls(graph, info)["captions"]
+        self.assertEqual({"model", "caption_type", "caption_length", "include_lighting"}, set(cap["values"]))
+        self.assertEqual("caption_type", cap["style"])
+        self.assertEqual("Include information about lighting.", cap["tips"]["include_lighting"])
+        apply_controls(graph, info, {}, {}, [], caption={"2": {"model": "qwen3-vl:8b", "include_lighting": True}})
+        self.assertEqual(("qwen3-vl:8b", True), (graph["2"]["inputs"]["model"], graph["2"]["inputs"]["include_lighting"]))
+        with self.assertRaises(ControlError):
+            apply_controls(graph, info, {}, {}, [], caption={"2": {"max_tokens": 10}})
+
+    def test_ignores_text_nodes_that_are_not_captioners(self):
+        info = {"Booru Tagger": {"category": "BooruTagger", "output": ["STRING"], "input": {"required": {
+                    "image": ["IMAGE", {}], "replace_underscore": ["BOOLEAN", {}]}}},
+                "OllamaGenerate": {"category": "Ollama", "output": ["STRING"], "input": {"required": {
+                    "prompt": ["STRING", {}], "model": [["llama3"]]}}}}
+        graph = {"2": {"class_type": "Booru Tagger", "inputs": {"image": ["1", 0], "replace_underscore": True}},
+                 "3": {"class_type": "OllamaGenerate", "inputs": {"prompt": "x", "model": "llama3"}}}
+        self.assertEqual([], find_controls(graph, info)["captions"])
+
     def saved(self):
         return {"8": {"class_type": "VAEDecode", "inputs": {"samples": ["7", 0], "vae": ["1", 2]}},
                 "9": {"class_type": "SaveImage", "inputs": {"images": ["8", 0], "filename_prefix": "x"}}}
