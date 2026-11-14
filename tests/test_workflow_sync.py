@@ -6,10 +6,16 @@ from tempfile import TemporaryDirectory
 from pathlib import Path
 from unittest.mock import patch
 
-from app.workflow_sync import WorkflowSync, SAFE_NAME
+from app.workflow_sync import WorkflowSync, SAFE_NAME, safe_relative_name
 
 
 class WorkflowSyncTests(unittest.TestCase):
+    def test_safe_relative_paths(self):
+        for name in ("folder/file.json", "日本語.json", "Folder/with & punctuation!.json"):
+            self.assertTrue(safe_relative_name(name), name)
+        for name in ("../bad.json", "/bad.json", "folder//bad.json", "C:/bad.json", "folder/../../bad.json", "bad\\name.json"):
+            self.assertFalse(safe_relative_name(name), name)
+
     def test_filename_filter(self):
         assert SAFE_NAME.fullmatch("01_SDXL_Text_to_Image.json")
         assert SAFE_NAME.fullmatch("My Workflow (1).json")
@@ -22,7 +28,7 @@ class WorkflowSyncTests(unittest.TestCase):
         factory = httpx.AsyncClient
         def handler(request):
             if request.url.path == "/userdata":
-                return httpx.Response(200, json=["nested/skip.json", {"name": "Copy (1).json"}, "../bad.json"])
+                return httpx.Response(200, json=["nested/../skip.json", {"name": "Copy (1).json"}, "../bad.json"])
             return httpx.Response(200, json=workflow)
         def client(**kwargs):
             return factory(transport=httpx.MockTransport(handler), **kwargs)
@@ -57,71 +63,67 @@ class WorkflowSyncTests(unittest.TestCase):
             assert (tmp_path / "one.json").exists()
 
 
-class WorkflowPushTests(unittest.TestCase):
-    def test_push_new_and_unedited_but_never_edited_or_deleted(self):
-        old, new, edited = b'{"nodes": [1]}', b'{"nodes": [2]}', b'{"nodes": [9]}'
-        remote = {"same.json": new, "stale.json": old, "edited.json": edited}
-        posts = []
-        factory = httpx.AsyncClient
-        def handler(request):
-            name = request.url.path.rsplit("/", 1)[-1]
-            if request.url.path == "/userdata":
-                return httpx.Response(200, json=sorted(remote))
-            if request.method == "POST":
-                posts.append(name)
-                remote[name] = request.content
-                return httpx.Response(200, json={})
-            return httpx.Response(200, content=remote[name])
-        def client(**kwargs):
-            return factory(transport=httpx.MockTransport(handler), **kwargs)
-        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-            bundled, data = Path(tmp) / "bundled", Path(tmp) / "data"
-            bundled.mkdir(); data.mkdir()
-            for name in ("same.json", "stale.json", "edited.json", "new.json", "deleted.json"):
-                (bundled / name).write_bytes(new)
-            import hashlib
-            h = lambda b: hashlib.sha256(b).hexdigest()
-            (data / "push.json").write_text(json.dumps({"stale.json": h(old), "edited.json": h(old), "deleted.json": h(old)}))
-            sync = WorkflowSync("http://localhost:8188", Path(tmp) / "sync", bundled, data / "push.json")
-            with patch("app.workflow_sync.httpx.AsyncClient", client):
-                result = asyncio.run(sync.sync())
-            self.assertEqual(sorted(posts), ["new.json", "stale.json"])
-            self.assertEqual((result["pushed"], result["failed"]), (2, 0))
-            self.assertEqual(edited, remote["edited.json"])
-            self.assertTrue((Path(tmp) / "sync" / "new.json").exists())
-            record = json.loads((data / "push.json").read_text())
-            self.assertEqual((record["same.json"], record["new.json"]), (h(new), h(new)))
-            self.assertEqual(record["_comfy_url"], "http://localhost:8188")
+class WorkflowLibraryTests(unittest.TestCase):
+    def test_reset_clears_nested_local_files_offline_and_survives_restart(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'folder').mkdir()
+            (root / 'folder' / 'old.json').write_text('{"nodes": []}')
+            (root / 'old.json.partial').write_text('incomplete')
+            with patch('app.workflow_sync.httpx.AsyncClient', side_effect=AssertionError('Reset must be offline')):
+                result = asyncio.run(WorkflowSync('http://pc', root).sync(reset=True))
+            self.assertEqual('reset', result['status'])
+            self.assertEqual([], list(root.rglob('*.json')))
+            self.assertFalse((root / 'old.json.partial').exists())
+            restarted = WorkflowSync('http://pc', root)
+            with patch('app.workflow_sync.httpx.AsyncClient', side_effect=AssertionError('Auto sync must stay paused')):
+                self.assertEqual('paused', asyncio.run(restarted.sync(automatic=True))['status'])
 
-    def test_new_machine_url_resets_push_state_and_prunes_stale_synced_files(self):
-        bundled_bytes = b'{"nodes": [1]}'
-        remote = {}
-        posts = []
+    def test_sync_only_downloads_pc_workflows_including_subfolders(self):
         factory = httpx.AsyncClient
+        requests = []
         def handler(request):
-            name = request.url.path.rsplit("/", 1)[-1]
-            if request.url.path == "/userdata":
-                return httpx.Response(200, json=sorted(remote))
-            if request.method == "POST":
-                posts.append(name)
-                remote[name] = request.content
-                return httpx.Response(200, json={})
-            return httpx.Response(200, content=remote[name])
+            requests.append(request)
+            if request.url.path == '/userdata':
+                return httpx.Response(200, json=['Folder/My workflow.json', 'one.json'])
+            return httpx.Response(200, json={'nodes': []})
         def client(**kwargs):
             return factory(transport=httpx.MockTransport(handler), **kwargs)
-        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-            bundled, sync_dir, data = Path(tmp) / "bundled", Path(tmp) / "sync", Path(tmp) / "data"
-            bundled.mkdir(); sync_dir.mkdir(); data.mkdir()
-            (bundled / "01_Base.json").write_bytes(bundled_bytes)
-            (sync_dir / "old_windows_only.json").write_bytes(bundled_bytes)
-            (data / "push.json").write_text(json.dumps({"_comfy_url": "http://100.1.1.1:8188", "01_Base.json": "oldhash"}))
-            sync = WorkflowSync("http://100.2.2.2:8188", sync_dir, bundled, data / "push.json")
-            with patch("app.workflow_sync.httpx.AsyncClient", client):
-                result = asyncio.run(sync.sync())
-            self.assertEqual(posts, ["01_Base.json"])
-            self.assertEqual((result["pushed"], result["removed"], result["failed"]), (1, 1, 0))
-            self.assertFalse((sync_dir / "old_windows_only.json").exists())
-            self.assertTrue((sync_dir / "01_Base.json").exists())
+        with TemporaryDirectory() as tmp, patch('app.workflow_sync.httpx.AsyncClient', client):
+            root = Path(tmp)
+            bundled = root / 'bundled'; bundled.mkdir()
+            (bundled / 'unwanted.json').write_text('{"nodes": []}')
+            sync = WorkflowSync('http://pc', root / 'synced', bundled, root / 'push.json')
+            asyncio.run(sync.sync(reset=True))
+            result = asyncio.run(sync.sync())
+            self.assertEqual('ok', result['status'])
+            self.assertEqual(2, result['downloaded'])
+            self.assertTrue((root / 'synced/Folder/My workflow.json').exists())
+            self.assertFalse((root / 'synced/unwanted.json').exists())
+            self.assertTrue(all(r.method == 'GET' for r in requests))
+            self.assertEqual('true', requests[0].url.params['recurse'])
+            self.assertFalse(sync.paused)
+
+    def test_failed_manual_sync_keeps_reset_paused(self):
+        factory = httpx.AsyncClient
+        def client(**kwargs):
+            return factory(transport=httpx.MockTransport(lambda r: httpx.Response(503)), **kwargs)
+        with TemporaryDirectory() as tmp, patch('app.workflow_sync.httpx.AsyncClient', client):
+            sync = WorkflowSync('http://pc', Path(tmp))
+            asyncio.run(sync.sync(reset=True))
+            self.assertEqual('error', asyncio.run(sync.sync())['status'])
+            self.assertTrue(sync.paused)
+
+    def test_sync_prunes_nested_files_deleted_on_pc(self):
+        factory = httpx.AsyncClient
+        def client(**kwargs):
+            return factory(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=[])), **kwargs)
+        with TemporaryDirectory() as tmp, patch('app.workflow_sync.httpx.AsyncClient', client):
+            root = Path(tmp); (root / 'nested').mkdir()
+            (root / 'nested/stale.json').write_text('{"nodes": []}')
+            result = asyncio.run(WorkflowSync('http://pc', root).sync())
+            self.assertEqual(1, result['removed'])
+            self.assertEqual([], list(root.rglob('*.json')))
 
     def test_partial_sync_does_not_prune_existing_files(self):
         workflow = {"nodes": [{"id": 1, "type": "SaveImage"}]}

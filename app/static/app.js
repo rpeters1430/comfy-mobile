@@ -11,6 +11,7 @@ const MAX_SIDE = 2048;
 
 let token = '';
 let catalog = null;
+let catalogRevision = 0;
 let filter = 'all';
 let searchQuery = '';
 let captionDraft = null;
@@ -1988,10 +1989,12 @@ async function refresh() {
   loadSharedPresets().catch(() => {});
   loadSnippets();
   loadWakeStatus();
+  const revision = ++catalogRevision;
   setStatus('Loading…');
   if (!catalog) $('workflows').replaceChildren(el('p', { class: 'status' }, 'Loading workflows…'));
   try {
     const [health, cat] = await Promise.all([api('/health'), api('/catalog')]);
+    if (revision !== catalogRevision) return;
     catalog = { ...cat, workflows: MobileTools.preferredWorkflows(cat.workflows) };
     if (selected) {
       const fresh = catalog.workflows.find(w => w.id === selected.id && w.runnable);
@@ -2128,23 +2131,33 @@ $('notify-test').onclick = async () => {
 async function runWorkflowSync(reset = false) {
   const buttons = [$('sync-now'), $('sync-reset')];
   buttons.forEach(b => { b.disabled = true; });
-  $('sync-status').textContent = reset ? 'Resetting sync…' : 'Synchronizing…';
+  $('sync-status').textContent = reset ? 'Clearing app workflows…' : 'Synchronizing…';
   try {
-    const r = await api(reset ? '/comfy/workflows/sync?reset=true' : '/comfy/workflows/sync', { method: 'POST' });
+    const r = await api(reset ? '/comfy/workflows/reset' : '/comfy/workflows/sync', { method: 'POST' });
     if (r.status === 'busy') {
       $('sync-status').textContent = 'A sync is already running';
     } else if (r.status === 'error') {
       $('sync-status').textContent = 'Sync failed: ' + (r.reason || 'ComfyUI unreachable');
+    } else if (r.status === 'reset') {
+      ++catalogRevision;
+      store(CONTROLS_KEY, null);
+      store(CAPTION_KEY, null);
+      selected = null; controlsReady = false;
+      catalog = { models: { checkpoints: [], loras: [], upscalers: [] }, workflows: [] };
+      $('form').classList.add('hide');
+      renderWorkflows();
+      $('models').textContent = '0 workflows';
+      $('sync-status').textContent = 'All app workflows cleared. Press Sync now to download saved workflows from the PC.';
+      showToast('App workflows cleared');
     } else {
       const parts = [
-        ...(r.pushed ? [`${r.pushed} pushed`] : []),
         `${r.downloaded} downloaded`,
         `${r.unchanged} unchanged`,
         ...(r.removed ? [`${r.removed} removed`] : []),
         `${r.failed} failed`,
       ];
       $('sync-status').textContent = `${parts.join(' · ')} (of ${r.remote_count} in ComfyUI)`;
-      showToast(reset ? 'Sync reset complete' : 'Sync complete');
+      showToast(r.status === 'partial' ? 'Sync incomplete — some workflows could not be downloaded' : 'Sync complete');
       await refresh();
     }
   } catch (e) {
