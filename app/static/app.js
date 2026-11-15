@@ -25,6 +25,8 @@ let swReg = null;
 let controls = null;   // models & LoRAs from /validate
 let controlsReady = false;
 let captionCapability = null;
+// Whether LoRA trigger words can be joined onto a self-captioning workflow's prompt (caption_review.trigger_target).
+let canAddTriggers = false;
 // Whether this workflow can name known anime/game characters in its caption (characters.py).
 let characterSupport = null;
 let sharedPresets = [];
@@ -206,6 +208,7 @@ async function selectWorkflow(wf, restored = null) {
   selected = wf;
   controlsReady = false;
   captionCapability = null;
+  canAddTriggers = false;
   characterSupport = null;
   $('review-before').checked = false;
   $('caption-review-box').classList.add('hide');
@@ -562,7 +565,7 @@ function loraHints(choice) {
   if (x.weight != null) rows.push(line(`Suggested strength ${x.weight} (median of available Civitai example settings, not a guaranteed optimal weight)`));
   const typed = selected?.takes_prompt;
   const where = typed ? 'your prompt' : 'the caption';
-  if (!typed && !captionCapability?.supported && x.triggers.length) {
+  if (!typed && !canAddTriggers && x.triggers.length) {
     rows.push(line(`Trigger words: ${x.triggers.join(', ')}. This workflow's caption can't be changed, so they can't be added.`));
   } else if (x.triggers.length === 1) {
     const guess = x.guessed ? ' (guessed from its training tags)' : '';
@@ -628,6 +631,7 @@ async function loadControls(wf, restored = null) {
     if (selected !== wf) return;
     if (!validation.runnable) throw Error((validation.errors || []).join('; ') || 'Workflow is unavailable');
     captionCapability = validation.caption_review;
+    canAddTriggers = !!validation.trigger_words;
     characterSupport = validation.characters?.supported ? validation.characters : null;
     $('caption-review-box').classList.toggle('hide', !wf.image_inputs);
     $('review-before').disabled = !captionCapability?.supported;
@@ -1334,7 +1338,7 @@ $('form').onsubmit = async event => {
       params.controls = withAutoLoras(controlsPayload(choices), auto);
     }
     // A workflow that writes its own prompt gets the trigger words joined onto its caption inside ComfyUI.
-    if (stage === 'render' && !approval && !params.review && !selected.takes_prompt && captionCapability?.supported) {
+    if (stage === 'render' && !approval && !params.review && !selected.takes_prompt && canAddTriggers) {
       const words = pickedTriggers('');
       if (words.length) params.controls = { ...params.controls, caption_suffix: words.join(', ') };
     }

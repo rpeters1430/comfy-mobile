@@ -14,7 +14,7 @@ test('HF Krea triggers display under extra LoRAs and enter the generated caption
     loraInfo: { 'AnaDeArmas_KREA2.safetensors': {
       source: 'huggingface', family: 'Krea 2', weight: null, triggers: ['AnaDeArmas']
     } },
-    selected: { takes_prompt: false }, captionCapability: { supported: true },
+    selected: { takes_prompt: false }, canAddTriggers: true,
     el: (tag, attrs, ...children) => ({ tag, children })
   });
   vm.runInContext(triggers + hints, context);

@@ -21,7 +21,7 @@ if __package__:
     from .job_store import JOB_ID, JobStore
     from .preset_store import PresetStore
     from .deferred import HELD_ID, DeferredJobs
-    from .caption_review import CaptionError, capability, caption_graph, apply_review, append_caption
+    from .caption_review import CaptionError, capability, caption_graph, apply_review, append_caption, trigger_target
     from . import characters
     from .wake import WakePC, WakeError
     from .push import Push, PushError
@@ -41,7 +41,7 @@ else:
     from job_store import JOB_ID, JobStore
     from preset_store import PresetStore
     from deferred import HELD_ID, DeferredJobs
-    from caption_review import CaptionError, capability, caption_graph, apply_review, append_caption
+    from caption_review import CaptionError, capability, caption_graph, apply_review, append_caption, trigger_target
     import characters
     from wake import WakePC, WakeError
     from push import Push, PushError
@@ -378,6 +378,7 @@ async def validate_workflow(workflow_id: str, authorization: str | None = Header
         except ConversionError as exc:
             return {'format': 'ui', 'runnable': False, 'errors': [str(exc)], 'warnings': []}
     return {**inspect_workflow(graph, info), 'controls': find_controls(graph, info), 'caption_review': capability(graph, info),
+            'trigger_words': trigger_target(graph, info) is not None,
             'characters': characters.support(graph, info)}
 
 

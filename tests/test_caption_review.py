@@ -94,3 +94,36 @@ class CaptionApiTests(unittest.TestCase):
     self.assertNotIn('2', submitted[-1])
     self.assertEqual('model', store.get(response.json()['prompt_id'])['details']['models'][0]['value'])
     self.assertEqual('model', response.json()['details']['models'][0]['value'])
+
+
+class TriggerTargetTests(unittest.TestCase):
+ def sdxl_like(self):
+  # JoyCaption + an identifier VLM joined by StringConcatenate, encoded once and reused through ControlNet conditioning.
+  g = graph()
+  g['7'] = {'class_type': 'Qwen3VLAbliteratedPromptPair', 'inputs': {'image': ['1', 0]}}
+  g['8'] = {'class_type': 'StringConcatenate', 'inputs': {'string_a': ['7', 0], 'string_b': ['2', 0], 'delimiter': ', '}}
+  g['4']['inputs']['text'] = ['8', 0]
+  g['9'] = {'class_type': 'ControlNetApply', 'inputs': {'conditioning': ['4', 0], 'image': ['1', 0]}}
+  g['5']['inputs']['positive'] = ['9', 0]
+  g['10'] = {'class_type': 'PreviewAny', 'inputs': {'source': ['8', 0]}}
+  return g
+
+ def info(self):
+  return {**INFO, 'StringConcatenate': {'output': ['STRING']}, 'ControlNetApply': {'output': ['CONDITIONING']}, 'CLIPTextEncode': {'output': ['CONDITIONING']}}
+
+ def test_several_caption_nodes_still_take_trigger_words(self):
+  g = self.sdxl_like()
+  self.assertFalse(review.capability(g, self.info())['supported'])  # review stays strict
+  self.assertEqual(['8', 0], review.trigger_target(g, self.info()))
+  review.append_caption(g, self.info(), 'MagicianAi')
+  self.assertEqual(['mobile_caption_triggers', 0], g['4']['inputs']['text'])
+  self.assertEqual(['mobile_caption_triggers', 0], g['10']['inputs']['source'])
+  self.assertEqual(['8', 0], g['mobile_caption_triggers']['inputs']['string_a'])
+
+ def test_different_or_typed_positive_texts_have_no_target(self):
+  g = self.sdxl_like()
+  g['11'] = {'class_type': 'CLIPTextEncode', 'inputs': {'clip': ['3', 1], 'text': ['2', 0]}}
+  g['12'] = {'class_type': 'KSampler', 'inputs': {'positive': ['11', 0]}}
+  self.assertIsNone(review.trigger_target(g, self.info()))
+  g = graph(); g['4']['inputs']['text'] = 'typed'
+  self.assertIsNone(review.trigger_target(g, self.info()))

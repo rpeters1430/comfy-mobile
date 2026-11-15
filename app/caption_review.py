@@ -62,20 +62,46 @@ def caption_graph(graph, info):
     return result
 
 
+def trigger_target(graph, info):
+    """The one linked text output every sampler's positive prompt is encoded from, or None.
+
+    Walks up from each `positive` input through conditioning nodes to the text encoders, so a caption that is
+    combined with tagger or identifier output first (several caption-like nodes) still has a single target."""
+    sources, seen = set(), set()
+    pending = [v[0] for node in graph.values() for field, v in node['inputs'].items() if field == 'positive' and link(v)]
+    while pending:
+        key = pending.pop()
+        if key in seen or key not in graph:
+            continue
+        seen.add(key)
+        inputs = graph[key]['inputs']
+        if 'text' in inputs:
+            sources.add(tuple(inputs['text']) if link(inputs['text']) else None)
+            continue
+        for v in inputs.values():
+            if link(v) and v[0] in graph:
+                outputs = info.get(graph[v[0]]['class_type'], {}).get('output', [])
+                if v[1] < len(outputs) and outputs[v[1]] == 'CONDITIONING':
+                    pending.append(v[0])
+    if len(sources) != 1 or None in sources:
+        return None
+    return list(sources.pop())
+
+
 def append_caption(graph, info, suffix):
     """Join LoRA trigger words onto the auto-caption inside ComfyUI, so they apply without a review step."""
-    cap = capability(graph, info)
-    if not cap['supported']:
-        raise CaptionError(cap['reason'])
+    target = trigger_target(graph, info)
+    if not target:
+        raise CaptionError("This workflow's prompt text has no single source, so trigger words can't be added")
     if 'StringConcatenate' not in info:
         raise CaptionError('Adding trigger words needs the StringConcatenate node on ComfyUI')
     key = 'mobile_caption_triggers'
     if key in graph: raise CaptionError('Reserved caption node ID is already used')
     for node in graph.values():
         for field, value in node['inputs'].items():
-            if link(value) and value == [cap['node'], 0]:
+            if link(value) and value == target:
                 node['inputs'][field] = [key, 0]
-    graph[key] = {'class_type': 'StringConcatenate', 'inputs': {'string_a': [cap['node'], 0], 'string_b': suffix, 'delimiter': ', '}}
+    graph[key] = {'class_type': 'StringConcatenate', 'inputs': {'string_a': target, 'string_b': suffix, 'delimiter': ', '}}
 
 
 def apply_review(graph, info, positive, negative):
