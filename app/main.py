@@ -102,34 +102,6 @@ async def lifespan(app: FastAPI):
 VERSION = '0.8.0'
 app = FastAPI(title='Image Studio Mobile', version=VERSION, lifespan=lifespan)
 
-# Recipe support: expose JSON recipe files under SYNC_DIR/recipes
-import pathlib
-
-RECIPE_DIR = SYNC_DIR / 'recipes'
-if not RECIPE_DIR.exists():
-    RECIPE_DIR.mkdir(parents=True, exist_ok=True)
-
-@app.get('/api/recipes')
-async def list_recipes():
-    """Return a list of recipe file names (without extension)."""
-    recipes = []
-    for f in RECIPE_DIR.glob('*.json'):
-        recipes.append(f.stem)
-    return {'recipes': recipes}
-
-@app.get('/api/recipes/{name}')
-async def get_recipe(name: str):
-    """Return the JSON content of a recipe by name."""
-    path = RECIPE_DIR / f"{name}.json"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail='Recipe not found')
-    try:
-        content = path.read_text()
-        return json.loads(content)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 class Compress(GZipMiddleware):
     '''Gzip for the page, scripts and JSON. Media, live previews and the progress stream pass through untouched,
     so video seeking (Range) and streamed events keep working whatever Starlette's own exclusions are.'''
