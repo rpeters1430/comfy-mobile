@@ -151,7 +151,7 @@
             box.replaceChildren(); cancel.classList.add('hide'); current = null;
           } catch (e) { tell('Could not apply: ' + e.message); } finally { use.disabled = false; }
         };
-        box.append(use, note);
+        box.append(el('div', { class: 'adviser-apply' }, use, note));
       } else if (row.status === 'done') box.append(el('p', {}, row.ai_called ? 'The AI returned no applicable settings changes. See its assessment above.' : 'No AI assessment was completed; check the connection setup and error details.'));
       const keep = el('button', { type: 'button', class: 'ghost' }, 'Keep current settings');
       keep.onclick = stop; box.append(keep);

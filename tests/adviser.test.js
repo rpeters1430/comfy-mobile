@@ -48,7 +48,8 @@ test('research/apply UI keeps rendering explicit and binds current form', async 
       apply:r=>{form.job.sampling=r.sampling;}});
     await elements['adviser-start'].onclick();
     assert.equal(ui.approvalFor(),null);
-    const use=elements['adviser-results'].children.find(e=>e.tag==='button' && e.children.includes('Apply selected to settings'));
+    const row=elements['adviser-results'].children.find(e=>e.attrs?.class==='adviser-apply');
+    const use=row?.children.find(e=>e.tag==='button' && e.children.includes('Apply selected to settings'));
     assert.ok(use);
     await use.onclick();
     assert.equal(ui.approvalFor().token,'approved');

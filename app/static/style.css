@@ -815,6 +815,17 @@ dialog::backdrop { background: var(--md-scrim); }
   box-shadow: 0 0 0 8px var(--md-surface-container), var(--elev-3);
 }
 
+/* While AI suggestions are open, Apply floats just above the stuck Generate button instead of hiding behind it */
+.adviser-apply {
+  position: sticky;
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 96px);
+  z-index: 4;
+  padding: 8px 0;
+  background: var(--md-surface-container);
+  box-shadow: 0 0 0 8px var(--md-surface-container);
+}
+.adviser-apply .status:empty { display: none; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
@@ -938,6 +949,8 @@ dialog::backdrop { background: var(--md-scrim); }
   #form {
     margin-top: 0;
   }
+
+  .adviser-apply { position: static; }
 
   /* Generate button is natural static block on desktop */
   #generate {

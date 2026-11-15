@@ -125,6 +125,11 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   const editor = page.locator('.caption-editor');
   await editor.getByRole('button',{name:'Review settings with this caption'}).click();
   await page.getByRole('button',{name:'Apply selected to settings'}).waitFor();
+  // The Apply button must be tappable, not hidden behind the sticky Generate bar.
+  const tappable = async () => page.getByRole('button',{name:'Apply selected to settings'}).evaluate(b => {
+    b.scrollIntoView({block:'end'}); const r=b.getBoundingClientRect();
+    return document.elementFromPoint(r.left+r.width/2, r.top+r.height/2) === b; });
+  assert.equal(await tappable(), true);
   assert.equal(submissions.length,1);assert.equal(reviewRequest.job.review.positive,'edited portrait');
   await page.getByRole('button',{name:'Apply selected to settings'}).click();
   await page.waitForFunction(()=>document.querySelector('#adviser-status').textContent.includes('Selected changes applied'));
