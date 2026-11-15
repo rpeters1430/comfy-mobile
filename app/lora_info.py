@@ -1,7 +1,7 @@
-"""Trigger words, recommended strength and model family from ModelHarbor and exact HF file sidecars.
+"""Trigger words, recommended strength and model family from LoRA Manager, ModelHarbor and exact HF file sidecars.
 
-ModelHarbor inventories the ComfyUI PC by absolute path; ComfyUI names a LoRA by its path under models/loras, so
-records are matched on that tail, then by file name when it is unique."""
+Both inventory the ComfyUI PC by absolute path; ComfyUI names a LoRA by its path under models/loras, so records are
+matched on that tail, then by file name when it is unique. LoRA Manager is the user's curated library and wins."""
 import asyncio
 import json
 import re
@@ -119,17 +119,48 @@ async def enrich_huggingface(entries, client):
             entry['triggers'] = list(fetched.get(sidecar_url(entry.get('url')), []))
 
 
+def _manager_entry(item):
+    civitai = item.get('civitai') if isinstance(item.get('civitai'), dict) else {}
+    try:
+        tips = json.loads(item.get('usage_tips') or '{}')
+    except (TypeError, ValueError):
+        tips = {}
+    weight = tips.get('strength') if isinstance(tips, dict) else None
+    weight = float(weight) if isinstance(weight, (int, float)) and 0 < weight <= 2 else None
+    base, triggers = item.get('base_model') or '', _words(civitai.get('trainedWords'))
+    if not (triggers or base or weight):
+        return None
+    return {'family': civitai_family(base), 'base_model': base or None, 'source': 'civitai' if item.get('from_civitai') else 'loramanager',
+            'triggers': triggers, 'weight': weight, 'weight_from': 'loramanager' if weight else None, 'url': item.get('source_url') or None}
+
+
+def match_manager(names, items):
+    """{name: entry} from LoRA Manager's /api/lm/loras/list items (Civitai trigger words, the user's strength tip)."""
+    return _lookup(names, ((item.get('file_path', ''), item.get('sha256'), _manager_entry(item))
+                           for item in items if isinstance(item, dict)))
+
+
+def merge(preferred, fallback):
+    """Fields LoRA Manager has win; ModelHarbor fills the rest."""
+    if not preferred or not fallback:
+        return preferred or fallback
+    return {**fallback, **{k: v for k, v in preferred.items() if v not in (None, '', [])}}
+
+
 def match(names, records):
     """{name: entry} for the ComfyUI LoRA names with ModelHarbor source or embedded metadata."""
+    return _lookup(names, ((r.get('path', ''), r.get('sha256'), _entry(r)) for r in (records if isinstance(records, list) else [])
+                           if isinstance(r, dict) and str(r.get('device', '')).endswith(':comfyui')))
+
+
+def _lookup(names, records):
     by_path, by_file = {}, {}
-    for record in records if isinstance(records, list) else []:
-        if not isinstance(record, dict) or not str(record.get('device', '')).endswith(':comfyui'):
-            continue
-        rel, entry = _rel(record.get('path', '')), _entry(record)
+    for path, sha256, entry in records:
+        rel = _rel(path)
         if rel and entry:
             by_path[rel] = entry
             # Hard-linked copies (loose and in a family folder) are one file: keyed by hash.
-            by_file.setdefault(rel.rsplit('/', 1)[-1], {})[record.get('sha256') or rel] = entry
+            by_file.setdefault(rel.rsplit('/', 1)[-1], {})[sha256 or rel] = entry
     out = {}
     for name in names:
         key = re.sub(r'[\\/]+', '/', name.lower())

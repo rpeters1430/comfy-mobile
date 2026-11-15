@@ -706,6 +706,23 @@ async def suggest_loras(body: LoraSuggestRequest, authorization: str | None = He
 _harbor_cache = {'at': 0.0, 'records': []}
 HARBOR_TTL = 300
 HARBOR_MAX_BYTES = 20_000_000
+_manager_cache = {'at': 0.0, 'items': []}
+
+async def lora_manager_records():
+    """LoRA Manager's LoRA library on the ComfyUI PC, cached for a minute; the last copy when it is unreachable or absent."""
+    if time.monotonic() - _manager_cache['at'] < 60:
+        return _manager_cache['items']
+    items = []
+    try:
+        for page in range(1, 11):
+            data = await request('GET', '/api/lm/loras/list', params={'page': page, 'page_size': 100})
+            items.extend(i for i in data.get('items', []) if isinstance(i, dict))
+            if page >= (data.get('total_pages') or 1):
+                break
+    except HTTPException:
+        items = _manager_cache['items']
+    _manager_cache.update(at=time.monotonic(), items=items)
+    return items
 
 async def harbor_records():
     """ModelHarbor's inventory, cached for five minutes; [] when it is not configured or unreachable."""
@@ -736,7 +753,9 @@ async def loras_info(authorization: str | None = Header(default=None)):
     info = await get_object_info()
     # The same list the LoRA pickers show (see find_controls), loose copies included.
     names = _options(info, 'LoraLoaderModelOnly', 'lora_name') or _options(info, 'LoraLoader', 'lora_name')
-    found = lora_info.match(names, await harbor_records())
+    harbor, manager = await asyncio.gather(harbor_records(), lora_manager_records())
+    harbor, manager = lora_info.match(names, harbor), lora_info.match_manager(names, manager)
+    found = {name: lora_info.merge(manager.get(name), harbor.get(name)) for name in {*harbor, *manager}}
     await lora_info.enrich_huggingface(found, _http_client)
     gate = asyncio.Semaphore(8)
     guess = [n for n in names if not found.get(n, {}).get('triggers')]

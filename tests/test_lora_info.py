@@ -1,5 +1,6 @@
 import unittest
 
+from app import lora_info
 from app.lora_info import match
 from app.settings_check import civitai_family, family
 
@@ -127,3 +128,31 @@ class HFSidecarTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class LoraManagerTests(unittest.TestCase):
+    ITEMS = [
+        {'file_path': '/home/u/AI/ComfyUI/models/loras/SDXL/Magician_XL.safetensors', 'sha256': 'a', 'base_model': 'SDXL 1.0',
+         'from_civitai': True, 'civitai': {'trainedWords': ['MagicianAi', 'dark magician girl']}, 'usage_tips': '{"strength": 0.7}'},
+        {'file_path': '/home/u/AI/ComfyUI/models/loras/SDXL/add-detail-xl.safetensors', 'sha256': 'b', 'base_model': 'SDXL 1.0',
+         'from_civitai': True, 'civitai': {}, 'usage_tips': '{}'},
+        {'file_path': '/elsewhere/not-a-lora.safetensors', 'base_model': 'SDXL 1.0', 'civitai': {}, 'usage_tips': 'bad json'},
+    ]
+
+    def test_triggers_base_and_usage_tip_strength(self):
+        found = lora_info.match_manager(['SDXL/Magician_XL.safetensors', 'SDXL\\add-detail-xl.safetensors', 'x.safetensors'], self.ITEMS)
+        magician = found['SDXL/Magician_XL.safetensors']
+        self.assertEqual((magician['triggers'], magician['weight'], magician['weight_from'], magician['source']),
+                         (['MagicianAi', 'dark magician girl'], 0.7, 'loramanager', 'civitai'))
+        detail = found['SDXL\\add-detail-xl.safetensors']
+        self.assertEqual((detail['triggers'], detail['weight'], detail['base_model']), ([], None, 'SDXL 1.0'))
+        self.assertNotIn('x.safetensors', found)
+
+    def test_lora_manager_wins_and_modelharbor_fills_gaps(self):
+        manager = {'family': 'SDXL', 'base_model': 'SDXL 1.0', 'source': 'civitai', 'triggers': [], 'weight': None, 'weight_from': None, 'url': None}
+        harbor = {'family': 'SDXL', 'base_model': 'SDXL 1.0', 'source': 'civitai', 'triggers': ['portrait'], 'weight': 0.8, 'url': 'https://civitai.com/x'}
+        merged = lora_info.merge(manager, harbor)
+        self.assertEqual((merged['triggers'], merged['weight'], merged.get('weight_from'), merged['url']), (['portrait'], 0.8, None, 'https://civitai.com/x'))
+        merged = lora_info.merge({**manager, 'triggers': ['mine'], 'weight': 0.5, 'weight_from': 'loramanager'}, harbor)
+        self.assertEqual((merged['triggers'], merged['weight'], merged['weight_from']), (['mine'], 0.5, 'loramanager'))
+        self.assertIs(lora_info.merge(None, harbor), harbor)

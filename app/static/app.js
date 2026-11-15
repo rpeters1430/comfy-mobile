@@ -468,8 +468,8 @@ function loraFamilyNote(name, base) {
   return el('small', { class: 'status', style: 'display:block' }, advice?.text || fallback);
 }
 
-/* LoRA trigger words and strengths: source metadata via ModelHarbor (GET /api/loras/info), else a trigger guessed
-   from the LoRA's training tags. Optional: without it the pickers work as before. */
+/* LoRA trigger words and strengths (GET /api/loras/info): LoRA Manager on the PC, then ModelHarbor, else a trigger
+   guessed from the LoRA's training tags. Optional: without them the pickers work as before. */
 const STRENGTH_KEY = 'image-studio-mobile:lora-strengths:v1';
 let loraInfo = {};
 function rememberedStrengths() { try { return JSON.parse(load(STRENGTH_KEY) || '{}'); } catch (e) { return {}; } }
@@ -562,7 +562,8 @@ function loraHints(choice) {
   if (!x) return null;
   const line = text => el('small', { class: 'status', style: 'display:block' }, text);
   const rows = [];
-  if (x.weight != null) rows.push(line(`Suggested strength ${x.weight} (median of available Civitai example settings, not a guaranteed optimal weight)`));
+  if (x.weight != null) rows.push(line(x.weight_from === 'loramanager' ? `Suggested strength ${x.weight} (your LoRA Manager usage tip)`
+    : `Suggested strength ${x.weight} (median of available Civitai example settings, not a guaranteed optimal weight)`));
   const typed = selected?.takes_prompt;
   const where = typed ? 'your prompt' : 'the caption';
   if (!typed && !canAddTriggers && x.triggers.length) {
