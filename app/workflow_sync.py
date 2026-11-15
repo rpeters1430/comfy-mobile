@@ -127,4 +127,47 @@ class WorkflowSync:
                     if not existing.is_symlink() and existing.relative_to(self.destination).as_posix() not in valid_names:
                         existing.unlink()
                         counts["removed"] += 1
-        return {"status": "ok" if not counts["failed"] else "partial", **counts, "remote_count": len(entries)}
+        # Sync recipes
+        recipe_counts = {"downloaded": 0, "unchanged": 0, "failed": 0, "removed": 0}
+        recipe_entries = json.loads(await bounded_get(client, f"{self.comfy_url}/userdata", params={"dir": "recipes", "recurse": "true", "split": "false"}))
+        if not isinstance(recipe_entries, list) or len(recipe_entries) > MAX_WORKFLOWS:
+            raise ValueError("Unexpected recipe listing")
+        recipe_valid_names = []
+        for item in recipe_entries:
+            name = item if isinstance(item, str) else item.get("name") if isinstance(item, dict) else None
+            if isinstance(name, str) and safe_relative_name(name):
+                recipe_valid_names.append(name)
+            else:
+                recipe_counts["failed"] += 1
+        recipe_valid_names = set(recipe_valid_names)
+        recipe_dest = self.destination / 'recipes'
+        recipe_dest.mkdir(parents=True, exist_ok=True)
+        for name in sorted(recipe_valid_names):
+            try:
+                path = "recipes/" + name
+                url = f"{self.comfy_url}/userdata/{quote(path, safe='')}"
+                body = await bounded_get(client, url)
+                target = recipe_dest / name
+                if any(part.is_symlink() for part in (target, *target.parents)):
+                    raise ValueError("Refusing symlink destination")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.exists() and hashlib.sha256(target.read_bytes()).digest() == hashlib.sha256(body).digest():
+                    recipe_counts["unchanged"] += 1
+                    continue
+                write_atomic(target, body)
+                recipe_counts["downloaded"] += 1
+            except (httpx.HTTPError, ValueError, OSError, json.JSONDecodeError):
+                recipe_counts["failed"] += 1
+        if not recipe_counts["failed"]:
+            for existing in sorted(recipe_dest.rglob("*")):
+                if existing.suffix.lower() != ".json":
+                    continue
+                if not existing.is_symlink() and existing.relative_to(recipe_dest).as_posix() not in recipe_valid_names:
+                    existing.unlink()
+                    recipe_counts["removed"] += 1
+        # Merge recipe counts into main counts
+        counts["recipe_downloaded"] = recipe_counts["downloaded"]
+        counts["recipe_unchanged"] = recipe_counts["unchanged"]
+        counts["recipe_failed"] = recipe_counts["failed"]
+        counts["recipe_removed"] = recipe_counts["removed"]
+        return {"status": "ok" if not (counts["failed"] or recipe_counts["failed"]) else "partial", **counts, "remote_count": len(entries)}
