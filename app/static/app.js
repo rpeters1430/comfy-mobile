@@ -1736,6 +1736,9 @@ function showActions(job, entry) {
     buttons.push(el('button', { class: 'secondary', type: 'button', onclick: () => runAgain(job, randomSeed()) }, '↻ Run again'));
     if (job.seed != null) buttons.push(el('button', { class: 'ghost', type: 'button', onclick: () => runAgain(job, job.seed) }, 'Same seed'));
     buttons.push(el('button', { class: 'ghost', type: 'button', onclick: () => loadJobIntoForm(job) }, 'Load settings'));
+  } else if (job.recipeId) {
+    buttons.push(el('button', { class: 'secondary', type: 'button', onclick: () => runRecipeAgain(job, randomSeed()) }, '↻ Run again'));
+    if (job.seed != null) buttons.push(el('button', { class: 'ghost', type: 'button', onclick: () => runRecipeAgain(job, job.seed) }, 'Same seed'));
   }
   entry.actions.replaceChildren(...buttons);
 }
@@ -1762,6 +1765,101 @@ async function runAgain(job, seed) {
     if (entry) entry.statusText.textContent = 'Could not start: ' + e.message;
   }
 }
+
+/* Recipes: LoRA Manager recipes copied to the NAS. The server builds a plain txt2img graph from one. */
+let recipes = [];
+let openRecipe = null;
+
+async function loadRecipes() {
+  try {
+    const r = await api('/recipes');
+    recipes = r.recipes || [];
+    renderRecipes(r.last_result);
+  } catch (e) {
+    $('recipes-status').textContent = 'Recipes unavailable: ' + e.message;
+  }
+}
+
+function renderRecipes(last) {
+  $('recipes-summary').textContent = recipes.length ? `Recipes (${recipes.length})` : 'Recipes';
+  $('recipes-status').textContent =
+    last?.status === 'unavailable' ? 'LoRA Manager is not installed on the PC.'
+    : last?.status === 'error' ? 'Last sync failed; showing the saved copy.'
+    : recipes.length ? 'Tap a recipe to generate from it.'
+    : 'No recipes yet. Save one in LoRA Manager or Model Librarian on the PC.';
+  $('recipes').replaceChildren(...recipes.map(recipe => {
+    const loras = recipe.loras.length ? `${recipe.loras.length} LoRA${recipe.loras.length > 1 ? 's' : ''}` : '';
+    const card = el('button', { class: 'card', type: 'button' },
+      el('div', { class: 'thumb' }, recipe.image ? el('img', { src: recipe.image, alt: '', loading: 'lazy' }) : 'No image'),
+      recipe.favorite ? el('span', { class: 'fav', 'aria-label': 'Favorite' }, '★') : null,
+      el('div', { class: 'meta' }, recipe.title, el('span', {}, [recipe.base_model, loras].filter(Boolean).join(' · '))));
+    card.onclick = () => showRecipe(recipe);
+    return card;
+  }));
+}
+
+function showRecipe(recipe) {
+  openRecipe = recipe;
+  $('recipe-title').textContent = recipe.title;
+  $('recipe-image').classList.toggle('hide', !recipe.image);
+  if (recipe.image) $('recipe-image').src = recipe.image;
+  const size = recipe.width && recipe.height ? `${recipe.width}×${recipe.height}` : '';
+  $('recipe-models').textContent = [recipe.checkpoint || 'No checkpoint recorded', ...recipe.loras.map(l => `${l.name} · ${l.strength}`),
+    [recipe.sampler, recipe.steps && `${recipe.steps} steps`, recipe.cfg && `CFG ${recipe.cfg}`, size].filter(Boolean).join(' · ')].join('\n');
+  $('recipe-prompt').value = recipe.prompt;
+  $('recipe-negative').value = recipe.negative;
+  $('recipe-same-seed').checked = false;
+  $('recipe-same-seed').disabled = recipe.seed == null;
+  $('recipe-error').textContent = '';
+  $('recipe-dialog').showModal();
+}
+
+async function submitRecipe(recipeId, title, { prompt, negative, seed }) {
+  const r = await api(`/recipes/${encodeURIComponent(recipeId)}/jobs`, { method: 'POST', json: { prompt, negative, seed } });
+  if (!r.prompt_id) throw Error('ComfyUI did not return a job ID');
+  const job = { id: r.prompt_id, recipeId, workflow: title, prompt, negative, seed: r.seed, details: r.details || null, created: Date.now() };
+  rememberJob(job);
+  openJob(job, true);
+  if (r.notes?.length) showToast(r.notes.join('; '), 4000);
+}
+
+async function runRecipeAgain(job, seed) {
+  try {
+    await submitRecipe(job.recipeId, job.workflow, { prompt: job.prompt, negative: job.negative, seed });
+  } catch (e) {
+    const entry = openJobs.get(job.id);
+    if (entry) entry.statusText.textContent = 'Could not start: ' + e.message;
+  }
+}
+
+$('recipe-generate').onclick = async () => {
+  const recipe = openRecipe;
+  if (!recipe) return;
+  $('recipe-generate').disabled = true;
+  $('recipe-error').textContent = '';
+  try {
+    await submitRecipe(recipe.id, recipe.title, { prompt: $('recipe-prompt').value, negative: $('recipe-negative').value,
+      seed: $('recipe-same-seed').checked ? recipe.seed : randomSeed() });
+    $('recipe-dialog').close();
+  } catch (e) {
+    $('recipe-error').textContent = e.status === 503 ? 'ComfyUI PC is offline' : e.message;
+  } finally {
+    $('recipe-generate').disabled = false;
+  }
+};
+
+$('recipes-sync').onclick = async () => {
+  $('recipes-sync').disabled = true;
+  $('recipes-status').textContent = 'Syncing…';
+  try {
+    await api('/recipes/sync', { method: 'POST' });
+    await loadRecipes();
+  } catch (e) {
+    $('recipes-status').textContent = 'Sync failed: ' + e.message;
+  } finally {
+    $('recipes-sync').disabled = false;
+  }
+};
 
 function notifyDone(job, ok) {
   if (!document.hidden || !swReg || !('Notification' in window) || Notification.permission !== 'granted') return;
@@ -2156,6 +2254,7 @@ async function refresh() {
   loadSharedPresets().catch(() => {});
   loadSnippets();
   loadWakeStatus();
+  loadRecipes();
   const revision = ++catalogRevision;
   setStatus('Loading…');
   if (!catalog) $('workflows').replaceChildren(el('p', { class: 'status' }, 'Loading workflows…'));

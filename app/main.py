@@ -29,6 +29,7 @@ if __package__:
     from .settings_check import check as check_settings
     from .settings_check import LABELS, SPEED, family
     from . import lora_info, lora_suggest
+    from .recipes import RecipeError, RecipeSync, build_graph, check_image, image_query
 else:
     from adviser import Adviser, fingerprint
     from adviser_ai import AI, AIError
@@ -48,6 +49,7 @@ else:
     from settings_check import check as check_settings
     from settings_check import LABELS, SPEED, family
     import lora_info, lora_suggest
+    from recipes import RecipeError, RecipeSync, build_graph, check_image, image_query
 
 COMFY = os.getenv('COMFYUI_URL','http://host.docker.internal:8188').rstrip('/')
 TOKEN = os.getenv('STUDIO_TOKEN','')
@@ -58,6 +60,7 @@ SYNC_DIR = Path(os.getenv('WORKFLOW_SYNC_DIR','/workflow-sync'))
 # Writable NAS folder for job records, thumbnails and push keys. Without it those features are simply off.
 DATA_DIR = Path(os.getenv('DATA_DIR','/data'))
 workflow_sync = WorkflowSync(COMFY, SYNC_DIR, WF_DIR, DATA_DIR / 'workflow-push.json')
+recipe_sync = RecipeSync(COMFY, DATA_DIR / 'recipes')
 job_store = JobStore(DATA_DIR)
 preset_store = PresetStore(DATA_DIR)
 deferred = DeferredJobs(DATA_DIR)
@@ -406,9 +409,11 @@ async def comfy_workflow_discovery(authorization: str | None = Header(default=No
             'note': 'Saved PC workflows available for download'}
 
 async def sync_workflows_periodically():
-    """Refresh PC downloads unless reset has paused automatic imports."""
+    """Refresh PC downloads unless reset has paused automatic imports; recipes are copied independently."""
     while True:
         await _run_workflow_sync(automatic=True)
+        if DATA_DIR.is_dir():
+            await recipe_sync.sync()
         await asyncio.sleep(60)
 
 @app.post('/api/comfy/workflows/sync')
@@ -551,14 +556,18 @@ async def queue_job(job: Job) -> dict:
             raise HTTPException(409,'Approved workflow, settings or batch seeds changed; review again or run manually')
         details['adviser'] = {**approval['audit'],'batch_index':job.adviser_index}
     await send_held_uploads(job.images)
+    result = await submit_graph(graph, details, workflow_label(name), job.prompt, job.model_dump(exclude={'adviser_token','adviser_index'}))
+    return {**result, **applied}
+
+async def submit_graph(graph: dict, details: dict, label: str, prompt: str, params: dict) -> dict:
     result=await request('POST','/prompt',json={'prompt':graph,'client_id':CLIENT_ID})
     if result.get('prompt_id'):
         progress.expect(result['prompt_id'], graph)
         try:
-            job_store.add(result['prompt_id'], workflow_label(name), job.prompt, params=job.model_dump(exclude={'adviser_token','adviser_index'}), details=details)
+            job_store.add(result['prompt_id'], label, prompt, params=params, details=details)
         except OSError:
             log.exception('Could not record job')
-    return {'prompt_id':result.get('prompt_id'),'node_errors':result.get('node_errors',{}),'details':details,**applied}
+    return {'prompt_id':result.get('prompt_id'),'node_errors':result.get('node_errors',{}),'details':details}
 
 @app.post('/api/jobs')
 async def jobs(job: Job, authorization: str | None = Header(default=None)):
@@ -576,6 +585,56 @@ async def check_job(job: Job, authorization: str | None = Header(default=None)):
     if job.stage != 'render': return {'issues': []}
     graph, info, *_ = await prepare_job(job)
     return {'issues': check_settings(graph, find_controls(graph, info))}
+
+class RecipeJob(BaseModel):
+    seed: int | None = Field(default=None, ge=0, le=18446744073709551615)
+    prompt: str | None = Field(default=None, max_length=10000)
+    negative: str | None = Field(default=None, max_length=10000)
+
+def public_recipe(recipe: dict) -> dict:
+    # PC file paths stay on the NAS; the phone only needs model names.
+    image = f"/api/recipes/{recipe['id']}/image?" + urlencode(image_query(TOKEN, recipe['id'])) if recipe.get('image') else None
+    return {**recipe, 'image': image, 'checkpoint': recipe['checkpoint'] and recipe['checkpoint']['name'],
+            'loras': [{'name': l['name'], 'strength': l['strength']} for l in recipe['loras']]}
+
+@app.get('/api/recipes')
+async def list_recipes(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return {'recipes': [public_recipe(r) for r in recipe_sync.recipes()], 'last_result': recipe_sync.last_result}
+
+@app.post('/api/recipes/sync')
+async def sync_recipes(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    if not DATA_DIR.is_dir(): raise HTTPException(503, 'Recipes need the NAS data folder')
+    return await recipe_sync.sync()
+
+@app.get('/api/recipes/{recipe_id}/image')
+async def recipe_image(recipe_id: str, expires: int, sig: str):
+    '''Authorized by the signed URL from /api/recipes, so <img> works.'''
+    if not check_image(TOKEN, recipe_id, expires, sig): raise HTTPException(401, 'Link expired or invalid')
+    path = recipe_sync.image_path(recipe_id)
+    if not path or not path.is_file(): raise HTTPException(404, 'No recipe image')
+    return FileResponse(path, media_type={'.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp'}[path.suffix],
+                        headers={'Cache-Control': 'private, max-age=3600'})
+
+@app.post('/api/recipes/{recipe_id}/jobs')
+async def recipe_job(recipe_id: str, job: RecipeJob, authorization: str | None = Header(default=None)):
+    '''Build a txt2img graph from a LoRA Manager recipe and queue it like any other job.'''
+    auth(authorization)
+    recipe = recipe_sync.get(recipe_id)
+    if not recipe: raise HTTPException(404, 'Recipe not found; sync recipes again')
+    try:
+        info = await get_object_info()
+        graph, notes = build_graph(recipe, info, job.seed, job.prompt, job.negative)
+        check = inspect_workflow(graph, info)
+        if not check['runnable']: raise RecipeError('; '.join(check['errors']))
+        result = await submit_graph(graph, run_details(graph, info), recipe['title'], graph['positive']['inputs']['text'],
+                                    {'recipe_id': recipe_id, **job.model_dump()})
+    except RecipeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ComfyOffline as exc:
+        raise HTTPException(503, {'message': 'ComfyUI is offline', 'offline': True, 'can_hold': False}) from exc
+    return {**result, 'notes': notes, 'seed': graph['sampler']['inputs']['seed']}
 
 class LoraSuggestRequest(BaseModel):
     text: str = Field(max_length=10000)

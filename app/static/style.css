@@ -758,14 +758,19 @@ nav button[aria-current="page"] .icon { fill: currentColor; }
 /* Dialogs */
 dialog { color: var(--md-on-surface); }
 dialog::backdrop { background: var(--md-scrim); }
-#check-dialog {
+#check-dialog, #recipe-dialog {
   width: min(92vw, 520px);
   background: var(--md-surface-container-high);
   border: 0;
   border-radius: var(--shape-xl);
   padding: 24px;
 }
-#check-dialog[open] { animation: dialog-in var(--dur-spatial) var(--ease-spatial); }
+#check-dialog[open], #recipe-dialog[open] { animation: dialog-in var(--dur-spatial) var(--ease-spatial); }
+#recipe-image { width: 100%; max-height: 40dvh; object-fit: contain; border-radius: var(--shape-lg-inc); background: var(--md-surface-container-lowest); }
+#recipe-models { white-space: pre-line; overflow-wrap: anywhere; }
+.recipes { margin-top: 12px; }
+.recipes > summary { font: var(--type-title-m); cursor: pointer; padding: 8px 0; }
+.recipes .gallery > .card:first-child { grid-column: auto; }
 @keyframes dialog-in {
   from { opacity: 0; transform: scale(0.9); }
 }

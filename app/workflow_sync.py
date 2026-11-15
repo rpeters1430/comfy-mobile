@@ -26,7 +26,7 @@ def safe_relative_name(name):
                     for part in name.split('/')))
 
 
-async def bounded_get(client, url, **kwargs) -> bytes:
+async def bounded_get(client, url, limit=MAX_BYTES, **kwargs) -> bytes:
     """Bound downloads without allowing HTTPX's decoder to expand compressed chunks."""
     async with client.stream('GET', url, headers={'Accept-Encoding': 'identity'}, **kwargs) as response:
         response.raise_for_status()
@@ -34,7 +34,7 @@ async def bounded_get(client, url, **kwargs) -> bytes:
             raise ValueError('Compressed workflow responses are not supported')
         body = bytearray()
         async for chunk in response.aiter_bytes(chunk_size=65536):
-            if len(body) + len(chunk) > MAX_BYTES:
+            if len(body) + len(chunk) > limit:
                 raise ValueError('Workflow response exceeds size limit')
             body.extend(chunk)
         return bytes(body)

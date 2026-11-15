@@ -48,6 +48,11 @@
         <summary id="unavailable-summary">Unavailable</summary>
         <div class="wf-list" id="unavailable"></div>
       </details>
+      <details class="recipes" id="recipes-box">
+        <summary id="recipes-summary">Recipes</summary>
+        <div class="row between"><p class="status" id="recipes-status">Recipes saved in LoRA Manager on the PC.</p><button class="ghost" id="recipes-sync" type="button">↻ Sync</button></div>
+        <div class="gallery" id="recipes"></div>
+      </details>
     </div>
 
     <div class="create-workspace" id="create-workspace">
@@ -276,6 +281,20 @@
     <p class="status" id="hold-text"></p>
     <label class="switch hide" id="hold-wake-row"><input type="checkbox" id="hold-wake" checked> Wake the PC now</label>
     <div class="row"><button class="primary" value="hold">Hold on NAS</button><button class="ghost" value="cancel">Cancel</button></div>
+  </form>
+</dialog>
+<dialog id="recipe-dialog" aria-labelledby="recipe-title">
+  <form method="dialog">
+    <h2 id="recipe-title">Recipe</h2>
+    <img id="recipe-image" class="hide" alt="Recipe image">
+    <p class="status" id="recipe-models"></p>
+    <label for="recipe-prompt">Prompt</label>
+    <textarea id="recipe-prompt" spellcheck="false"></textarea>
+    <label for="recipe-negative">Negative prompt</label>
+    <textarea id="recipe-negative" spellcheck="false" style="min-height:72px"></textarea>
+    <label class="switch"><input type="checkbox" id="recipe-same-seed"> Use the recipe's seed</label>
+    <p class="status" id="recipe-error" role="status"></p>
+    <div class="row"><button class="primary" id="recipe-generate" type="button">Generate</button><button class="ghost" value="cancel">Cancel</button></div>
   </form>
 </dialog>
 <dialog id="image-viewer" aria-labelledby="viewer-title">
