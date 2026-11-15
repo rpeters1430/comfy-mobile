@@ -9,7 +9,8 @@ const jobId = '0f8d2a4c-1111-4222-8333-944455556666';
 const imageName = 'mobile_' + 'a'.repeat(32) + '.png';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');
 const controls = {models:[{node:'3',field:'ckpt_name',value:'base',options:['base','alternate']}],loras:[],samplers:[{node:'7',role:'base',values:{steps:30,cfg:7,sampler_name:'euler',scheduler:'normal'}}],captions:[],
- lora_options:[],upscale_options:[],sampler_options:['euler','dpmpp_2m'],scheduler_options:['normal'],can_add_lora:false,size:null};
+ lora_options:[],upscale_options:[],sampler_options:['euler','dpmpp_2m'],scheduler_options:['normal'],can_add_lora:false,size:null,
+ negative_prompt:{node:'4',default:'blurry'}};
 const workflows = [{id:'edit.json',name:'Photo_Edit',runnable:true,image_inputs:1,takes_prompt:false,node_types:['LoadImage']},
  {id:'text.json',name:'Text_Image',runnable:true,image_inputs:0,takes_prompt:true,node_types:['KSampler']}];
 const library = {id:jobId,workflow:'Photo Edit',prompt:'',created:1700000000,status:'success',
@@ -132,6 +133,7 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
 
   assert.equal(submissions[1].review.positive,'edited portrait');assert.equal(submissions[1].stage,'render');
   assert.equal(submissions[1].sampling['7'].steps,25);assert.equal(submissions[1].adviser_token,'approved');
+  assert.equal(submissions[1].negative_prompt,'blurry');assert.equal(reviewRequest.job.negative_prompt,submissions[1].negative_prompt);
   await page.locator('nav [data-tab=gallery]').click();
   await page.locator('#gallery .card').first().click();
   await page.locator('#image-viewer').waitFor({state:'visible'});

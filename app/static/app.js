@@ -3010,6 +3010,8 @@ function adviserForm() {
   return {
     job: { ...controlsPayload(choices), workflow_id: selected.id,
       prompt: selected.takes_prompt ? styledPrompt(prompt, currentStyle(), cinematicOn(choices)) : '',
+      // Must equal what Generate sends (see submitJob), or the approval never matches the job.
+      negative_prompt: controls?.negative_prompt ? $('negative-prompt').value.trim() : null,
       images: slots.map(s => s.name), seed: $('seed').value === '' ? null : Number($('seed').value),
       stage: $('review-before').checked ? 'caption' : 'render', review: activeCaptionDraft() },
     runs: Number($('runs').value) || 1
