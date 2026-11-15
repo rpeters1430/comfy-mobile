@@ -157,6 +157,7 @@
           <label>API key<input id="ai-key" type="password" autocomplete="new-password" placeholder="Not needed for local Ollama; optional for Lemonade"></label>
           <label>Model<input id="ai-model" list="ai-models" autocomplete="off" placeholder="Load models or enter an exact model ID"></label>
           <datalist id="ai-models"></datalist>
+          <label>Vision model (optional)<input id="ai-vision-model" list="ai-models" autocomplete="off" placeholder="For reviewing finished images, e.g. a Qwen3-VL model"></label>
           <div class="row"><button type="button" class="secondary" id="ai-load-models">Load models</button><button type="button" class="secondary" id="ai-test-save">Test &amp; save connection</button></div>
           <p id="ai-connection-status" class="status" role="status" aria-live="polite">Keys are stored on the NAS and are never returned to this screen.</p>
         </details>
@@ -307,6 +308,12 @@
   <label id="viewer-zoom-label" for="viewer-zoom">Zoom</label><input id="viewer-zoom" type="range" min="1" max="3" step="0.25" value="1">
   <div class="row" id="viewer-tools"><button id="viewer-compare" class="secondary hide" type="button">Compare with input</button><button id="viewer-favorite" class="ghost hide" type="button" aria-pressed="false">☆ Favorite</button><div id="viewer-actions"></div></div>
   <details id="photo-details"><summary>Photo details</summary><dl id="photo-metadata"></dl><div id="photo-text"></div></details>
+  <details id="vision-review" class="hide"><summary>AI image review</summary>
+    <p class="status" id="vision-note"></p>
+    <button id="vision-start" class="secondary" type="button">Review this image</button>
+    <p class="status" id="vision-status" role="status" aria-live="polite"></p>
+    <div id="vision-results"></div>
+  </details>
   <button id="viewer-job" class="ghost" type="button">Open job details / run again</button>
 </dialog>
 <script src="/mobile-tools.js" defer></script>

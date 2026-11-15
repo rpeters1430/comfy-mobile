@@ -101,3 +101,45 @@ class ProviderSetupTests(unittest.TestCase):
             response=self.client.put('/api/adviser/config',headers=AUTH,json={'provider':'openai','base_url':'https://provider.example/v1','model':'chosen','api_key':'bad'})
         self.assertEqual(400,response.status_code)
         self.assertIsNone(self.adviser.store.get('config','ai'))
+
+
+class VisionReviewApiTests(unittest.TestCase):
+    ID='12345678-1234-1234-1234-123456789abc'
+
+    def setUp(self):
+        from app.adviser_ai import AIConfig
+        from dataclasses import asdict
+        self.tmp=tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.adviser=Adviser(Path(self.tmp.name))
+        self.adviser.store.put('config','ai',asdict(AIConfig('ollama','text','http://pc:11434','','vl')),ttl=600)
+        outputs={'status':'success','completed':True,'outputs':[{'node':'9','kind':'image','filename':'a.png','subfolder':'','type':'output','preview':False},
+                                                               {'node':'6','kind':'text','text':'a red fox'}]}
+        self.patches=[patch.object(main,'TOKEN','adviser-test'),patch.object(main,'adviser',self.adviser),
+                      patch.object(main,'outputs_for',AsyncMock(return_value=outputs)),
+                      patch.object(main,'bounded_get',AsyncMock(return_value=b'\xff\xd8\xff')),
+                      patch.object(main,'_vision_cache',{})]
+        for p in self.patches:p.start()
+        self.client=TestClient(main.app)
+
+    def tearDown(self):
+        for p in reversed(self.patches):p.stop()
+        self.tmp.cleanup()
+
+    def test_reviews_only_this_jobs_images_with_their_prompt(self):
+        report={'summary':'Fox','prompt_match':'good','issues':[],'prompt_additions':'','negative_additions':''}
+        with patch('app.adviser_ai.AI.review_image',AsyncMock(return_value=report)) as review:
+            r=self.client.post(f'/api/jobs/{self.ID}/vision-review',headers=AUTH,json={'filename':'a.png'})
+            self.assertEqual(200,r.status_code,r.text)
+            self.assertEqual(('ollama','vl'),(r.json()['provider'],r.json()['model']))
+            self.assertEqual('a red fox',review.await_args.args[1])
+            self.assertEqual(404,self.client.post(f'/api/jobs/{self.ID}/vision-review',headers=AUTH,json={'filename':'../secret.png'}).status_code)
+            self.client.post(f'/api/jobs/{self.ID}/vision-review',headers=AUTH,json={'filename':'a.png'})
+            self.assertEqual(1,review.await_count)
+        self.assertEqual(401,self.client.post(f'/api/jobs/{self.ID}/vision-review',json={'filename':'a.png'}).status_code)
+
+    def test_needs_a_vision_model(self):
+        from app.adviser_ai import AIConfig
+        from dataclasses import asdict
+        self.adviser.store.put('config','ai',asdict(AIConfig('ollama','text','http://pc:11434')),ttl=600)
+        self.assertEqual(400,self.client.post(f'/api/jobs/{self.ID}/vision-review',headers=AUTH,json={'filename':'a.png'}).status_code)
+        self.assertFalse(self.client.get('/api/adviser/status',headers=AUTH).json()['vision_configured'])

@@ -2773,6 +2773,46 @@ function drawPhotoDetails(resolution) {
   $('photo-metadata').replaceChildren(...MobileTools.photoDetails(job, items[index], resolution)
     .map(([label, value]) => el('div', { class: 'photo-meta-row' }, el('dt', {}, label), el('dd', {}, value))));
 }
+// Optional: send the shown image and its prompt to the vision model chosen in AI connection setup.
+async function setupVisionReview(state, item) {
+  const box = $('vision-review');
+  box.classList.add('hide'); box.open = false;
+  $('vision-results').replaceChildren(); $('vision-status').textContent = '';
+  if (item.kind !== 'image' || !state.job?.id) return;
+  let config;
+  try { config = await api('/adviser/status'); } catch (_) { return; }
+  if (viewerState !== state || state.items[state.index] !== item || !config.vision_configured) return;
+  $('vision-note').textContent = `Sends this image, its prompt and settings to ${config.provider} / ${config.vision_model}` +
+    (config.hosted ? ', a hosted service.' : ' on your own PC.');
+  box.classList.remove('hide');
+  const start = $('vision-start');
+  start.disabled = false;
+  start.onclick = async () => {
+    start.disabled = true;
+    $('vision-status').textContent = 'Reviewing… a vision model can take a minute to load.';
+    try {
+      const r = await api(`/jobs/${state.job.id}/vision-review`, { method: 'POST',
+        json: { filename: item.filename, subfolder: item.subfolder || '', type: item.type || 'output' } });
+      if (viewerState !== state || state.items[state.index] !== item) return;
+      const copy = (label, text) => {
+        const b = el('button', { class: 'ghost', type: 'button', style: 'padding:4px 10px;font-size:12px' }, '📋 ' + label);
+        b.onclick = async () => { await navigator.clipboard.writeText(text); showToast('Copied'); };
+        return b;
+      };
+      const match = { good: 'Matches the prompt', partial: 'Partly matches the prompt', poor: 'Does not match the prompt' }[r.prompt_match];
+      $('vision-results').replaceChildren(
+        el('p', {}, el('strong', {}, match), ` · ${r.provider} / ${r.model}`),
+        el('p', { style: 'white-space:pre-wrap' }, r.summary),
+        ...(r.issues.length ? [el('ul', {}, ...r.issues.map(i => el('li', {}, i.problem, el('br'), el('span', { class: 'status' }, 'Fix: ' + i.fix))))] : []),
+        ...(r.prompt_additions ? [el('div', { class: 'caption' }, 'Add to prompt: ' + r.prompt_additions, el('div', { class: 'caption-actions' }, copy('Copy', r.prompt_additions)))] : []),
+        ...(r.negative_additions ? [el('div', { class: 'caption' }, 'Add to negative: ' + r.negative_additions, el('div', { class: 'caption-actions' }, copy('Copy', r.negative_additions)))] : []),
+        el('p', { class: 'status' }, 'AI opinion of this one image; use “Open job details / run again” to try the fixes.'));
+      $('vision-status').textContent = '';
+    } catch (e) {
+      if (viewerState === state) $('vision-status').textContent = e.message;
+    } finally { start.disabled = false; }
+  };
+}
 function beginViewer(job) {
   viewerController?.abort();
   clearViewerMedia();
@@ -2782,6 +2822,7 @@ function beginViewer(job) {
   $('viewer-status').textContent = 'Loading full-size output…';
   $('viewer-actions').replaceChildren(); $('photo-text').replaceChildren();
   $('photo-details').open = false;
+  $('vision-review').classList.add('hide');
   $('viewer-paging').classList.add('hide');
   $('viewer-before').classList.add('hide');
   $('viewer-after-wrap').classList.remove('hide'); $('viewer-video').classList.add('hide');
@@ -2815,6 +2856,7 @@ function showViewerItem(index) {
   $('viewer-scroll').scrollTo(0, 0);
   $('viewer-actions').replaceChildren(resultActions(item));
   drawPhotoDetails(video ? 'See video playback' : undefined);
+  setupVisionReview(state, item);
   if (video) {
     $('viewer-video').src = item.url;
     $('viewer-video').onloadedmetadata = () => {

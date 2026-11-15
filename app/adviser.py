@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import time
+from dataclasses import asdict, replace
 
 if __package__:
     from .research import Research, candidates, settings_excerpt, verify_facts, VARIANT
@@ -251,7 +252,13 @@ class Adviser:
 
     def public_config(self):
         cfg=self.config()
-        return {'provider':cfg.provider,'model':cfg.model,'base_url':cfg.base_url,'has_key':bool(cfg.api_key)}
+        return {'provider':cfg.provider,'model':cfg.model,'base_url':cfg.base_url,'has_key':bool(cfg.api_key),'vision_model':cfg.vision_model}
+
+    def vision(self):
+        """The configured provider with its vision model in place of the settings model."""
+        cfg=self.config()
+        if not cfg.vision_model: raise AIError('Choose a vision model in AI connection setup')
+        return AI(replace(cfg,model=cfg.vision_model))
 
     def proposed_config(self,values):
         old=self.config()
@@ -259,10 +266,9 @@ class Adviser:
         key=values.get('api_key','').strip()
         if not key and old.provider==values['provider'] and old.base_url.rstrip('/')==base.rstrip('/'):
             key=old.api_key
-        return AIConfig(values['provider'],values.get('model','').strip(),base,key)
+        return AIConfig(values['provider'],values.get('model','').strip(),base,key,values.get('vision_model','').strip())
 
     def save_config(self,cfg):
-        from dataclasses import asdict
         self.store.put('config','ai',asdict(cfg),ttl=10*365*86400)
         os.chmod(self.store.path,0o600)
 
@@ -270,6 +276,8 @@ class Adviser:
         cfg=self.config()
         return {'provider':cfg.provider,'model':cfg.model,'ai_configured':not bool(cfg.problem()),
                 'search_configured':bool(os.getenv('SEARXNG_URL','')),
+                'vision_model':cfg.vision_model,
+                'vision_configured':bool(cfg.vision_model) and not replace(cfg,model=cfg.vision_model).problem(),
                 'problem':cfg.problem(), 'hosted':cfg.provider not in LOCAL_PROVIDERS}
 
     def get(self,key,owner):

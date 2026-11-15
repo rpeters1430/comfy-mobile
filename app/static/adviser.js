@@ -29,19 +29,20 @@
       const field = id => document.getElementById(id);
       const connectionStatus = field('ai-connection-status');
       const values = () => ({ provider: field('ai-provider').value, base_url: field('ai-base').value.trim(),
-        model: field('ai-model').value.trim(), api_key: field('ai-key').value });
+        model: field('ai-model').value.trim(), api_key: field('ai-key').value, vision_model: field('ai-vision-model').value.trim() });
       setup.ontoggle = async () => {
         if (!setup.open || setupLoaded) return;
         try {
           const c = await api('/adviser/config');
           field('ai-provider').value = c.provider; field('ai-base').value = c.base_url; field('ai-model').value = c.model;
+          field('ai-vision-model').value = c.vision_model || '';
           field('ai-key').placeholder = c.has_key ? 'Saved on NAS; leave blank to keep it' : 'Not needed for local Ollama; optional for Lemonade';
           setupLoaded = true;
         } catch (e) { connectionStatus.textContent = e.message; }
       };
       field('ai-provider').onchange = () => {
         const defaults = { openai: 'https://api.openai.com/v1', gemini: 'https://generativelanguage.googleapis.com/v1beta/openai', openrouter: 'https://openrouter.ai/api/v1' };
-        field('ai-base').value = defaults[field('ai-provider').value] || ''; field('ai-key').value = ''; field('ai-model').value = '';
+        field('ai-base').value = defaults[field('ai-provider').value] || ''; field('ai-key').value = ''; field('ai-model').value = ''; field('ai-vision-model').value = '';
         connectionStatus.textContent = 'Choose the model, then test this connection.';
       };
       field('ai-load-models').onclick = async () => {
@@ -58,7 +59,7 @@
         try {
           const r = await api('/adviser/config', { method: 'PUT', json: values() });
           field('ai-key').value = ''; field('ai-key').placeholder = r.has_key ? 'Saved on NAS; leave blank to keep it' : 'Not needed for local Ollama; optional for Lemonade';
-          connectionStatus.textContent = `Connected and saved: ${r.provider} / ${r.model}. Ready for AI review.`;
+          connectionStatus.textContent = `Connected and saved: ${r.provider} / ${r.model}${r.vision_model ? ` (images: ${r.vision_model})` : ''}. Ready for AI review.`;
         } catch (e) { connectionStatus.textContent = 'Connection not saved: ' + e.message; } finally { b.disabled = false; }
       };
     }

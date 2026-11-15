@@ -96,3 +96,27 @@ class LoraSemanticTests(unittest.IsolatedAsyncioTestCase):
             await ai.rank_loras('x' * 3001, [{'label': 'x'}])
         with self.assertRaises(AIError):
             await ai.rank_loras('caption', [{'label': 'x'}] * 41)
+
+
+REVIEW = '{"summary":"A fox","prompt_match":"good","issues":[{"problem":"Blurry paw","fix":"Add a detail pass"}],"prompt_additions":"","negative_additions":"blurry"}'
+
+
+class ImageReviewTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ollama_and_hosted_requests_carry_the_image(self):
+        def ollama(req):
+            body = json.loads(req.content)
+            self.assertEqual(['/9j/'], [i[:4] for i in body['messages'][-1]['images']])
+            self.assertEqual(16384, body['options']['num_ctx'])
+            self.assertIn('a fox', body['messages'][-1]['content'])
+            return httpx.Response(200, json={'done': True, 'message': {'content': REVIEW}})
+        ai = AI(AIConfig('ollama', 'vl', 'http://pc:11434'), transport=httpx.MockTransport(ollama))
+        result = await ai.review_image(b'\xff\xd8\xff', 'a fox', {})
+        self.assertEqual('good', result['prompt_match']); self.assertEqual('blurry', result['negative_additions'])
+
+        def hosted(req):
+            content = json.loads(req.content)['messages'][-1]['content']
+            self.assertEqual(['text', 'image_url'], [c['type'] for c in content])
+            self.assertTrue(content[1]['image_url']['url'].startswith('data:image/jpeg;base64,'))
+            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': REVIEW}}]})
+        ai = AI(AIConfig('openai', 'vl', 'https://provider.example/v1', 'key'), transport=httpx.MockTransport(hosted))
+        self.assertEqual(1, len((await ai.review_image(b'\xff\xd8\xff', 'a fox', {}))['issues']))

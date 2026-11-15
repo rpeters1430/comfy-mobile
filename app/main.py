@@ -810,6 +810,7 @@ class AIConnection(BaseModel):
     model: str = Field(default='',max_length=300)
     base_url: str = Field(default='',max_length=1000)
     api_key: str = Field(default='',max_length=4000)
+    vision_model: str = Field(default='',max_length=300)
 
 @app.get('/api/adviser/config')
 def adviser_config(authorization: str | None = Header(default=None)):
@@ -896,6 +897,50 @@ async def apply_adviser_review(review_id: str, body: ApplySettingsRequest, autho
     audit={'review_id':review_id,'applied_at':time.time(),'changes':chosen}
     adviser.store.put('approval',token,{'owner':adviser_owner(),'hashes':hashes,'seeds':row['seeds'],'intents':intents,'audit':audit},ttl=max(1,row.get('expires',time.time()+600)-time.time()))
     return {'sampling':values['sampling'],'size':values.get('size'),'loras':values['loras'],'token':token,'seeds':row['seeds'],'review_id':review_id,'expires':row.get('expires',time.time()+600)}
+
+class VisionReviewRequest(BaseModel):
+    filename: str = Field(max_length=300)
+    subfolder: str = Field(default='', max_length=300)
+    type: str = Field(default='output', max_length=20)
+
+VISION_MAX_IMAGE = 12_000_000
+_vision_cache = {}
+
+def vision_prompt(stored, outputs):
+    """The text the image was rendered from: the typed or reviewed prompt, trigger words and any caption the job printed."""
+    params = stored.get('params') or {}
+    review = params.get('review') or {}
+    parts = [review.get('positive') or params.get('prompt') or stored.get('prompt') or '', params.get('caption_suffix') or '',
+             *(o['text'] for o in outputs if o['kind'] == 'text' and o['node'] != 'mobile_characters')]
+    negative = review.get('negative') or params.get('negative_prompt') or ''
+    text = '\n'.join(dict.fromkeys(p.strip(' ,\n') for p in parts if isinstance(p, str) and p.strip(' ,\n')))
+    return text + ('\nNegative prompt: ' + negative.strip() if isinstance(negative, str) and negative.strip() else '')
+
+@app.post('/api/jobs/{prompt_id}/vision-review')
+async def vision_review(prompt_id: str, body: VisionReviewRequest, authorization: str | None = Header(default=None)):
+    '''Explicit opt-in: one finished image of this job, its prompt and settings go to the configured vision model.'''
+    auth(authorization)
+    if not re.fullmatch(r'[0-9a-fA-F-]{36}',prompt_id): raise HTTPException(400,'Invalid job id')
+    try: ai=adviser.vision()
+    except AIError as exc: raise HTTPException(400,str(exc)) from exc
+    summary=await outputs_for(prompt_id)
+    # Only a file this job produced; never an arbitrary path on the ComfyUI PC.
+    if not any(o['kind']=='image' and (o['filename'],o['subfolder'],o['type'])==(body.filename,body.subfolder,body.type) for o in summary['outputs']):
+        raise HTTPException(404,'Image not found in this job')
+    key=(prompt_id,body.filename,body.subfolder,body.type,ai.config.provider,ai.config.base_url,ai.config.model)
+    if key in _vision_cache: return _vision_cache[key]
+    try:
+        image=await bounded_get(_http_client,f'{COMFY}/view',VISION_MAX_IMAGE,timeout=httpx.Timeout(60.0,connect=4.0),
+                                params={'filename':body.filename,'subfolder':body.subfolder,'type':body.type,'preview':'jpeg;90'})
+    except (httpx.HTTPError,ValueError) as exc:
+        raise HTTPException(502,'ComfyUI could not serve the image') from exc
+    stored=job_store.get(prompt_id) or {}
+    try: report=await ai.review_image(image,vision_prompt(stored,summary['outputs']),stored.get('details') or {})
+    except AIError as exc: raise HTTPException(503,'Image review failed: '+str(exc)) from exc
+    result={**report,'provider':ai.config.provider,'model':ai.config.model}
+    _vision_cache[key]=result
+    while len(_vision_cache)>64: del _vision_cache[next(iter(_vision_cache))]
+    return result
 
 @app.post('/api/uploads')
 async def upload(req: Request, authorization: str | None = Header(default=None)):
