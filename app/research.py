@@ -125,7 +125,7 @@ def verify_facts(facts,sources,filename):
             if not value or norm_opt(value) not in norm_opt(q) or not re.search(r'sampl|schedul',q,re.I):
                 reason='Named option is not supported by the quote'
         elif fact.get('field')=='resolution':
-            if not re.fullmatch(r'\d{3,4}x\d{3,4}',fact.get('value','')) or fact['value'] not in q.replace('×','x').replace(' ',''):
+            if not re.fullmatch(r'\d{3,4}x\d{3,4}',fact.get('value','')) or fact['value'] not in q.replace('×','x').replace('*','x').replace(' ',''):
                 reason='Resolution is not a quoted pair'
         else:
             reason='Unsupported setting'

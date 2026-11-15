@@ -100,7 +100,9 @@
         check.checked = true; selections.push([proposal.id, check]);
         const section = el('div', { class: 'panel' }, el('label', {}, check, proposal.label));
         for (const c of proposal.changes) section.append(el('p', {}, `${JSON.stringify(c.current)} → ${JSON.stringify(c.value)}`));
-        section.append(el('p', { class: 'status' }, proposal.basis === 'ai' ? 'AI suggestion — not an author-published recommendation. Compare results before saving a preset.' : 'Supported by published source evidence.'));
+        section.append(el('p', { class: 'status' }, proposal.basis === 'ai' ? 'AI suggestion — not an author-published recommendation. Compare results before saving a preset.'
+          : proposal.evidence.every(e => e.source === 'loramanager') ? "From the creator's Civitai description, saved in your LoRA Manager."
+          : 'Supported by published source evidence.'));
         section.append(el('p', {}, proposal.reason));
         for (const e of proposal.evidence) section.append(el('blockquote', {}, e.quote));
         box.append(section);

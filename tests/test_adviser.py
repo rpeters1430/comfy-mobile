@@ -155,3 +155,45 @@ class ReachableAIControlsTests(unittest.TestCase):
         context=workflow_context(g,c)
         self.assertEqual([],context['capabilities'])
         self.assertEqual(['4'],[s['node'] for s in context['samplers']])
+
+
+class LoraManagerAdviserTests(unittest.IsolatedAsyncioTestCase):
+    def graph(self):
+        import copy
+        g=copy.deepcopy(GRAPH)
+        g['8']={'class_type':'Lora Loader (LoraManager)','inputs':{'model':['1',0],'loras':{'__value__':[{'name':'detail','strength':2.0,'active':True}]}}}
+        g['9']={'class_type':'PerturbedAttentionGuidance','inputs':{'model':['8',0],'scale':2.5}}
+        g['2']['inputs']['model']=['9',0]
+        return g
+
+    def controls(self):
+        return {**CONTROLS,'loras':[{'node':'8@0','value':'SDXL/detail.safetensors','strength':2.0}]}
+
+    def test_patched_lora_manager_chain_is_editable_with_lora_strengths(self):
+        from app.adviser import workflow_context,ai_proposals
+        library={'Example_v1.safetensors':{'base_model':'SDXL 1.0','description':'Recommended: Steps: 30-40','strength_tip':None}}
+        context=workflow_context(self.graph(),self.controls(),library)
+        self.assertEqual(['detail'],context['loras'])
+        self.assertEqual({('2','steps'),('2','cfg'),('2','sampler_name'),('2','scheduler'),('8@0','strength')},{(c['node'],c['field']) for c in context['capabilities']})
+        self.assertEqual([{'class':'PerturbedAttentionGuidance','scale':2.5}],context['samplers'][0]['model_patches'])
+        self.assertEqual([{'file':'detail','strength':2.0}],context['samplers'][0]['loras'])
+        self.assertIn('Steps: 30-40',context['library']['Example_v1.safetensors']['creator_notes'])
+        result=ai_proposals(context,{'summary':'s','changes':[{'node':'8@0','field':'strength','value':'1.25','reason':'Too strong'},
+                                                            {'node':'8@0','field':'strength','value':'3','reason':'Out of range'}]})
+        self.assertEqual([{'node':'8@0','field':'strength','current':2.0,'value':1.25,'lora':'SDXL/detail.safetensors'}],[c for p in result for c in p['changes']])
+
+    async def test_library_description_is_local_published_evidence(self):
+        from unittest.mock import AsyncMock
+        from app.adviser import Adviser
+        ai=AsyncMock(); ai.extract.return_value=[{'field':'sampler_name','low':None,'high':None,'value':'DPM++ 2M','source_id':'lm1','quote':'Sampler: DPM++ 2M'},
+                                                  {'field':'resolution','low':None,'high':None,'value':'832x1216','source_id':'lm1','quote':'Res: 832*1216'}]
+        card=await Adviser._library_card(ai,{'file':'Example_v1.safetensors','kind':'model'},
+                                         {'name':'Example v1','url':'https://civitai.com/models/1','description':'**Res: 832\\*1216**\n\nSampler: DPM++ 2M\n\nSteps: 20-25 CFG: 3-6'})
+        self.assertEqual({'steps','cfg','sampler_name','resolution'},{f['field'] for f in card['facts']})
+        self.assertTrue(all(f['source']=='loramanager' for f in card['facts']))
+        proposals,_=propose(GRAPH,CONTROLS,[card])
+        self.assertEqual({('steps',25),('cfg',6.0),('sampler_name','dpmpp_2m')},{(c['field'],c['value']) for p in proposals for c in p['changes']})
+
+    def test_duplicate_numeric_evidence_is_not_a_conflict(self):
+        cards=[{'file':'Example_v1.safetensors','facts':[FACT,{**FACT,'value':'20-25'}]}]
+        self.assertEqual(25,propose(GRAPH,CONTROLS,cards)[0][0]['changes'][0]['value'])

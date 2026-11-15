@@ -4,17 +4,15 @@ import re
 
 if __package__:
     from app import node_settings
-    from app.settings_check import LABELS, family
+    from app.settings_check import LABELS, LORA_TAG, family, widget_loras
     from app.workflow_conversion import _enum_options
 else:  # flat imports inside the Docker image
     import node_settings
-    from settings_check import LABELS, family
+    from settings_check import LABELS, LORA_TAG, family, widget_loras
     from workflow_conversion import _enum_options
 
 MODEL_FIELDS = {"CheckpointLoaderSimple": "ckpt_name", "UNETLoader": "unet_name"}
 LORA_LOADERS = ("LoraLoader", "LoraLoaderModelOnly")
-# LoRA Manager's text loader reads `<lora:name:strength>` (or `<lora:name:model:clip>`) from a string primitive.
-LORA_TAG = re.compile(r"<lora:([^:<>]+):(-?\d+(?:\.\d+)?)(?::(-?\d+(?:\.\d+)?))?>", re.I)
 STRING_PRIMITIVES = ("PrimitiveString", "PrimitiveStringMultiline")
 MAX_EXTRA_LORAS = 4
 MAX_STRENGTH = 5.0
@@ -100,6 +98,34 @@ def _syntax_loras(graph, lora_options):
     return found
 
 
+def _widget_loras(graph, lora_options):
+    """Each active entry of a LoRA Manager loader's LoRA list that names exactly one installed LoRA, as a LoRA picker."""
+    by_stem = {}
+    for option in lora_options:
+        by_stem.setdefault(_stem(option), []).append(option)
+    found = []
+    for node_id, node in graph.items():
+        if "LoraManager" not in node["class_type"]:
+            continue
+        for index, entry in widget_loras(node["inputs"]):
+            matches = by_stem.get(_stem(entry["name"]), [])
+            if len(matches) == 1:
+                found.append({"node": f"{node_id}@{index}", "value": matches[0], "strength": float(entry["strength"]),
+                              "widget": {"node": node_id, "index": index}})
+    return found
+
+
+def _apply_widget_lora(graph, control, choice):
+    """LoRA Manager names a LoRA by file stem; strength 0 turns the entry off, as the node's own toggle does."""
+    value = graph[control["widget"]["node"]]["inputs"]["loras"]
+    entry = (value["__value__"] if isinstance(value, dict) else value)[control["widget"]["index"]]
+    strength = _strength(choice["strength"])
+    if entry.get("clipStrength", entry["strength"]) == entry["strength"]:
+        entry["clipStrength"] = strength
+    entry["name"] = re.sub(r"\.(safetensors|ckpt|pt|pth|bin)$", "", re.split(r"[\\/]", choice["name"])[-1], flags=re.I)
+    entry["strength"], entry["active"] = strength, strength != 0
+
+
 def _apply_syntax_loras(graph, by_lora, changes):
     """Rewrite the tags the phone changed; strength 0 removes the tag, as a LoRA turned off."""
     per_source = {}
@@ -133,6 +159,8 @@ def _owned(found, graph):
     for lora in found["loras"]:
         if "syntax" in lora:
             owned.add((lora["syntax"]["node"], "value"))
+        elif "widget" in lora:
+            owned.add((lora["widget"]["node"], "loras"))
         else:
             owned |= {(lora["node"], f) for f in ("lora_name", "strength_model", "strength_clip")}
     for smp in found["samplers"]:
@@ -418,7 +446,7 @@ def find_controls(graph: dict, object_info: dict) -> dict:
     latents = _latents(graph)
     size, from_photo = _base_size(graph, latents[0]) if latents else (None, False)
     lora_options = _options(object_info, "LoraLoaderModelOnly", "lora_name") or _options(object_info, "LoraLoader", "lora_name")
-    loras += _syntax_loras(graph, lora_options)
+    loras += _syntax_loras(graph, lora_options) + _widget_loras(graph, lora_options)
     # Same family rules as the settings check, so the phone's grouping and its warnings agree.
     names = {name for m in models for name in m["options"]} | set(lora_options)
     families = {name: LABELS[fam] for name in names if (fam := family(name))}
@@ -615,6 +643,9 @@ def apply_controls(graph: dict, object_info: dict, models: dict, loras: dict, ex
             raise ControlError(f"LoRA not found in ComfyUI: {choice['name']}")
         if "syntax" in by_lora[node_id]:
             syntax[node_id] = choice
+            continue
+        if "widget" in by_lora[node_id]:
+            _apply_widget_lora(graph, by_lora[node_id], choice)
             continue
         inputs = graph[node_id]["inputs"]
         strength = _strength(choice["strength"])

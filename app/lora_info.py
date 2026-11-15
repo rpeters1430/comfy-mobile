@@ -140,6 +140,29 @@ def match_manager(names, items):
                            for item in items if isinstance(item, dict)))
 
 
+def manager_item(name, items):
+    """The LoRA Manager record for a ComfyUI model name (path under its model folder) or a LoRA Manager file stem."""
+    items = [i for i in items if isinstance(i, dict) and isinstance(i.get('file_path'), str)]
+    key = re.sub(r'[\\/]+', '/', name.lower())
+    by_path = [i for i in items if re.sub(r'[\\/]+', '/', i['file_path'].lower()).endswith('/' + key)]
+    if len(by_path) == 1:
+        return by_path[0]
+    stem = re.sub(r'\.(safetensors|ckpt|pt|pth|bin|gguf)$', '', key.rsplit('/', 1)[-1])
+    # Hard-linked copies are one file: keyed by hash.
+    same = {i.get('sha256') or i['file_path']: i for i in items if str(i.get('file_name', '')).lower() == stem}
+    return next(iter(same.values())) if len(same) == 1 else None
+
+
+def library_entry(item):
+    """What the adviser may tell the AI about one LoRA Manager record; the description is fetched separately."""
+    civitai = item.get('civitai') if isinstance(item.get('civitai'), dict) else {}
+    model_id, version_id = civitai.get('modelId'), civitai.get('id')
+    source = item.get('source_url') if str(item.get('source_url') or '').startswith('https://') else None
+    url = f'https://civitai.com/models/{model_id}?modelVersionId={version_id}' if isinstance(model_id, int) and isinstance(version_id, int) else source
+    return {'name': ' '.join(str(v) for v in (item.get('model_name'), civitai.get('name')) if v), 'base_model': item.get('base_model') or None,
+            'strength_tip': (_manager_entry(item) or {}).get('weight'), 'url': url}
+
+
 def merge(preferred, fallback):
     """Fields LoRA Manager has win; ModelHarbor fills the rest."""
     if not preferred or not fallback:

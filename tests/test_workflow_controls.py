@@ -304,3 +304,27 @@ class DetailerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LoraManagerWidgetTests(unittest.TestCase):
+    def graph(self):
+        return {
+            "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "SDXL\\a.safetensors"}},
+            "8": {"class_type": "Lora Loader (LoraManager)", "inputs": {"model": ["1", 0], "clip": ["1", 1], "text": "", "loras": {"__value__": [
+                {"name": "detail", "strength": 0.6, "clipStrength": 0.6, "active": True},
+                {"name": "faces", "strength": 0.5, "active": False},
+                {"name": "unknown", "strength": 1.0, "active": True}]}}},
+            "4": {"class_type": "KSampler", "inputs": {"model": ["8", 0]}},
+        }
+
+    def test_active_installed_entries_are_lora_pickers(self):
+        found = find_controls(self.graph(), INFO)
+        self.assertEqual([("8@0", LORAS[1], 0.6)], [(l["node"], l["value"], l["strength"]) for l in found["loras"]])
+
+    def test_changes_rename_restrength_and_turn_off_entries(self):
+        g = self.graph()
+        apply_controls(g, INFO, {}, {"8@0": {"name": LORAS[2], "strength": 0.9}}, [])
+        self.assertEqual({"name": "style", "strength": 0.9, "clipStrength": 0.9, "active": True}, g["8"]["inputs"]["loras"]["__value__"][0])
+        g = self.graph()
+        apply_controls(g, INFO, {}, {"8@0": {"name": LORAS[1], "strength": 0}}, [])
+        self.assertFalse(g["8"]["inputs"]["loras"]["__value__"][0]["active"])

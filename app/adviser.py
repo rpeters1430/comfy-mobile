@@ -5,17 +5,20 @@ import math
 import hashlib
 import json
 import os
+import re
 import secrets
 import time
 
 if __package__:
-    from .research import Research, candidates, verify_facts, VARIANT
+    from .research import Research, candidates, settings_excerpt, verify_facts, VARIANT
     from .adviser_ai import AI, AIError, AIConfig, DEFAULT_URLS, LOCAL_PROVIDERS
     from .adviser_store import Store
+    from .settings_check import _chain, manager_loras
 else:
-    from research import Research, candidates, verify_facts, VARIANT
+    from research import Research, candidates, settings_excerpt, verify_facts, VARIANT
     from adviser_ai import AI, AIError, AIConfig, DEFAULT_URLS, LOCAL_PROVIDERS
     from adviser_store import Store
+    from settings_check import _chain, manager_loras
 
 
 def fingerprint(graph,controls,source_hash):
@@ -34,25 +37,34 @@ def reachable(graph):
 
 
 def targets(graph):
-    seen=set(); found=[]
-    for node in reachable(graph).values():
+    seen=set(); found=[]; graph=reachable(graph)
+    for node in graph.values():
         inputs=node['inputs']
         for field,kind in (('ckpt_name','model'),('unet_name','model'),('lora_name','lora')):
             name=inputs.get(field)
             if not isinstance(name,str) or name.lower() in ('','none') or name in seen: continue
             if kind=='lora' and inputs.get('strength_model',1)==0 and inputs.get('strength_clip',0)==0: continue
             seen.add(name); found.append({'file':name,'kind':kind})
+    for node_id,node in graph.items():
+        if 'LoraManager' in node['class_type']:
+            for name,_ in manager_loras(graph,node_id):
+                if name not in seen: seen.add(name); found.append({'file':name,'kind':'lora'})
     return sorted(found,key=lambda x:x['kind']=='lora')
 
 
+# Model patches that leave the sampler's steps/CFG/sampler meaning intact; the AI is told which ones are applied.
+PATCHES=('LoraLoader','LoraLoaderModelOnly','Lora Loader (LoraManager)','LoRA Text Loader (LoraManager)',
+         'PerturbedAttentionGuidance','SelfAttentionGuidance','FreeU','FreeU_V2','RescaleCFG')
+
+
 def _base_chain(graph,node_id):
-    """Accept only model loaders, known sampling wrappers, and LoRA chains."""
+    """Accept only model loaders, known sampling wrappers, LoRA chains and plain model patches."""
     seen=set(); current=node_id
     while current not in seen and current in graph:
         seen.add(current); n=graph[current]; c=n['class_type']
         if c in ('CheckpointLoaderSimple','UNETLoader'): return True
-        if c not in ('KSampler','KSamplerAdvanced','CFGGuider','BasicGuider','BasicScheduler','LoraLoader','LoraLoaderModelOnly',
-                     'ModelSamplingSD3','ModelSamplingFlux','ModelSamplingDiscrete'):
+        if c not in ('KSampler','KSamplerAdvanced','CFGGuider','BasicGuider','BasicScheduler',
+                     'ModelSamplingSD3','ModelSamplingFlux','ModelSamplingDiscrete')+PATCHES:
             return False
         link=n['inputs'].get('model')
         if not isinstance(link,list) or len(link)!=2: return False
@@ -105,7 +117,7 @@ def propose(graph,controls,cards):
         for field,current in cap['values'].items():
             if field not in ('steps','cfg','sampler_name','scheduler'): continue
             eligible=[f for f in facts if f['field']==field]
-            unique={(f.get('low'),f.get('high'),f.get('value','')) for f in eligible}
+            unique={(f.get('low'),f.get('high')) if field in ('steps','cfg') else f.get('value','') for f in eligible}
             if len(unique)!=1:
                 if unique: notes.append(f'Conflicting {field} evidence; no change proposed.')
                 continue
@@ -135,8 +147,25 @@ def propose(graph,controls,cards):
     return result,notes
 
 
-def workflow_context(graph,controls):
-    graph=reachable(graph)
+def _patches(graph,node_id):
+    """Model patches (class and plain settings) between a sampler and its model loader."""
+    found=[]; seen=set(); link=graph[node_id]['inputs'].get('model')
+    while isinstance(link,list) and link[0] in graph and link[0] not in seen:
+        seen.add(link[0]); n=graph[link[0]]
+        if n['class_type'] in PATCHES and 'Lora' not in n['class_type']:
+            found.append({'class':n['class_type'],**{k:v for k,v in n['inputs'].items() if isinstance(v,(int,float,str)) and not isinstance(v,bool)}})
+        link=n['inputs'].get('model')
+    return found
+
+
+def _library(entry):
+    """Bounded LoRA Manager facts for one file; the creator text is untrusted third-party data."""
+    return {k:entry[k] for k in ('base_model','strength_tip') if entry.get(k) is not None} | (
+        {'creator_notes':settings_excerpt(entry['description'])[:1500]} if entry.get('description') else {})
+
+
+def workflow_context(graph,controls,library=None):
+    graph=reachable(graph); library=library or {}
     controls={**controls,'samplers':[c for c in controls['samplers'] if c['node'] in graph]}
     active=targets(graph)
     models=[t['file'] for t in active if t['kind']=='model']
@@ -144,15 +173,34 @@ def workflow_context(graph,controls):
     other_base=[c for c in controls['samplers'] if c['role']=='base' and graph.get(c['node'],{}).get('class_type') in ('KSamplerAdvanced','SamplerCustom','SamplerCustomAdvanced')]
     allowed=[]
     complex_pass=any(n['class_type'] in ('KSamplerAdvanced','SamplerCustom','SamplerCustomAdvanced') for n in reachable(graph).values())
-    if len(models)==1 and len(base)==1 and not other_base and not complex_pass and _base_chain(graph,base[0]['node']) and not any(t['kind']=='lora' and VARIANT.search(t['file']) for t in active):
+    speed=any(t['kind']=='lora' and VARIANT.search(t['file']) for t in active)
+    if len(models)==1 and len(base)==1 and not other_base and not complex_pass and _base_chain(graph,base[0]['node']) and not speed:
         for field,current in base[0]['values'].items():
             if field in ('steps','cfg','sampler_name','scheduler'):
                 cap={'node':base[0]['node'],'field':field,'current':current}
                 if field in ('steps','cfg'):cap.update(min=1 if field=='steps' else 0,max=150 if field=='steps' else 30)
                 else:cap['options']=controls.get('sampler_options' if field=='sampler_name' else 'scheduler_options',[])
                 allowed.append(cap)
+    if len(models)==1 and not speed:
+        # LoRA pickers on nodes that still feed an output; `8@0`/`25#0` name an entry inside a LoRA Manager node.
+        for lora in controls.get('loras',[]):
+            if lora['node'].split('@')[0].split('#')[0] in graph and lora['strength']:
+                allowed.append({'node':lora['node'],'field':'strength','lora':lora['value'],'current':lora['strength'],'min':0,'max':2})
+    passes=[]
+    for c in controls['samplers']:
+        node=graph[c['node']]
+        if 'model' in node['inputs']:
+            _,loras=_chain(graph,c['node'])
+            passes.append({'node':c['node'],'role':c['role'],'class':node['class_type'],'values':c['values'],
+                           'loras':[{'file':n,'strength':st} for n,st in loras],'model_patches':_patches(graph,c['node'])})
+        else:
+            passes.append({'node':c['node'],'role':c['role'],'class':node['class_type'],'values':c['values']})
+    detailers=[{'node':d,'class':graph[d]['class_type'],**{k:v for k,v in graph[d]['inputs'].items() if k in ('steps','cfg','denoise','sampler_name','scheduler','guide_size')}}
+               for d in controls.get('detailers') or [] if d in graph]
     return {'models':models,'loras':[t['file'] for t in active if t['kind']=='lora'],
-            'samplers':controls['samplers'],'capabilities':allowed}
+            'samplers':passes,'detailers':detailers,'size':controls.get('size'),
+            'library':{t['file']:_library(library[t['file']]) for t in active if t['file'] in library},
+            'capabilities':allowed}
 
 
 def ai_proposals(context,report):
@@ -162,16 +210,18 @@ def ai_proposals(context,report):
         key=(change['node'],change['field']); cap=capabilities.get(key)
         if not cap or key in seen: continue
         value=change['value'];field=change['field']
-        if field in ('steps','cfg'):
+        if field in ('steps','cfg','strength'):
             try:value=float(value)
             except (ValueError,TypeError):continue
             if not math.isfinite(value) or not cap['min']<=value<=cap['max'] or (field=='steps' and value%1):continue
             if field=='steps':value=int(value)
+            if field=='strength':value=round(value,2)
         elif value not in cap['options']:continue
         if value==cap['current']:continue
         seen.add(key)
-        proposals.append({'id':'ai-'+str(len(proposals)),'basis':'ai','label':f"{field} · node {change['node']} · AI suggestion",
-                          'changes':[{'node':change['node'],'field':field,'current':cap['current'],'value':value}],
+        label=f"LoRA {cap['lora'].replace(chr(92),'/').rsplit('/',1)[-1].rsplit('.',1)[0]} strength" if field=='strength' else f"{field} · node {change['node']}"
+        proposals.append({'id':'ai-'+str(len(proposals)),'basis':'ai','label':label+' · AI suggestion',
+                          'changes':[{'node':change['node'],'field':field,'current':cap['current'],'value':value,**({'lora':cap['lora']} if field=='strength' else {})}],
                           'reason':change['reason'],'evidence':[]})
     return proposals
 
@@ -228,14 +278,14 @@ class Adviser:
         return row
 
     def public(self,row):
-        return {k:v for k,v in row.items() if k not in ('owner','graph','controls','source_hash','hashes')}
+        return {k:v for k,v in row.items() if k not in ('owner','graph','controls','source_hash','hashes','library')}
 
-    def start(self,owner,graph,controls,source_hash,seeds,refresh=False,web_research=False):
+    def start(self,owner,graph,controls,source_hash,seeds,refresh=False,web_research=False,library=None):
         if len(self.tasks)>=3: raise ValueError('Research queue is full; cancel a review or wait')
         key=secrets.token_urlsafe(24)
         row={'id':key,'owner':owner,'status':'queued','created':time.time(),'expires':time.time()+600,
              'graph':graph,'controls':controls,'source_hash':source_hash,'seeds':seeds,
-             'cards':[],'proposals':[],'notes':[],'ai_called':False,'web_research':web_research}
+             'cards':[],'proposals':[],'notes':[],'ai_called':False,'web_research':web_research,'library':library or {}}
         self.store.put('review',key,row)
         self.tasks[key]=asyncio.create_task(self._run(key,owner,refresh))
         self.tasks[key].add_done_callback(lambda task:self.tasks.pop(key,None))
@@ -252,7 +302,7 @@ class Adviser:
                     if ai.config.problem(): raise AIError('AI is not configured: '+ai.config.problem())
                     row['phase']='Calling '+ai.config.provider+' / '+ai.config.model+' to review workflow settings'
                     self.store.put('review',key,row)
-                    context=workflow_context(row['graph'],row['controls'])
+                    context=workflow_context(row['graph'],row['controls'],row['library'])
                     if not context['capabilities']: row['notes'].append('This graph has no safely editable base sampler controls; the AI assessment is informational.')
                     cache_key=(fingerprint(row['graph'],row['controls'],row['source_hash']),ai.config.provider,ai.config.model)
                     report=self.ai_cache.get(cache_key)
@@ -263,6 +313,13 @@ class Adviser:
                     row['ai_provider']=ai.config.provider;row['ai_model']=ai.config.model
                     row['proposals']=ai_proposals(context,report)
                     self.store.put('review',key,row)
+                    for target in targets(row['graph']):
+                        entry=row['library'].get(target['file'])
+                        if target['kind']=='model' and entry and entry.get('description'):
+                            row['phase']='Reading the creator\'s recommended settings from LoRA Manager'
+                            self.store.put('review',key,row)
+                            row['cards'].append(await self._library_card(ai,target,entry))
+                            self.store.put('review',key,row)
                     ts=targets(row['graph']) if row.get('web_research') else []
                     if len(ts)>16: row['notes'].append('Only the first 16 active models are researched.')
                     for i,target in enumerate(ts[:16]):
@@ -295,7 +352,7 @@ class Adviser:
                         row['cards'].append(card)
                         row['phase']=f'Researched {i+1}/{min(len(ts),16)} models'
                         self.store.put('review',key,row)
-                    published,notes=propose(row['graph'],row['controls'],row['cards']) if row.get('web_research') else ([],[])
+                    published,notes=propose(row['graph'],row['controls'],row['cards']) if row['cards'] else ([],[])
                     row['proposals']=merge_proposals(published,row['proposals'])
                     row['notes'].extend(notes); row['status']='done'; self.store.put('review',key,row)
         except asyncio.CancelledError:
@@ -315,6 +372,26 @@ class Adviser:
                 row=self.get(key,owner); row['status']='failed'; row['notes'].append('Research failed; inspect source diagnostics or retry.')
                 self.store.put('review',key,row)
             except (ValueError,OSError): pass
+
+    @staticmethod
+    async def _library_card(ai,target,entry):
+        """Evidence from the Civitai description LoRA Manager matched to this exact file by hash; no web access."""
+        # Markdown escapes (`832\\*1216`) would keep literal quotes from matching.
+        text=re.sub(r'\\([\\`*_{}\[\]()#+\-.!])',r'\1',entry['description'])
+        src={'id':'lm1','url':entry.get('url') or '','text':f"{target['file']}\n{entry.get('name','')}\n{text}",'verified':True,'library':True}
+        src['excerpt']=settings_excerpt(src['text'])
+        facts,rejected=verify_facts([{**f,'source_id':'lm1'} for f in candidates(src['text'])],[src],target['file'])
+        diagnostics=[{'phase':'library','reason':'Creator description from LoRA Manager'}]
+        if src['excerpt']:
+            try:
+                extra,bad=verify_facts(await ai.extract(target,[src]),[src],target['file'])
+                facts.extend(f for f in extra if f not in facts); rejected.extend(bad)
+                diagnostics.append({'phase':'ai','reason':'Structured response validated','accepted':len(extra)})
+            except AIError as exc:
+                diagnostics.append({'phase':'ai','reason':str(exc)})
+        for fact in facts: fact.update(model_file=target['file'],source='loramanager')
+        return {**target,'facts':facts,'sources':[{k:v for k,v in src.items() if k!='text'}],'diagnostics':diagnostics,
+                'rejected':rejected,'retrieved':time.time(),'cached':False}
 
     def cancel(self,key,owner):
         row=self.get(key,owner)

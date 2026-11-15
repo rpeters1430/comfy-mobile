@@ -11,7 +11,8 @@ from starlette.background import BackgroundTask
 from starlette.middleware.gzip import GZipMiddleware
 
 if __package__:
-    from .adviser import Adviser, fingerprint
+    from .adviser import Adviser, fingerprint, targets as adviser_targets
+    from .research import extract_document
     from .adviser_ai import AI, AIError
     from .workflow_validation import inspect_workflow, load_workflow
     from .workflow_sync import WorkflowSync, bounded_get
@@ -31,7 +32,8 @@ if __package__:
     from . import lora_info, lora_suggest
     from .recipes import RecipeError, RecipeSync, build_graph, check_image, image_query
 else:
-    from adviser import Adviser, fingerprint
+    from adviser import Adviser, fingerprint, targets as adviser_targets
+    from research import extract_document
     from adviser_ai import AI, AIError
     from workflow_validation import inspect_workflow, load_workflow
     from workflow_sync import WorkflowSync, bounded_get
@@ -706,23 +708,41 @@ async def suggest_loras(body: LoraSuggestRequest, authorization: str | None = He
 _harbor_cache = {'at': 0.0, 'records': []}
 HARBOR_TTL = 300
 HARBOR_MAX_BYTES = 20_000_000
-_manager_cache = {'at': 0.0, 'items': []}
+_manager_cache = {}
 
-async def lora_manager_records():
-    """LoRA Manager's LoRA library on the ComfyUI PC, cached for a minute; the last copy when it is unreachable or absent."""
-    if time.monotonic() - _manager_cache['at'] < 60:
-        return _manager_cache['items']
+async def lora_manager_records(kind='loras'):
+    """LoRA Manager's LoRA or checkpoint library on the ComfyUI PC, cached for a minute; the last copy when it is unreachable or absent."""
+    cached = _manager_cache.get(kind, (0.0, []))
+    if time.monotonic() - cached[0] < 60:
+        return cached[1]
     items = []
     try:
         for page in range(1, 11):
-            data = await request('GET', '/api/lm/loras/list', params={'page': page, 'page_size': 100})
+            data = await request('GET', f'/api/lm/{kind}/list', params={'page': page, 'page_size': 100})
             items.extend(i for i in data.get('items', []) if isinstance(i, dict))
             if page >= (data.get('total_pages') or 1):
                 break
     except HTTPException:
-        items = _manager_cache['items']
-    _manager_cache.update(at=time.monotonic(), items=items)
+        items = cached[1]
+    _manager_cache[kind] = (time.monotonic(), items)
     return items
+
+async def adviser_library(graph):
+    """{file: base model, strength tip, Civitai page and creator description} from LoRA Manager for a review's models and LoRAs."""
+    found = {}
+    for target in adviser_targets(graph):
+        kind = 'checkpoints' if target['kind'] == 'model' else 'loras'
+        item = lora_info.manager_item(target['file'], await lora_manager_records(kind))
+        if not item:
+            continue
+        entry = lora_info.library_entry(item)
+        try:
+            data = await request('GET', f'/api/lm/{kind}/model-description', params={'file_path': item['file_path']})
+            entry['description'] = extract_document(str(data.get('description') or ''), entry.get('url') or '')[:20000]
+        except HTTPException:
+            pass
+        found[target['file']] = entry
+    return found
 
 async def harbor_records():
     """ModelHarbor's inventory, cached for five minutes; [] when it is not configured or unreachable."""
@@ -827,7 +847,8 @@ async def create_adviser_review(body: ReviewRequest, authorization: str | None =
     job=body.job.model_copy(update={'seed':body.seeds[0], 'adviser_token':None})
     graph,info,_,_,source_hash=await prepare_job(job)
     try:
-        return adviser.start(adviser_owner(),graph,find_controls(graph,info),source_hash,body.seeds,body.refresh,body.web_research)
+        return adviser.start(adviser_owner(),graph,find_controls(graph,info),source_hash,body.seeds,body.refresh,body.web_research,
+                             await adviser_library(graph))
     except (ValueError,OSError) as exc:
         raise HTTPException(400,'Cannot start research: queue full or DATA_DIR unavailable') from exc
 
@@ -861,6 +882,8 @@ async def apply_adviser_review(review_id: str, body: ApplySettingsRequest, autho
     for proposal in chosen:
         for change in proposal['changes']:
             if change['field']=='size': values['size']=change['value']
+            elif change['field']=='strength':
+                values['loras'][change['node']]={'name':values['loras'].get(change['node'],{}).get('name') or change['lora'],'strength':change['value']}
             else: values['sampling'].setdefault(change['node'],{})[change['field']]=change['value']
     hashes=[]; intents=[]
     for seed in row['seeds']:
@@ -872,7 +895,7 @@ async def apply_adviser_review(review_id: str, body: ApplySettingsRequest, autho
     token=secrets.token_urlsafe(32)
     audit={'review_id':review_id,'applied_at':time.time(),'changes':chosen}
     adviser.store.put('approval',token,{'owner':adviser_owner(),'hashes':hashes,'seeds':row['seeds'],'intents':intents,'audit':audit},ttl=max(1,row.get('expires',time.time()+600)-time.time()))
-    return {'sampling':values['sampling'],'size':values.get('size'),'token':token,'seeds':row['seeds'],'review_id':review_id,'expires':row.get('expires',time.time()+600)}
+    return {'sampling':values['sampling'],'size':values.get('size'),'loras':values['loras'],'token':token,'seeds':row['seeds'],'review_id':review_id,'expires':row.get('expires',time.time()+600)}
 
 @app.post('/api/uploads')
 async def upload(req: Request, authorization: str | None = Header(default=None)):

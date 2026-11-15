@@ -156,3 +156,18 @@ class LoraManagerTests(unittest.TestCase):
         merged = lora_info.merge({**manager, 'triggers': ['mine'], 'weight': 0.5, 'weight_from': 'loramanager'}, harbor)
         self.assertEqual((merged['triggers'], merged['weight'], merged['weight_from']), (['mine'], 0.5, 'loramanager'))
         self.assertIs(lora_info.merge(None, harbor), harbor)
+
+
+class LibraryTests(unittest.TestCase):
+    def test_manager_item_by_path_or_unique_stem(self):
+        items=[{'file_path':'/m/checkpoints/SDXL/juggernaut.safetensors','file_name':'juggernaut','sha256':'a'},
+               {'file_path':'/m/loras/SDXL/detail.safetensors','file_name':'detail','sha256':'b'},
+               {'file_path':'/m/loras/detail.safetensors','file_name':'detail','sha256':'b'}]
+        self.assertEqual('a',lora_info.manager_item('SDXL\\juggernaut.safetensors',items)['sha256'])
+        self.assertEqual('b',lora_info.manager_item('detail',items)['sha256'])
+        self.assertIsNone(lora_info.manager_item('other',items))
+
+    def test_library_entry_links_the_exact_civitai_version(self):
+        entry=lora_info.library_entry({'model_name':'Jugg','base_model':'SDXL 1.0','civitai':{'modelId':1,'id':2,'name':'Ragnarok'},
+                                       'usage_tips':'{"strength": 0.7}','source_url':'javascript:x'})
+        self.assertEqual({'name':'Jugg Ragnarok','base_model':'SDXL 1.0','strength_tip':0.7,'url':'https://civitai.com/models/1?modelVersionId=2'},entry)

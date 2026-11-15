@@ -2991,6 +2991,7 @@ $('preview-model-guidance').onclick = async () => {
 const adviserUI = SettingsAdviser.mount({ api, el, getForm: adviserForm, random: randomSeed, apply: result => {
   for (const [node, fields] of Object.entries(result.sampling || {})) Object.assign(choices.sampling[node] || (choices.sampling[node] = {}), fields);
   if (result.size) choices.adviserSize = result.size;
+  for (const [node, lora] of Object.entries(result.loras || {})) choices.loras[node] = { ...lora, on: lora.strength > 0 };
   renderControls(); renderSummary(); saveControls();
 }});
 

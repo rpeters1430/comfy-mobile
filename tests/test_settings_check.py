@@ -120,3 +120,22 @@ class SettingsCheckTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LoraManagerCheckTests(unittest.TestCase):
+    def test_lora_manager_widget_text_and_stack_loras_are_checked(self):
+        g = graph()
+        g["s"] = {"class_type": "Lora Stacker (LoraManager)", "inputs": {"loras": {"__value__": [
+            {"name": "SD15\\old", "strength": 0.8, "active": True}]}}}
+        g["t"] = {"class_type": "PrimitiveString", "inputs": {"value": "<lora:hand:1.8>"}}
+        g["l"] = {"class_type": "Lora Loader (LoraManager)", "inputs": {"model": ["1", 0], "lora_stack": ["s", 0], "loras": {"__value__": [
+            {"name": "detail", "strength": 2.0, "active": True}, {"name": "off", "strength": 3.0, "active": False}]}}}
+        g["p"] = {"class_type": "PerturbedAttentionGuidance", "inputs": {"model": ["l", 0], "scale": 2.5}}
+        g["3"]["inputs"]["model"] = ["p", 0]
+        messages = " ".join(i["message"] for i in check(g, CONTROLS))
+        self.assertIn("“detail” is at strength 2", messages)
+        self.assertIn("made for SD 1.5", messages)
+        self.assertNotIn("“off”", messages)
+        g["x"] = {"class_type": "LoRA Text Loader (LoraManager)", "inputs": {"model": ["1", 0], "lora_syntax": ["t", 0]}}
+        g["3"]["inputs"]["model"] = ["x", 0]
+        self.assertIn("“hand” is at strength 1.8", " ".join(i["message"] for i in check(g, CONTROLS)))

@@ -17,6 +17,8 @@ SPEED = re.compile(r'turbo|lightning|lightx2v|hyper|lcm|dmd|schnell|distill|flas
 STEP_COUNT = re.compile(r'(\d+)[-_ ]?steps?', re.I)
 CFG_FAMILIES = {'sd15', 'sdxl'}  # Generic 1–2 CFG advice is not safe for Qwen/Wan schedules.
 TYPICAL_CFG = {'sd15': 7.0, 'sdxl': 6.0}
+# LoRA Manager's text loader reads `<lora:name:strength>` (or `<lora:name:model:clip>`) from a string primitive.
+LORA_TAG = re.compile(r"<lora:([^:<>]+):(-?\d+(?:\.\d+)?)(?::(-?\d+(?:\.\d+)?))?>", re.I)
 
 
 def family(name):
@@ -41,6 +43,36 @@ def short(name):
     return re.split(r'[\\/]', name)[-1].rsplit('.', 1)[0]
 
 
+def _linked(graph, value):
+    return value[0] if isinstance(value, list) and len(value) == 2 and value[0] in graph else None
+
+
+def widget_loras(inputs):
+    """(index, entry) for each active entry of a LoRA Manager `loras` list widget."""
+    value = inputs.get('loras')
+    entries = value.get('__value__') if isinstance(value, dict) else value
+    return [(i, e) for i, e in enumerate(entries if isinstance(entries, list) else [])
+            if isinstance(e, dict) and e.get('active', True) and isinstance(e.get('name'), str)
+            and isinstance(e.get('strength'), (int, float)) and not isinstance(e.get('strength'), bool)]
+
+
+def manager_loras(graph, node_id, seen=None):
+    """(name, strength) a LoRA Manager loader or stacker applies: list widget, linked `<lora:...>` text and LoRA stack."""
+    seen = seen if seen is not None else set()
+    if node_id in seen or 'LoraManager' not in graph[node_id]['class_type']:
+        return []
+    seen.add(node_id)
+    inputs = graph[node_id]['inputs']
+    found = [(e['name'], float(e['strength'])) for _, e in widget_loras(inputs)]
+    source = _linked(graph, inputs.get('lora_syntax'))
+    if source and isinstance(graph[source]['inputs'].get('value'), str):
+        found += [(tag.group(1), float(tag.group(2))) for tag in LORA_TAG.finditer(graph[source]['inputs']['value'])]
+    stack = _linked(graph, inputs.get('lora_stack'))
+    if stack:
+        found += manager_loras(graph, stack, seen)
+    return [(name, strength) for name, strength in found if strength != 0]
+
+
 def _chain(graph, node_id):
     """The model file and active LoRAs (name, strength) feeding a node's `model` input."""
     loras, seen = [], set()
@@ -53,6 +85,7 @@ def _chain(graph, node_id):
                 return inputs[field], loras
         if isinstance(inputs.get('lora_name'), str) and inputs.get('strength_model', 1) != 0:
             loras.append((inputs['lora_name'], inputs.get('strength_model', 1)))
+        loras += manager_loras(graph, link[0])
         link = inputs.get('model')
     return None, loras
 
