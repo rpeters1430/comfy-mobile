@@ -267,7 +267,7 @@ def healthz():
     return {'status': 'ok', 'version': VERSION}
 
 @app.get('/')
-def home(): return FileResponse(STATIC/'index.html')
+def home(): return FileResponse(STATIC/'index.html', headers={'Cache-Control':'no-cache'})  # same as its scripts, so they never mismatch
 
 # Revalidated on every load, so a phone never mixes scripts from two releases.
 STATIC_FILES = {'style.css': 'text/css', 'presets.js': 'text/javascript', 'mobile-tools.js': 'text/javascript',

@@ -138,7 +138,7 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   await page.locator('#gallery .card').first().click();
   await page.locator('#image-viewer').waitFor({state:'visible'});
   assert.equal(await page.locator('nav [data-tab=gallery]').getAttribute('aria-current'), 'page');
-  assert.equal(await page.locator('#viewer-after').getAttribute('src'), '/image.png?sig=ok');
+  await page.waitForFunction(()=>document.querySelector('#viewer-after').getAttribute('src')==='/image.png?sig=ok');
   await page.locator('#vision-review > summary').click();
   assert.match(await page.locator('#vision-note').textContent(),/vl on your own PC/);
   await page.locator('#vision-start').click();

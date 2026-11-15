@@ -143,3 +143,31 @@ class VisionReviewApiTests(unittest.TestCase):
         self.adviser.store.put('config','ai',asdict(AIConfig('ollama','text','http://pc:11434')),ttl=600)
         self.assertEqual(400,self.client.post(f'/api/jobs/{self.ID}/vision-review',headers=AUTH,json={'filename':'a.png'}).status_code)
         self.assertFalse(self.client.get('/api/adviser/status',headers=AUTH).json()['vision_configured'])
+
+
+class LoraStrengthApplyTests(AdviserApiTests):
+    def setUp(self):
+        super().setUp()
+        g=copy.deepcopy(GRAPH)
+        g['5']={'class_type':'LoraLoaderModelOnly','inputs':{'model':['1',0],'lora_name':'detail.safetensors','strength_model':2.0}}
+        g['2']['inputs']['model']=['5',0]
+        self.path.write_text(json.dumps(g))
+        main.get_object_info.return_value={**INFO,'LoraLoaderModelOnly':{'input':{'required':{'lora_name':[['detail.safetensors']]}}}}
+
+    def test_ai_lora_strength_applies_and_generates(self):
+        import asyncio
+        from app.workflow_controls import find_controls
+        from app.adviser import workflow_context, ai_proposals
+        job=main.Job(**self.job)
+        graph,info,_,_,source_hash=asyncio.run(main.prepare_job(job))
+        controls=find_controls(graph,info)
+        proposals=ai_proposals(workflow_context(graph,controls),{'summary':'s','changes':[{'node':'5','field':'strength','value':'1.2','reason':'Too strong'}]})
+        self.adviser.store.put('review','review',{'id':'review','owner':main.adviser_owner(),'status':'done','graph':graph,'controls':controls,
+                                                  'source_hash':source_hash,'seeds':[42],'cards':[],'proposals':proposals,'notes':[]})
+        r=self.client.post('/api/adviser/reviews/review/apply',headers=AUTH,json={'job':self.job,'selected':[proposals[0]['id']]})
+        self.assertEqual(200,r.status_code,r.text)
+        self.assertEqual({'5':{'name':'detail.safetensors','strength':1.2}},r.json()['loras'])
+        request=AsyncMock(return_value={'prompt_id':'0f8d2a4c-1111-4222-8333-944455556666'})
+        with patch.object(main,'request',request),patch.object(main.job_store,'add'):
+            data={**self.job,'loras':r.json()['loras'],'adviser_token':r.json()['token'],'seed':42}
+            self.assertEqual(200,self.client.post('/api/jobs',headers=AUTH,json=data).status_code)

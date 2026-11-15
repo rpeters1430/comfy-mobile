@@ -17,6 +17,12 @@
     try { const u = new URL(value); return ['https:', 'http:'].includes(u.protocol) && !u.username && !u.password ? u.href : null; }
     catch (_) { return null; }
   }
+  // Which job fields differ between two adviser forms, to say why a review no longer applies.
+  function formChanges(before, after) {
+    const keys = new Set([...Object.keys(before.job || {}), ...Object.keys(after.job || {})]);
+    const changed = [...keys].filter(k => signature(before.job?.[k] ?? null) !== signature(after.job?.[k] ?? null));
+    return before.runs === after.runs ? changed : [...changed, 'runs'];
+  }
   function approvalCurrent(approval, key, now = Date.now() / 1000) {
     return !!approval && approval.key === key && Number.isFinite(approval.expires) && approval.expires > now;
   }
@@ -122,22 +128,30 @@
       }
       if (selections.length) {
         const use = el('button', { type: 'button', class: 'secondary' }, 'Apply selected to settings');
+        // The panel's status line is far above this button on a phone; repeat the outcome right here.
+        const note = el('p', { class: 'status', role: 'status', 'aria-live': 'polite' });
+        const tell = text => { say(text); note.textContent = text; };
         use.onclick = async () => {
-          if (!current || !matches(current.key)) return say('Form changed. Start a new review.');
+          if (!current) return tell('This review is no longer active. Start a new review.');
+          if (!matches(current.key)) {
+            let changed = [];
+            try { changed = formChanges(current.form, getForm()); } catch (e) { changed = [e.message]; }
+            return tell(`The form changed since this review started (${changed.join(', ') || 'unknown'}). Start a new review.`);
+          }
           const selected = selections.filter(([, c]) => c.checked).map(([id]) => id);
-          if (!selected.length) return say('Select a change or keep current settings.');
+          if (!selected.length) return tell('Select a change or keep current settings.');
           use.disabled = true;
           const captured = current, revision = generation;
           try {
             const r = await api(`/adviser/reviews/${encodeURIComponent(captured.id)}/apply`, { method: 'POST', json: { job: captured.form.job, selected } });
-            if (revision !== generation || !matches(captured.key)) return say('Form changed while applying. Start a new review.');
+            if (revision !== generation || !matches(captured.key)) return tell('The form changed while applying. Start a new review.');
             apply(r);
             approved = { ...r, key: signature(getForm()) };
             say('Selected changes applied. Press Generate to render this reviewed batch.');
             box.replaceChildren(); cancel.classList.add('hide'); current = null;
-          } catch (e) { say(e.message); } finally { use.disabled = false; }
+          } catch (e) { tell('Could not apply: ' + e.message); } finally { use.disabled = false; }
         };
-        box.append(use);
+        box.append(use, note);
       } else if (row.status === 'done') box.append(el('p', {}, row.ai_called ? 'The AI returned no applicable settings changes. See its assessment above.' : 'No AI assessment was completed; check the connection setup and error details.'));
       const keep = el('button', { type: 'button', class: 'ghost' }, 'Keep current settings');
       keep.onclick = stop; box.append(keep);
@@ -175,7 +189,7 @@
     };
     return { approvalFor, reset: stop };
   }
-  const helpers = { signature, batchSeeds, safeSource, approvalCurrent, mount };
+  const helpers = { signature, batchSeeds, safeSource, approvalCurrent, formChanges, mount };
   if (typeof module !== 'undefined' && module.exports) module.exports = helpers;
   else root.SettingsAdviser = helpers;
 })(typeof window === 'undefined' ? globalThis : window);

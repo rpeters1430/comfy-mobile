@@ -58,3 +58,9 @@ test('research/apply UI keeps rendering explicit and binds current form', async 
     assert.equal(ui.approvalFor(),null);
   } finally {global.document=previous;}
 });
+test('form changes name the job fields that differ', () => {
+  const { formChanges } = require('../app/static/adviser.js');
+  const before = { runs: 1, job: { prompt: 'a', sampling: { 7: { steps: 30 } }, negative_prompt: null } };
+  assert.deepEqual(formChanges(before, { runs: 2, job: { prompt: 'a', sampling: { 7: { steps: 25 } } } }), ['sampling', 'runs']);
+  assert.deepEqual(formChanges(before, structuredClone(before)), []);
+});
