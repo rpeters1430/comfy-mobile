@@ -136,9 +136,9 @@ h2 {
   margin: 0 0 12px;
 }
 p, small, .muted { color: var(--md-on-surface-variant); }
-.status { font: var(--type-body-m); color: var(--md-on-surface-variant); }
-.status.ok { color: var(--md-success); }
-.status.error { color: var(--md-error); }
+.status { font: var(--type-body-m); color: var(--md-on-surface); }
+.status.ok { color: var(--md-on-success); }
+.status.error { color: var(--md-on-error); }
 .hide { display: none !important; }
 
 /* Text fields (filled, rounded). iOS zooms on focus below 16px. */
@@ -245,7 +245,7 @@ button {
   overflow: hidden;
   isolation: isolate;
   cursor: pointer;
-  min-height: 44px;
+  min-height: 48px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -399,7 +399,10 @@ button:disabled { opacity: 0.38; cursor: not-allowed; }
   background: var(--md-surface-container-highest);
   border-radius: var(--shape-sm);
   padding: 2px 8px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.15);
+  transition: background .2s, transform .1s;
 }
+.badge:hover { background: var(--md-surface-container-high); transform: scale(1.05); }
 .badge.video { color: var(--md-on-tertiary-container); background: var(--md-tertiary-container); }
 .badge.synced { color: var(--md-on-secondary-container); background: var(--md-secondary-container); }
 .badge.ready { color: var(--md-on-success-container); background: var(--md-success-container); }
