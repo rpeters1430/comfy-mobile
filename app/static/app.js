@@ -1948,7 +1948,8 @@ function showResults(job, entry, r) {
   const texts = r.outputs.filter(o => o.kind === 'text' && o !== named);
   const nodes = finals.map(item => el('figure', { class: 'result' },
     el('a', { href: item.url, target: '_blank', rel: 'noopener' }, mediaFor(item)), resultActions(item),
-      item.kind === 'image' ? el('button', { class: 'secondary', type: 'button', onclick: () => viewImage(job, item) }, job.images?.length ? 'Compare / full screen' : 'Full screen & zoom') : null));
+      item.kind === 'image' ? el('button', { class: 'secondary', type: 'button', onclick: () => viewImage(job, item) }, job.images?.length ? 'Compare / full screen' : 'Full screen & zoom') : null,
+      visionButton(job, item)));
 
   if (texts.length) {
     nodes.push(el('details', { open: true },
@@ -2774,13 +2775,27 @@ function drawPhotoDetails(resolution) {
     .map(([label, value]) => el('div', { class: 'photo-meta-row' }, el('dt', {}, label), el('dd', {}, value))));
 }
 // Optional: send the shown image and its prompt to the vision model chosen in AI connection setup.
+let visionCache = null, pendingVisionReview = false;
+function visionStatus() {
+  if (!visionCache || Date.now() - visionCache.at > 30000) visionCache = { at: Date.now(), status: api('/adviser/status').catch(() => ({})) };
+  return visionCache.status;
+}
+// The result card's shortcut: open the viewer and start the review there.
+function visionButton(job, item) {
+  const slot = el('span');
+  if (item.kind === 'image' && job.id) visionStatus().then(config => {
+    if (config.vision_configured) slot.replaceWith(el('button', { class: 'secondary', type: 'button',
+      onclick: () => { pendingVisionReview = true; viewImage(job, item); } }, '🔍 AI review'));
+  });
+  return slot;
+}
 async function setupVisionReview(state, item) {
   const box = $('vision-review');
   box.classList.add('hide'); box.open = false;
   $('vision-results').replaceChildren(); $('vision-status').textContent = '';
   if (item.kind !== 'image' || !state.job?.id) return;
-  let config;
-  try { config = await api('/adviser/status'); } catch (_) { return; }
+  const auto = pendingVisionReview; pendingVisionReview = false;
+  const config = await visionStatus();
   if (viewerState !== state || state.items[state.index] !== item || !config.vision_configured) return;
   $('vision-note').textContent = `Sends this image, its prompt and settings to ${config.provider} / ${config.vision_model}` +
     (config.hosted ? ', a hosted service.' : ' on your own PC.');
@@ -2812,6 +2827,7 @@ async function setupVisionReview(state, item) {
       if (viewerState === state) $('vision-status').textContent = e.message;
     } finally { start.disabled = false; }
   };
+  if (auto) { box.open = true; start.click(); box.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
 }
 function beginViewer(job) {
   viewerController?.abort();

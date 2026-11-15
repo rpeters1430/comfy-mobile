@@ -34,7 +34,7 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
   const errors = [], submissions = [];
-  let reviewRequest = null;
+  let reviewRequest = null, visionRequest = null;
   let presets = [], stage = 'render', stale = false, woke = false, delayValidation = false, fullUnavailable = false;
   let snippets = [], offline = false, held = [], streams = 0, bulk = [], moved = null;
   page.on('pageerror', error => errors.push(error.message));
@@ -75,8 +75,10 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
      const body=req.postDataJSON();submissions.push(body);stage=body.stage;data={prompt_id:jobId};}
    else if (p === '/api/adviser/config' && method==='GET') data={provider:'ollama',base_url:'http://pc:11434',model:'local',has_key:false};
    else if (p === '/api/adviser/models') data={models:['local']};
+   else if (p === '/api/recipes') data={recipes:[],last_result:{ok:true}};
    else if (p === '/api/adviser/config' && method==='PUT') data={provider:'ollama',base_url:'http://pc:11434',model:'local',has_key:false,connected:true};
-   else if (p === '/api/adviser/status') data={search_configured:true,ai_configured:true,provider:'ollama',model:'local'};
+   else if (p === '/api/adviser/status') data={search_configured:true,ai_configured:true,provider:'ollama',model:'local',vision_configured:true,vision_model:'vl'};
+   else if (p === '/api/jobs/'+jobId+'/vision-review') {visionRequest=req.postDataJSON();data={summary:'A sharp portrait',prompt_match:'partial',issues:[{problem:'Extra finger',fix:'Add bad hands to the negative'}],prompt_additions:'',negative_additions:'bad hands',provider:'ollama',model:'vl'};}
    else if (p === '/api/adviser/reviews' && method==='POST') {reviewRequest=req.postDataJSON();data={id:'review'};}
    else if (p === '/api/adviser/reviews/review/apply') data={token:'approved',expires:Date.now()/1000+600,seeds:reviewRequest.seeds,sampling:{'7':{steps:25}},size:null};
    else if (p === '/api/adviser/reviews/review') data={status:method==='DELETE'?'cancelled':'done',ai_called:true,ai_provider:'ollama',ai_model:'local',ai_summary:'AI assessed current settings',cards:[],notes:[],proposals:[{id:'0',label:'Steps',changes:[{current:30,value:25}],reason:'Published range',evidence:[{quote:'Steps: 25'}]}]};
@@ -133,6 +135,22 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   await page.locator('#image-viewer').waitFor({state:'visible'});
   assert.equal(await page.locator('nav [data-tab=gallery]').getAttribute('aria-current'), 'page');
   assert.equal(await page.locator('#viewer-after').getAttribute('src'), '/image.png?sig=ok');
+  await page.locator('#vision-review > summary').click();
+  assert.match(await page.locator('#vision-note').textContent(),/vl on your own PC/);
+  await page.locator('#vision-start').click();
+  await page.waitForFunction(()=>document.querySelector('#vision-results').textContent.includes('Extra finger'));
+  assert.equal(visionRequest.filename,'result.png');
+  assert.match(await page.locator('#vision-results').textContent(),/Partly matches the prompt.*Add to negative: bad hands/s);
+  await page.locator('#viewer-close').click();
+  // The result card's shortcut opens the viewer and starts the review straight away.
+  visionRequest=null;
+  await page.evaluate(([id])=>document.querySelector('#gallery').prepend(el('figure',{class:'result'},visionButton({id,workflow:'Photo Edit'},{kind:'image',filename:'second.png',subfolder:'',type:'output',url:'/image.png?sig=second'}))),[jobId]);
+  await page.locator('figure.result button:has-text("AI review")').click();
+  await page.waitForFunction(()=>document.querySelector('#vision-results').textContent.includes('Extra finger'));
+  assert.equal(visionRequest.filename,'second.png');
+  await page.locator('#viewer-close').click();
+  await page.locator('#gallery .card').first().click();
+  await page.locator('#image-viewer').waitFor({state:'visible'});
   await page.locator('#photo-details summary').click();
   assert.match(await page.locator('#photo-metadata').textContent(), /Photo Edit/);
   assert.match(await page.locator('#photo-metadata').textContent(), /42/);
