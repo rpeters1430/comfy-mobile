@@ -121,3 +121,22 @@ class SearchGatherRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('',sources[0]['text']);self.assertNotIn('30-40',sources[0]['excerpt'])
         self.assertFalse(sources[0]['verified'])
         self.assertTrue(any(d['phase']=='identity' for d in diagnostics))
+
+
+class CreatorDescriptionTests(unittest.TestCase):
+    TEXT = ('Great model.\n\n🌟 SDXL Version\n\n- **Steps:** 25 – 35\n- **CFG Scale:** 4.5 – 7.0\n- Res: 832\\*1216\n'
+            '- *Denoising Strength:* 0.35 (Steps: 10–15)\n\n🌸 Illustrious Version\n\n- **Steps:** 28 – 40\n- **CFG Scale:** 5.0 – 6.5\n')
+
+    def test_multi_version_description_keeps_the_matching_section(self):
+        from app.research import plain_markdown, version_section, candidates
+        text = plain_markdown(self.TEXT)
+        self.assertIn('832*1216', text)
+        self.assertEqual({(25, 35), (4.5, 7.0)}, {(c['low'], c['high']) for c in candidates(version_section(text, 'SDXL 1.0'))})
+        self.assertEqual({(28, 40), (5.0, 6.5)}, {(c['low'], c['high']) for c in candidates(version_section(text, 'Illustrious'))})
+        self.assertEqual(text, version_section(text, 'Pony'))
+
+    def test_hires_steps_are_not_base_steps(self):
+        from app.research import plain_markdown, verify_facts
+        src = {'id': 's1', 'text': plain_markdown(self.TEXT), 'verified': True}
+        good, bad = verify_facts([{'field': 'steps', 'low': 10, 'high': 15, 'value': '', 'quote': 'Steps: 10–15', 'source_id': 's1'}], [src], 'x')
+        self.assertEqual([], good); self.assertIn('Hires', bad[0]['reason'])

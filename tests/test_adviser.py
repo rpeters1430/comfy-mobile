@@ -197,3 +197,17 @@ class LoraManagerAdviserTests(unittest.IsolatedAsyncioTestCase):
     def test_duplicate_numeric_evidence_is_not_a_conflict(self):
         cards=[{'file':'Example_v1.safetensors','facts':[FACT,{**FACT,'value':'20-25'}]}]
         self.assertEqual(25,propose(GRAPH,CONTROLS,cards)[0][0]['changes'][0]['value'])
+
+
+class SamplerEvidenceTests(unittest.TestCase):
+    def fact(self,value):
+        return {'field':'sampler_name','low':None,'high':None,'value':value,'quote':'Samplers: '+value,'source_id':'s1'}
+
+    def test_a1111_names_and_alternatives(self):
+        card=lambda *values:[{'file':'Example_v1.safetensors','facts':[self.fact(v) for v in values]}]
+        proposals,_=propose(GRAPH,CONTROLS,card('DPM++ 2M Karras'))
+        self.assertEqual('dpmpp_2m',proposals[0]['changes'][0]['value'])
+        self.assertEqual([],propose(GRAPH,CONTROLS,card('DPM++ 2M Karras','Euler'))[0])
+        c={**CONTROLS,'sampler_options':['euler','euler_ancestral','dpmpp_2m']}
+        proposals,notes=propose(GRAPH,c,card('DPM++ 2M Karras','Euler a'))
+        self.assertEqual([],proposals); self.assertIn('several samplers',notes[0])

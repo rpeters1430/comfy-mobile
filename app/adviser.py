@@ -5,21 +5,22 @@ import math
 import hashlib
 import json
 import os
-import re
 import secrets
 import time
 from dataclasses import asdict, replace
 
 if __package__:
-    from .research import Research, candidates, settings_excerpt, verify_facts, VARIANT
+    from .research import Research, candidates, plain_markdown, settings_excerpt, verify_facts, version_section, VARIANT
     from .adviser_ai import AI, AIError, AIConfig, DEFAULT_URLS, LOCAL_PROVIDERS
     from .adviser_store import Store
     from .settings_check import _chain, manager_loras
+    from .recipes import SAMPLERS, SCHEDULERS
 else:
-    from research import Research, candidates, settings_excerpt, verify_facts, VARIANT
+    from research import Research, candidates, plain_markdown, settings_excerpt, verify_facts, version_section, VARIANT
     from adviser_ai import AI, AIError, AIConfig, DEFAULT_URLS, LOCAL_PROVIDERS
     from adviser_store import Store
     from settings_check import _chain, manager_loras
+    from recipes import SAMPLERS, SCHEDULERS
 
 
 def fingerprint(graph,controls,source_hash):
@@ -73,6 +74,17 @@ def _base_chain(graph,node_id):
     return False
 
 
+def _option(value,options,field):
+    """The ComfyUI option a creator's A1111-style name means ("DPM++ 2M Karras" -> dpmpp_2m), or None."""
+    norm=lambda v: ''.join(c for c in v.lower().replace('++','pp') if c.isalnum())
+    raw=value.strip().lower()
+    if field=='sampler_name':
+        raw=next((raw[:-len(s)-1] for s in SCHEDULERS if raw.endswith(' '+s)),raw)
+        raw=SAMPLERS.get(raw,raw)
+    matches=[o for o in options if norm(o)==norm(raw)]
+    return matches[0] if len(matches)==1 else None
+
+
 def propose(graph,controls,cards):
     graph=reachable(graph); notes=[]; result=[]
     active=targets(graph)
@@ -118,20 +130,24 @@ def propose(graph,controls,cards):
         for field,current in cap['values'].items():
             if field not in ('steps','cfg','sampler_name','scheduler'): continue
             eligible=[f for f in facts if f['field']==field]
-            unique={(f.get('low'),f.get('high')) if field in ('steps','cfg') else f.get('value','') for f in eligible}
-            if len(unique)!=1:
-                if unique: notes.append(f'Conflicting {field} evidence; no change proposed.')
-                continue
-            f=eligible[0]; value=None
-            if field in ('steps','cfg'):
+            value=None
+            if field in ('sampler_name','scheduler'):
+                # Creators often list alternatives ("DPM++ 2M Karras or Euler a"); any of them is fine.
+                options=controls.get('sampler_options' if field=='sampler_name' else 'scheduler_options',[])
+                published={o for f in eligible if (o:=_option(f['value'],options,field))}
+                if not published or current in published: continue
+                if len(published)>1:
+                    notes.append(f'The creator lists several {field.split("_")[0]}s ({", ".join(sorted(published))}); yours is kept.'); continue
+                f=next(f for f in eligible if _option(f['value'],options,field)); value=published.pop()
+            else:
+                unique={(f.get('low'),f.get('high')) for f in eligible}
+                if len(unique)!=1:
+                    if unique: notes.append(f'Conflicting {field} evidence; no change proposed.')
+                    continue
+                f=eligible[0]
                 if current<f['low']: value=f['low']
                 elif current>f['high']: value=f['high']
                 if value is not None and field=='steps': value=int(value)
-            else:
-                options=controls.get('sampler_options' if field=='sampler_name' else 'scheduler_options',[])
-                norm=lambda s: ''.join(c for c in s.lower().replace('++','pp') if c.isalnum())
-                matches=[o for o in options if norm(o)==norm(f['value'])]
-                if len(matches)==1 and matches[0]!=current: value=matches[0]
             if value is not None:
                 result.append({'id':str(len(result)),'label':f'{field} · node {cap["node"]}',
                                'changes':[{'node':cap['node'],'field':field,'current':current,'value':value}],
@@ -162,7 +178,7 @@ def _patches(graph,node_id):
 def _library(entry):
     """Bounded LoRA Manager facts for one file; the creator text is untrusted third-party data."""
     return {k:entry[k] for k in ('base_model','strength_tip') if entry.get(k) is not None} | (
-        {'creator_notes':settings_excerpt(entry['description'])[:1500]} if entry.get('description') else {})
+        {'creator_notes':settings_excerpt(version_section(plain_markdown(entry['description']),entry.get('base_model')))[:1500]} if entry.get('description') else {})
 
 
 def workflow_context(graph,controls,library=None):
@@ -384,9 +400,8 @@ class Adviser:
     @staticmethod
     async def _library_card(ai,target,entry):
         """Evidence from the Civitai description LoRA Manager matched to this exact file by hash; no web access."""
-        # Markdown escapes (`832\\*1216`) would keep literal quotes from matching.
-        text=re.sub(r'\\([\\`*_{}\[\]()#+\-.!])',r'\1',entry['description'])
-        src={'id':'lm1','url':entry.get('url') or '','text':f"{target['file']}\n{entry.get('name','')}\n{text}",'verified':True,'library':True}
+        text=version_section(plain_markdown(entry['description']),entry.get('base_model'))
+        src={'id':'lm1','url':entry.get('url') or '','text':f"{target['file']}\n{entry.get('name','')} ({entry.get('base_model') or 'unknown base'})\n{text}",'verified':True,'library':True}
         src['excerpt']=settings_excerpt(src['text'])
         facts,rejected=verify_facts([{**f,'source_id':'lm1'} for f in candidates(src['text'])],[src],target['file'])
         diagnostics=[{'phase':'library','reason':'Creator description from LoRA Manager'}]

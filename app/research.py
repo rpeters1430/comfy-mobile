@@ -15,6 +15,8 @@ NUMBER = re.compile(r'(?<![a-z0-9_])(?P<label>' + LABEL + r')[\s:=|*`_\-]*(?P<a>
 SETTING = re.compile(r'steps?|cfg|guidance|sampler|scheduler|resolution|recommended',re.I)
 VARIANT = re.compile(r'turbo|lightning|hyper|lcm|dmd|schnell|distill|flash|swift',re.I)
 TRAINING = re.compile(r'train(?:ing)?|learning.rate|optimizer|epoch|warmup',re.I)
+# Second-pass settings share labels with the base pass ("Hires.fix … Steps: 10–15").
+SECOND_PASS = re.compile(r'hi-?res|upscal|denois|refine|second pass|adetailer|face ?detail',re.I)
 SOURCE_HOSTS = {'huggingface.co','civitai.com','github.com','raw.githubusercontent.com','docs.comfy.org'}
 
 
@@ -68,7 +70,8 @@ def candidates(text):
         start=max(text.rfind('\n\n',0,m.start())+2, text.rfind('. ',0,m.start())+2,0)
         end=min(len(text),m.end()+60)
         context=text[start:end]
-        if TRAINING.search(context) or VARIANT.search(context):
+        line=text[text.rfind('\n',0,m.start())+1:(text.find('\n',m.end())+1 or len(text)+1)-1]
+        if TRAINING.search(context) or VARIANT.search(context) or SECOND_PASS.search(line):
             continue
         a=float(m['a']); b=float(m['b'] or m['a'])
         field='cfg' if re.search(r'cfg|guidance',m['label'],re.I) else 'steps'
@@ -77,6 +80,29 @@ def candidates(text):
             continue
         found.append({'field':field,'low':a,'high':b,'value':'','quote':m[0]})
     return found
+
+
+def plain_markdown(text):
+    """Drop escapes and emphasis so a model's literal quote of `**Steps:** 25` matches `Steps: 25`."""
+    return re.sub(r'\\([\\`*_{}\[\]()#+\-.!])',r'\1',re.sub(r'(?<!\\)(?:\*+|`+)','',text))
+
+
+def version_section(text, base_model):
+    """The one settings section of a multi-version description headed with this file's base model, else the whole text."""
+    norm=lambda s: re.sub(r'[^a-z0-9]','',s.lower())
+    words={norm(base_model or '')}|({norm(base_model.split()[0])} if base_model and len(norm(base_model.split()[0]))>=4 else set())
+    words.discard('')
+    blocks=[['',[]]]
+    for line in text.splitlines():
+        bare=line.strip().strip('#').strip()
+        if bare and len(bare)<80 and ':' not in bare and not line.lstrip().startswith(('-','*','+')):
+            blocks.append([bare,[line]])
+        else:
+            blocks[-1][1].append(line)
+    settings=[b for b in blocks if candidates('\n'.join(b[1]))]
+    if len(settings)<2: return text
+    chosen=[b for b in settings if any(w in norm(b[0]) for w in words)]
+    return '\n'.join(chosen[0][1]) if len(chosen)==1 else text
 
 
 def unsafe_context(text, quote_text):
@@ -115,6 +141,8 @@ def verify_facts(facts,sources,filename):
             reason='Supporting quote is not in extracted source'
         elif TRAINING.search(q) or VARIANT.search(q) or unsafe_context(src.get('text',''),q):
             reason='Training or acceleration-variant evidence needs explicit support'
+        elif fact.get('field') in ('steps','cfg') and (lines:=[l for l in src.get('text','').splitlines() if norm(q) in norm(l)]) and all(SECOND_PASS.search(l) for l in lines):
+            reason='Hires or refine pass setting, not the base pass'
         elif fact.get('field') in ('steps','cfg'):
             matches=candidates(q)
             if not any(all(m[k]==fact.get(k) for k in ('field','low','high')) for m in matches):

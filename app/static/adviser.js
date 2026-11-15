@@ -91,7 +91,11 @@
           panel.append(el('details', {}, el('summary', {}, 'Extracted source text'), el('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere' }, source.excerpt || 'No settings passage extracted.')));
         }
         for (const d of card.diagnostics || []) panel.append(el('p', { class: 'status' }, `${d.phase}: ${d.reason || JSON.stringify(d)}`));
-        for (const d of card.rejected || []) panel.append(el('p', { class: 'status' }, `${d.field}: ${d.reason}`));
+        // One line per reason: a chatty model can return the same unverifiable setting many times.
+        const rejected = {};
+        for (const d of card.rejected || []) (rejected[d.reason] ||= new Set()).add(d.field);
+        for (const [reason, fields] of Object.entries(rejected))
+          panel.append(el('p', { class: 'status' }, `Not used (${[...fields].join(', ')}): ${reason}`));
         box.append(panel);
       }
       for (const note of row.notes || []) box.append(el('p', { class: 'status' }, note));
