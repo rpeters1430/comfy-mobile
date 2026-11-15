@@ -126,7 +126,7 @@ class VisionReviewApiTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_reviews_only_this_jobs_images_with_their_prompt(self):
-        report={'summary':'Fox','prompt_match':'good','issues':[],'prompt_additions':'','negative_additions':''}
+        report={'summary':'Fox','prompt_match':'good','issues':[],'prompt_additions':'','negative_additions':'','steps':None,'cfg':None}
         with patch('app.adviser_ai.AI.review_image',AsyncMock(return_value=report)) as review:
             r=self.client.post(f'/api/jobs/{self.ID}/vision-review',headers=AUTH,json={'filename':'a.png'})
             self.assertEqual(200,r.status_code,r.text)

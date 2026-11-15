@@ -20,6 +20,36 @@
     }
     return [...jobs.values()].sort((a, b) => b.created - a.created || a.id.localeCompare(b.id));
   }
+  // The job to rerun with an AI image review's fixes: added prompt and negative words, and base-sampler steps/CFG.
+  // A workflow that writes its own prompt gets the words joined onto its caption inside ComfyUI (caption_suffix).
+  function withVisionFixes(job, fixes) {
+    const join = (a, b) => [a, b].map(t => (t || '').trim().replace(/^[,\s]+|[,\s]+$/g, '')).filter(Boolean).join(', ');
+    const { negative_prompt: savedNegative, ...controls } = structuredClone(job.controls || {});
+    const next = { ...job, id: undefined, controls, review: job.review ? { ...job.review } : job.review ?? null,
+      negative_prompt: job.negative_prompt ?? savedNegative ?? null };
+    if (fixes.prompt) {
+      if (next.review) next.review.positive = join(next.review.positive, fixes.prompt);
+      else if ((job.prompt || '').trim()) next.prompt = join(job.prompt, fixes.prompt);
+      else controls.caption_suffix = join(controls.caption_suffix, fixes.prompt);
+    }
+    // Only a negative prompt the workflow exposes can grow; otherwise the server would ignore it.
+    const negative = next.negative_prompt ?? job.details?.negative_prompt;
+    if (fixes.negative && next.review) next.review.negative = join(next.review.negative, fixes.negative);
+    else if (fixes.negative && negative != null) next.negative_prompt = join(negative, fixes.negative);
+    const base = visionBaseSampler(job);
+    if (base && (fixes.steps != null || fixes.cfg != null)) {
+      const values = { ...(controls.sampling?.[base.node] || {}) };
+      if (fixes.steps != null) values.steps = fixes.steps;
+      if (fixes.cfg != null) values.cfg = fixes.cfg;
+      controls.sampling = { ...(controls.sampling || {}), [base.node]: values };
+    }
+    return next;
+  }
+  // The full-denoise sampler the review's steps/CFG apply to, with its effective values for this job.
+  function visionBaseSampler(job) {
+    const base = (job.details?.samplers || []).find(s => s.role === 'base' && 'steps' in (s.values || {}) && 'cfg' in s.values);
+    return base && { node: base.node, values: { ...base.values, ...(job.controls?.sampling?.[base.node] || {}) } };
+  }
   function captionText(outputs) {
     const text = node => outputs.filter(o => o.kind === 'text' && o.node === node).map(o => o.text).join('\n');
     return { positive: text('mobile_review_positive'), negative: text('mobile_review_negative') };
@@ -220,7 +250,7 @@
     if (!added.length && !removed.length) return null;
     return { added, removed, addedLabels: added.map(k => current[k]), removedLabels: removed.map(k => previous[k]) };
   }
-  const api = { nasJob, mergeHistory, captionText, presetJob, preferredWorkflows, photoDetails, modelGroups, choicesFromJob,
+  const api = { nasJob, mergeHistory, captionText, withVisionFixes, visionBaseSampler, presetJob, preferredWorkflows, photoDetails, modelGroups, choicesFromJob,
     hasWildcards, expandPrompt, sseEvents, galleryMatches, fieldLabel, settingFits, restoreSettings, settingsPayload,
     controlKeys, controlChanges };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -62,6 +62,8 @@ class ImageReview(BaseModel):
     issues: list[ImageIssue] = Field(max_length=8)
     prompt_additions: str = Field(max_length=500)
     negative_additions: str = Field(max_length=500)
+    steps: int | None = Field(ge=1, le=150)
+    cfg: float | None = Field(ge=0, le=30)
 
 
 class WorkflowReview(BaseModel):
@@ -194,7 +196,9 @@ class AI:
                 'otherwise. List concrete visible flaws (anatomy, hands, faces, eyes, extra limbs, text, artifacts, blur, '
                 'over-saturation, composition) with a practical fix each: a prompt wording, a negative prompt term, or a '
                 'setting such as steps, CFG, denoise, LoRA strength or a detail/face pass. prompt_additions and '
-                'negative_additions are short comma-separated phrases to add, or empty. Inspect hands, faces, eyes and edges closely '
+                'negative_additions are short comma-separated phrases to add, or empty. steps and cfg are new values for the base '
+                '(first, full-denoise) sampler only when a visible flaw calls for it, else null; keep them near the creator range in settings. '
+                'Inspect hands, faces, eyes and edges closely '
                 'before concluding there are no flaws, but do not invent flaws.'},
             {'role': 'user', 'content': json.dumps({'prompt': prompt[:4000], 'settings': settings})[:8000]}]
         return (await self._complete(messages, ImageReview, images=[image])).model_dump()

@@ -98,7 +98,7 @@ class LoraSemanticTests(unittest.IsolatedAsyncioTestCase):
             await ai.rank_loras('caption', [{'label': 'x'}] * 41)
 
 
-REVIEW = '{"summary":"A fox","prompt_match":"good","issues":[{"problem":"Blurry paw","fix":"Add a detail pass"}],"prompt_additions":"","negative_additions":"blurry"}'
+REVIEW = '{"summary":"A fox","prompt_match":"good","issues":[{"problem":"Blurry paw","fix":"Add a detail pass"}],"prompt_additions":"","negative_additions":"blurry","steps":30,"cfg":null}'
 
 
 class ImageReviewTests(unittest.IsolatedAsyncioTestCase):

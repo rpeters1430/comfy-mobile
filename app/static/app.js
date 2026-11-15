@@ -2789,6 +2789,40 @@ function visionButton(job, item) {
   });
   return slot;
 }
+// The review's applicable fixes as ticked options, and a rerun of this job with the ones kept.
+function visionFixes(job, r) {
+  const base = MobileTools.visionBaseSampler(job);
+  const hasNegative = job.review || (job.negative_prompt ?? job.controls?.negative_prompt ?? job.details?.negative_prompt) != null;
+  const options = [
+    r.prompt_additions && ['prompt', r.prompt_additions, 'Add to prompt: ' + r.prompt_additions],
+    r.negative_additions && hasNegative && ['negative', r.negative_additions, 'Add to negative prompt: ' + r.negative_additions],
+    base && r.steps != null && r.steps !== base.values.steps && ['steps', r.steps, `Steps ${base.values.steps} → ${r.steps}`],
+    base && r.cfg != null && r.cfg !== base.values.cfg && ['cfg', r.cfg, `CFG ${base.values.cfg} → ${r.cfg}`],
+  ].filter(Boolean);
+  const ideas = r.negative_additions && !hasNegative
+    ? [el('p', { class: 'status' }, 'Negative prompt ideas (this workflow writes its own negative prompt): ' + r.negative_additions)] : [];
+  if (!options.length) return [...ideas, el('p', { class: 'status' }, 'No changes to try from this review.')];
+  if (!job.workflowId) return [el('p', { class: 'status' }, 'This job has no saved settings to rerun; ' + options.map(o => o[2]).join('; '))];
+  const boxes = options.map(([key, value, label]) => [key, value, el('input', { type: 'checkbox', checked: true }), label]);
+  const sameSeed = el('input', { type: 'checkbox', checked: job.seed != null, disabled: job.seed == null });
+  const status = el('p', { class: 'status', role: 'status' });
+  const run = el('button', { class: 'primary', type: 'button' }, '↻ Run again with fixes');
+  run.onclick = async () => {
+    const fixes = Object.fromEntries(boxes.filter(b => b[2].checked).map(([key, value]) => [key, value]));
+    if (!Object.keys(fixes).length) return void (status.textContent = 'Tick at least one fix.');
+    run.disabled = true; status.textContent = 'Queuing…';
+    try {
+      const next = MobileTools.withVisionFixes(job, fixes);
+      await submitJob({ ...next, seed: sameSeed.checked ? job.seed : randomSeed(),
+        controlsText: [job.controlsText, 'AI image fixes'].filter(Boolean).join(' · ') }, true);
+      viewer.close(); showTab('create');
+    } catch (e) { status.textContent = 'Could not start: ' + e.message; }
+    finally { run.disabled = false; }
+  };
+  return [...ideas, el('div', { class: 'panel' }, el('strong', {}, 'Try these fixes'),
+    ...boxes.map(([, , box, label]) => el('label', { class: 'switch' }, box, ' ', label)),
+    el('label', { class: 'switch' }, sameSeed, ' Keep the same seed (compare like for like)'), run, status)];
+}
 async function setupVisionReview(state, item) {
   const box = $('vision-review');
   box.classList.add('hide'); box.open = false;
@@ -2809,19 +2843,12 @@ async function setupVisionReview(state, item) {
       const r = await api(`/jobs/${state.job.id}/vision-review`, { method: 'POST',
         json: { filename: item.filename, subfolder: item.subfolder || '', type: item.type || 'output' } });
       if (viewerState !== state || state.items[state.index] !== item) return;
-      const copy = (label, text) => {
-        const b = el('button', { class: 'ghost', type: 'button', style: 'padding:4px 10px;font-size:12px' }, '📋 ' + label);
-        b.onclick = async () => { await navigator.clipboard.writeText(text); showToast('Copied'); };
-        return b;
-      };
       const match = { good: 'Matches the prompt', partial: 'Partly matches the prompt', poor: 'Does not match the prompt' }[r.prompt_match];
       $('vision-results').replaceChildren(
         el('p', {}, el('strong', {}, match), ` · ${r.provider} / ${r.model}`),
         el('p', { style: 'white-space:pre-wrap' }, r.summary),
         ...(r.issues.length ? [el('ul', {}, ...r.issues.map(i => el('li', {}, i.problem, el('br'), el('span', { class: 'status' }, 'Fix: ' + i.fix))))] : []),
-        ...(r.prompt_additions ? [el('div', { class: 'caption' }, 'Add to prompt: ' + r.prompt_additions, el('div', { class: 'caption-actions' }, copy('Copy', r.prompt_additions)))] : []),
-        ...(r.negative_additions ? [el('div', { class: 'caption' }, 'Add to negative: ' + r.negative_additions, el('div', { class: 'caption-actions' }, copy('Copy', r.negative_additions)))] : []),
-        el('p', { class: 'status' }, 'AI opinion of this one image; use “Open job details / run again” to try the fixes.'));
+        ...visionFixes(state.job, r));
       $('vision-status').textContent = '';
     } catch (e) {
       if (viewerState === state) $('vision-status').textContent = e.message;

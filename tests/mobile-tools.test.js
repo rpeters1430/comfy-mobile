@@ -120,3 +120,21 @@ test('choicesFromJob restores form choices from recorded job controls', () => {
   assert.equal(restored.skipDetailers, true);
   assert.deepEqual(restored.triggers, ['4ng3l face', 'red dress']);
 });
+
+test('vision fixes extend the prompt, caption or review and the base sampler', () => {
+  const { withVisionFixes } = require('../app/static/mobile-tools.js');
+  const details = { negative_prompt: 'lowres', samplers: [{ node: '15', role: 'base', values: { steps: 20, cfg: 8 } }, { node: '17', role: 'refine', values: { steps: 15, cfg: 5 } }] };
+  const caption = { id: 'a', workflowId: 'sdxl.json', prompt: '', seed: 5, details, controls: { caption_suffix: 'trigger', loras: { '8@0': { name: 'x', strength: 1 } } } };
+  const fixed = withVisionFixes(caption, { prompt: 'detailed hands,', negative: 'extra fingers', steps: 30, cfg: 6 });
+  assert.equal(fixed.id, undefined); assert.equal(fixed.seed, 5);
+  assert.equal(fixed.controls.caption_suffix, 'trigger, detailed hands');
+  assert.equal(fixed.negative_prompt, 'lowres, extra fingers');
+  assert.deepEqual(fixed.controls.sampling, { 15: { steps: 30, cfg: 6 } });
+  assert.deepEqual(fixed.controls.loras, caption.controls.loras);
+  assert.equal(caption.controls.sampling, undefined, 'the original job is untouched');
+  const typed = withVisionFixes({ prompt: 'a fox', controls: { negative_prompt: 'blurry' } }, { prompt: 'snow', negative: 'text' });
+  assert.equal(typed.prompt, 'a fox, snow'); assert.equal(typed.negative_prompt, 'blurry, text');
+  const reviewed = withVisionFixes({ prompt: '', review: { positive: 'cat', negative: '' }, controls: {} }, { prompt: 'whiskers', negative: 'blur' });
+  assert.deepEqual(reviewed.review, { positive: 'cat, whiskers', negative: 'blur' });
+  assert.equal(withVisionFixes({ prompt: '', controls: {} }, { negative: 'blur' }).negative_prompt, null, 'no negative prompt to extend');
+});

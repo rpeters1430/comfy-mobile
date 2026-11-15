@@ -79,7 +79,7 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
    else if (p === '/api/recipes') data={recipes:[],last_result:{ok:true}};
    else if (p === '/api/adviser/config' && method==='PUT') data={provider:'ollama',base_url:'http://pc:11434',model:'local',has_key:false,connected:true};
    else if (p === '/api/adviser/status') data={search_configured:true,ai_configured:true,provider:'ollama',model:'local',vision_configured:true,vision_model:'vl'};
-   else if (p === '/api/jobs/'+jobId+'/vision-review') {visionRequest=req.postDataJSON();data={summary:'A sharp portrait',prompt_match:'partial',issues:[{problem:'Extra finger',fix:'Add bad hands to the negative'}],prompt_additions:'',negative_additions:'bad hands',provider:'ollama',model:'vl'};}
+   else if (p === '/api/jobs/'+jobId+'/vision-review') {visionRequest=req.postDataJSON();data={summary:'A sharp portrait',prompt_match:'partial',issues:[{problem:'Extra finger',fix:'Add bad hands to the negative'}],prompt_additions:'detailed hands',negative_additions:'bad hands',steps:30,cfg:null,provider:'ollama',model:'vl'};}
    else if (p === '/api/adviser/reviews' && method==='POST') {reviewRequest=req.postDataJSON();data={id:'review'};}
    else if (p === '/api/adviser/reviews/review/apply') data={token:'approved',expires:Date.now()/1000+600,seeds:reviewRequest.seeds,sampling:{'7':{steps:25}},size:null};
    else if (p === '/api/adviser/reviews/review') data={status:method==='DELETE'?'cancelled':'done',ai_called:true,ai_provider:'ollama',ai_model:'local',ai_summary:'AI assessed current settings',cards:[],notes:[],proposals:[{id:'0',label:'Steps',changes:[{current:30,value:25}],reason:'Published range',evidence:[{quote:'Steps: 25'}]}]};
@@ -149,7 +149,19 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   await page.locator('#vision-start').click();
   await page.waitForFunction(()=>document.querySelector('#vision-results').textContent.includes('Extra finger'));
   assert.equal(visionRequest.filename,'result.png');
-  assert.match(await page.locator('#vision-results').textContent(),/Partly matches the prompt.*Add to negative: bad hands/s);
+  assert.match(await page.locator('#vision-results').textContent(),/Partly matches the prompt.*Add to prompt: detailed hands/s);
+  // The job's negative prompt can be extended; it has no sampler details, so no steps/CFG fix is offered.
+  assert.match(await page.locator('#vision-results').textContent(),/Add to negative prompt: bad hands/);
+  assert.doesNotMatch(await page.locator('#vision-results').textContent(),/Steps \d/);
+  const queuedBefore = submissions.length;
+  await page.getByRole('button',{name:'↻ Run again with fixes'}).click();
+  await page.locator('#image-viewer').waitFor({state:'hidden'});
+  assert.equal(submissions.length,queuedBefore+1);
+  assert.equal(submissions.at(-1).caption_suffix,'detailed hands');assert.equal(submissions.at(-1).seed,42);
+  assert.equal(submissions.at(-1).negative_prompt,'blurry, bad hands');
+  await page.locator('nav [data-tab=gallery]').click();
+  await page.locator('#gallery .card').first().click();
+  await page.locator('#image-viewer').waitFor({state:'visible'});
   await page.locator('#viewer-close').click();
   // The result card's shortcut opens the viewer and starts the review straight away.
   visionRequest=null;
