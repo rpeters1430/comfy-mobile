@@ -43,15 +43,23 @@
       field('ai-provider').onchange = () => {
         const defaults = { openai: 'https://api.openai.com/v1', gemini: 'https://generativelanguage.googleapis.com/v1beta/openai', openrouter: 'https://openrouter.ai/api/v1' };
         field('ai-base').value = defaults[field('ai-provider').value] || ''; field('ai-key').value = ''; field('ai-model').value = ''; field('ai-vision-model').value = '';
+        field('ai-model-pick').classList.add('hide'); field('ai-vision-pick').classList.add('hide');
         connectionStatus.textContent = 'Choose the model, then test this connection.';
       };
       field('ai-load-models').onclick = async () => {
         const b = field('ai-load-models'); b.disabled = true; connectionStatus.textContent = 'Loading available models…';
         try {
           const r = await api('/adviser/models', { method: 'POST', json: values() });
-          field('ai-models').replaceChildren(...r.models.map(value => el('option', { value })));
-          if (r.models.length === 1) field('ai-model').value = r.models[0];
-          connectionStatus.textContent = `${r.models.length} models available. Select or type a model, then test.`;
+          // A real <select>: Android Chrome shows only a few filtered <datalist> suggestions.
+          for (const [pick, input, blank] of [['ai-model-pick', 'ai-model', 'Choose the settings model…'], ['ai-vision-pick', 'ai-vision-model', 'Choose a vision model (optional)…']]) {
+            const select = field(pick), current = field(input).value.trim();
+            select.replaceChildren(el('option', { value: '' }, blank), ...r.models.map(value => el('option', { value }, value)));
+            select.value = r.models.includes(current) ? current : '';
+            select.onchange = () => { if (select.value) field(input).value = select.value; };
+            select.classList.toggle('hide', !r.models.length);
+          }
+          if (r.models.length === 1) field('ai-model').value = field('ai-model-pick').value = r.models[0];
+          connectionStatus.textContent = `${r.models.length} models available. Choose them below each field, then test.`;
         } catch (e) { connectionStatus.textContent = e.message; } finally { b.disabled = false; }
       };
       field('ai-test-save').onclick = async () => {

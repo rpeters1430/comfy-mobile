@@ -74,7 +74,7 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
      if (offline) return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:{message:'ComfyUI is offline',offline:true,can_hold:true}})});
      const body=req.postDataJSON();submissions.push(body);stage=body.stage;data={prompt_id:jobId};}
    else if (p === '/api/adviser/config' && method==='GET') data={provider:'ollama',base_url:'http://pc:11434',model:'local',has_key:false};
-   else if (p === '/api/adviser/models') data={models:['local']};
+   else if (p === '/api/adviser/models') data={models:['local','qwen3-vl:8b','gpt-oss:20b']};
    else if (p === '/api/recipes') data={recipes:[],last_result:{ok:true}};
    else if (p === '/api/adviser/config' && method==='PUT') data={provider:'ollama',base_url:'http://pc:11434',model:'local',has_key:false,connected:true};
    else if (p === '/api/adviser/status') data={search_configured:true,ai_configured:true,provider:'ollama',model:'local',vision_configured:true,vision_model:'vl'};
@@ -99,6 +99,8 @@ const output = {status:'success',completed:true,errors:[],outputs:[{node:'9',kin
   await page.waitForFunction(()=>document.querySelector('#ai-model').value==='local');
   await page.locator('#ai-load-models').click();
   await page.waitForFunction(()=>document.querySelector('#ai-connection-status').textContent.includes('models available'));
+  assert.equal(await page.locator('#ai-model-pick option').count(),4);assert.equal(await page.locator('#ai-model-pick').inputValue(),'local');
+  await page.locator('#ai-vision-pick').selectOption('qwen3-vl:8b');assert.equal(await page.locator('#ai-vision-model').inputValue(),'qwen3-vl:8b');
   await page.locator('#ai-test-save').click();
   await page.waitForFunction(()=>document.querySelector('#ai-connection-status').textContent.includes('Connected and saved'));
   await page.locator('#named-presets summary').click();
