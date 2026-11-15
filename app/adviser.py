@@ -184,6 +184,8 @@ def merge_proposals(published,ai):
 class Adviser:
     def __init__(self,root):
         self.store=Store(root); self.tasks={}; self.lock=asyncio.Lock()
+        self.ai_cache={}
+        self.last_ai_config=None
 
     def config(self):
         try: saved=self.store.get('config','ai')
@@ -191,7 +193,11 @@ class Adviser:
         return AIConfig(**saved) if saved else AIConfig.env()
 
     def ai(self):
-        return AI(self.config())
+        cfg=self.config()
+        if self.last_ai_config and (self.last_ai_config.provider, self.last_ai_config.model)!=(cfg.provider, cfg.model):
+            self.ai_cache={}
+        self.last_ai_config=cfg
+        return AI(cfg)
 
     def public_config(self):
         cfg=self.config()
@@ -248,9 +254,18 @@ class Adviser:
                     self.store.put('review',key,row)
                     context=workflow_context(row['graph'],row['controls'])
                     if not context['capabilities']: row['notes'].append('This graph has no safely editable base sampler controls; the AI assessment is informational.')
+                    fp=fingerprint(row['graph'],row['controls'],row['source_hash'])
+                cache_key=(fp, ai.config.provider, ai.config.model)
+                cached_report=self.ai_cache.get(cache_key)
+                if cached_report is not None:
+                    report=cached_report
+                else:
                     report=await ai.review(context)
-                    row['ai_called']=True;row['ai_summary']=report['summary']
-                    row['ai_provider']=ai.config.provider;row['ai_model']=ai.config.model
+                    self.ai_cache[cache_key]=report
+                    row['ai_called']=True
+                    row['ai_summary']=report['summary']
+                    row['ai_provider']=ai.config.provider
+                    row['ai_model']=ai.config.model
                     row['proposals']=ai_proposals(context,report)
                     self.store.put('review',key,row)
                     ts=targets(row['graph']) if row.get('web_research') else []
