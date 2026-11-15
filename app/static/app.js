@@ -653,7 +653,7 @@ async function loadControls(wf, restored = null) {
     controls = found;
     const saved = restored || savedControls()[wf.id] || {};
   const loraOk = name => controls.lora_options.includes(name);
-  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', preset: '', upscaler: '', cinematic: saved.cinematic !== false, caption: {}, skipDetailers: !!saved.skipDetailers,
+  choices = { models: {}, loras: {}, extra: [], sampling: {}, aspect: '', preset: '', upscaler: '', cinematic: saved.cinematic !== false, caption: {}, captionToggles: {}, skipDetailers: !!saved.skipDetailers,
     triggers: Array.isArray(saved.triggers) ? saved.triggers.filter(t => typeof t === 'string') : [] };
   // Saved video values only replace the ones this workflow exposes.
   choices.video = Object.fromEntries(VIDEO_KEYS.filter(k => controls.video?.[k] != null)
@@ -686,11 +686,15 @@ async function loadControls(wf, restored = null) {
   for (const cap of controls.captions) {
     const values = { ...cap.values };
     const style = captionStyle(cap);
-    const pick = restored ? saved.caption?.[cap.node] || {} : { ...shared, ...(style ? { [style]: saved.caption?.[cap.node]?.[style] } : {}) };
+    // Model/length are shared across workflows; style and switches stay per workflow, and only the
+    // switches tapped on the phone override the PC workflow (one workflow's "Vulgar slang" must not leak).
+    const pick = restored ? saved.caption?.[cap.node] || {}
+      : { ...shared, ...(style ? { [style]: saved.caption?.[cap.node]?.[style] } : {}), ...(saved.captionToggles?.[cap.node] || {}) };
     for (const [field, value] of Object.entries(pick))
       if (field in values && (cap.options[field] ? cap.options[field].includes(value) : typeof value === 'boolean'))
         values[field] = value;
     choices.caption[cap.node] = values;
+    choices.captionToggles[cap.node] = { ...(saved.captionToggles?.[cap.node] || {}) };
   }
   choices.settings = MobileTools.restoreSettings(controls.settings, saved.settings);
   choices.characters = saved.characters !== false;  // on unless turned off for this workflow
@@ -1009,7 +1013,11 @@ function samplerSection(smp, title, changed) {
   return el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, title), el('div', { class: 'settings-grid' }, fields));
 }
 
-function savedCaption() { try { return JSON.parse(load(CAPTION_KEY) || '{}'); } catch (e) { return {}; } }
+// Shared caption choices; switches saved here by older versions are ignored (they are per workflow now).
+function savedCaption() {
+  try { return Object.fromEntries(Object.entries(JSON.parse(load(CAPTION_KEY) || '{}')).filter(([, v]) => typeof v !== 'boolean')); }
+  catch (e) { return {}; }
+}
 const CAPTION_LABELS = {
   model: 'Caption model', caption_type: 'Caption style', prompt_style: 'Caption style', preset: 'Caption style',
   length: 'Length', caption_length: 'Length', content_mode: 'Content',
@@ -1031,7 +1039,8 @@ function captionSection(cap, changed) {
   const style = captionStyle(cap);
   const update = (field, value) => {
     values[field] = value;
-    if (field !== style) {
+    if (typeof value === 'boolean') (choices.captionToggles[cap.node] ||= {})[field] = value;
+    else if (field !== style) {
       const shared = savedCaption();
       shared[field] = value;
       store(CAPTION_KEY, JSON.stringify(shared));
@@ -1064,7 +1073,7 @@ function captionSection(cap, changed) {
         'A Booru tagger looks at the photo first; anime and game characters it recognises (e.g. Tifa Lockhart) are named in the caption.'));
   }
   return el('div', { class: 'lora' }, el('label', { style: 'margin:0' }, 'Auto caption'),
-    el('small', { class: 'status' }, 'Shared across all auto-caption workflows, except style.'),
+    el('small', { class: 'status' }, 'Model and length are shared across auto-caption workflows; style and switches are per workflow.'),
     el('div', { class: 'settings-grid' }, selects), naming, extras);
 }
 
