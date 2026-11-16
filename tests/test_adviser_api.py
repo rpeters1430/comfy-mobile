@@ -171,3 +171,23 @@ class LoraStrengthApplyTests(AdviserApiTests):
         with patch.object(main,'request',request),patch.object(main.job_store,'add'):
             data={**self.job,'loras':r.json()['loras'],'adviser_token':r.json()['token'],'seed':42}
             self.assertEqual(200,self.client.post('/api/jobs',headers=AUTH,json=data).status_code)
+
+    def test_ai_strength_for_phone_added_lora_applies_to_extra_loras(self):
+        import asyncio
+        from app.workflow_controls import find_controls
+        from app.adviser import workflow_context, ai_proposals
+        self.job={**self.job,'extra_loras':[{'name':'detail.safetensors','strength':0.65}]}
+        job=main.Job(**self.job)
+        graph,info,_,_,source_hash=asyncio.run(main.prepare_job(job))
+        controls=find_controls(graph,info)
+        proposals=ai_proposals(workflow_context(graph,controls),{'summary':'s','changes':[{'node':'mobile_lora_1','field':'strength','value':'1.0','reason':'Weak'}]})
+        self.assertTrue(proposals)
+        self.adviser.store.put('review','review',{'id':'review','owner':main.adviser_owner(),'status':'done','graph':graph,'controls':controls,
+                                                  'source_hash':source_hash,'seeds':[42],'cards':[],'proposals':proposals,'notes':[]})
+        r=self.client.post('/api/adviser/reviews/review/apply',headers=AUTH,json={'job':self.job,'selected':[proposals[0]['id']]})
+        self.assertEqual(200,r.status_code,r.text)
+        self.assertEqual([{'name':'detail.safetensors','strength':1.0}],r.json()['extra_loras'])
+        request=AsyncMock(return_value={'prompt_id':'0f8d2a4c-1111-4222-8333-944455556666'})
+        with patch.object(main,'request',request),patch.object(main.job_store,'add'):
+            data={**self.job,'extra_loras':r.json()['extra_loras'],'adviser_token':r.json()['token'],'seed':42}
+            self.assertEqual(200,self.client.post('/api/jobs',headers=AUTH,json=data).status_code)

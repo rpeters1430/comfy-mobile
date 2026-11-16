@@ -883,6 +883,9 @@ async def apply_adviser_review(review_id: str, body: ApplySettingsRequest, autho
     for proposal in chosen:
         for change in proposal['changes']:
             if change['field']=='size': values['size']=change['value']
+            elif change['field']=='strength' and (extra:=re.fullmatch(r'mobile_lora_(\d+)',change['node'])):
+                # LoRAs added on the phone become mobile_lora_N in the built graph; N counts from 1 in extra_loras order.
+                values['extra_loras'][int(extra[1])-1]['strength']=change['value']
             elif change['field']=='strength':
                 values['loras'][change['node']]={'name':values['loras'].get(change['node'],{}).get('name') or change['lora'],'strength':change['value']}
             else: values['sampling'].setdefault(change['node'],{})[change['field']]=change['value']
@@ -896,7 +899,7 @@ async def apply_adviser_review(review_id: str, body: ApplySettingsRequest, autho
     token=secrets.token_urlsafe(32)
     audit={'review_id':review_id,'applied_at':time.time(),'changes':chosen}
     adviser.store.put('approval',token,{'owner':adviser_owner(),'hashes':hashes,'seeds':row['seeds'],'intents':intents,'audit':audit},ttl=max(1,row.get('expires',time.time()+600)-time.time()))
-    return {'sampling':values['sampling'],'size':values.get('size'),'loras':values['loras'],'token':token,'seeds':row['seeds'],'review_id':review_id,'expires':row.get('expires',time.time()+600)}
+    return {'sampling':values['sampling'],'size':values.get('size'),'loras':values['loras'],'extra_loras':values['extra_loras'],'token':token,'seeds':row['seeds'],'review_id':review_id,'expires':row.get('expires',time.time()+600)}
 
 class VisionReviewRequest(BaseModel):
     filename: str = Field(max_length=300)
