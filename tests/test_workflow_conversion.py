@@ -379,6 +379,12 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(result["2"]["inputs"]["text"], "<lora:detail:0.6>")
         self.assertEqual(result["2"]["inputs"]["loras"], {"__value__": [{"name": "detail", "strength": 0.6}]})
 
+    def test_power_puter_frontend_widgets(self):
+        schema = {"Power Puter (rgthree)": {"input": {"required": {}, "optional": {}}}}
+        graph = {"nodes": [{"id": 1, "type": "Power Puter (rgthree)", "inputs": [{"name": "a", "type": "*", "link": None}],
+                            "widgets_values": [{"outputs": ["STRING"]}, "purge_vram(True)"]}]}
+        self.assertEqual(convert_ui(graph, schema)["1"]["inputs"], {"outputs": {"outputs": ["STRING"]}, "code": "purge_vram(True)"})
+
     def test_ollama_empty_model_choices_allowed_while_loader_empty_choices_rejected(self):
         schema = {
             "OllamaConnectivityV2": {"input": {"required": {

@@ -36,6 +36,8 @@ WIDGET_TYPES = ("STRING", "INT", "FLOAT", "BOOLEAN", "COMBO")
 DYNAMIC_COMBO = "COMFY_DYNAMICCOMBO_V3"
 AUTOGROW = "COMFY_AUTOGROW_V3"
 SUBGRAPH_INPUT, SUBGRAPH_OUTPUT = "-10", "-20"
+# Widgets added by a node's frontend script, absent from /object_info, in widgets_values order.
+FRONTEND_WIDGETS = {"Power Puter (rgthree)": ("outputs", "code")}
 
 
 def _map_widgets(fields, values, widget_inputs=()):
@@ -271,6 +273,10 @@ def convert_ui(data, object_info):
             required += dynamic_required
         else:
             widget_map = {}
+        if kind in FRONTEND_WIDGETS and isinstance(widget_values, list):
+            for field, value in zip(FRONTEND_WIDGETS[kind], widget_values):
+                fields.setdefault(field, ["*", {}])
+                widget_map[field] = value
         for item in node.get("inputs", []):
             field = item.get("name")
             lid = item.get("link")
