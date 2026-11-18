@@ -1,4 +1,4 @@
-# Comfy Mobile — v0.8.0
+# Comfy Mobile — v0.9.0
 
 Workflow management uses the PC as the source of truth. **Reset workflows** clears the app's downloaded library (including subfolders) immediately, even while the PC is offline. Automatic imports remain paused across restarts until **Sync now** succeeds. Sync downloads saved ComfyUI workflows and removes local copies deleted on the PC; it never uploads bundled workflows or changes PC files. Bundled examples are no longer included in the app's workflow catalog. History, images and presets are retained.
 
@@ -26,6 +26,19 @@ If the phone still shows an older version, reload the tab and check that the upd
 - **Workflow Sync**: Safe, one-way pull of workflows directly from ComfyUI's user-data directory to your NAS.
 - **Enhance and Describe**: with an AI connection set up, ✨ Enhance expands a short prompt and 📷 Describe a photo writes a prompt from a picture (vision model), in the style the picked checkpoint expects; ↶ Undo restores your text.
 - **Upscale results**: ⤢ Upscale on any saved image runs it through an upscale model on the PC (2× or 4×) as a new job; the last model and size are remembered.
+
+## New in v0.9.0
+
+- **Your PC workflows, fully adjustable:** every node setting in a synced workflow shows on the phone, grouped by node (title a node `📱 …` in ComfyUI to pin it to the top), including LoRA Manager LoRAs. A workflow changed on the PC shows "updated on PC" and lists what was added or removed. The catalog shows only workflows synced from the PC, and sync only downloads; it never changes PC files.
+- **⤢ Upscale** any saved image, 2× or 4× with any upscale model on the PC, as a new job.
+- **✨ Enhance and 📷 Describe a photo** under the prompt box, through the AI connection, written in the style the picked checkpoint expects. ↶ Undo restores your text.
+- **AI image review:** 🔍 AI review on a finished image asks the vision model for visible flaws and fixes; **Run again with fixes** reruns with the ones you keep.
+- **LoRA Manager:** recipes sync from LoRA Manager and run from the Recipes panel; LoRA trigger words and strengths come from LoRA Manager; the settings adviser works with LoRA Manager workflows.
+- **Auto captions:** 🎭 Name known characters puts recognised anime/game characters in the caption (fictional characters only). Caption switches are kept per workflow.
+- **Fails early, not mid-run:** a workflow with node settings the app can't send is refused before it starts, naming the node. Power Puter, Power Lora Loader and TriggerWord Toggle settings are now sent.
+- Fixed: Generate doing nothing with some node settings; approved AI reviews refused on workflows with a negative prompt; AI LoRA strengths for LoRAs added on the phone; Civitai creator settings from multi-version pages; an empty upscaler list.
+
+Upgrading: nothing to migrate. Recipes are copied to `data/recipes`. Choose the vision model for image review and Describe in **AI connection setup** (or set `ADVISER_VISION_MODEL`).
 
 ## New in v0.8.0
 

@@ -104,7 +104,7 @@ async def lifespan(app: FastAPI):
         await _http_client.aclose()
         _http_client = None
 
-VERSION = '0.8.0'
+VERSION = '0.9.0'
 app = FastAPI(title='Image Studio Mobile', version=VERSION, lifespan=lifespan)
 
 class Compress(GZipMiddleware):
