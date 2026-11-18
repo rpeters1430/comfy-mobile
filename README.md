@@ -24,6 +24,7 @@ If the phone still shows an older version, reload the tab and check that the upd
 - **Phone wallpapers**: Pixel (including Pixel 10/Pro/Pro XL), iPhone and Galaxy presets, rendered near the model's native pixel budget and fit to the exact screen for native presets. Standard tall presets keep conservative 9:16 render-and-crop behavior; Pixel Cinematic-ready renders close to the final portrait aspect instead of trimming a 9:16 image. Composition guidance only; Pixel's on-device zoom still crops the edges. Normal wallpaper mode is unchanged.
 - **Notifications and gallery**: The NAS watches each job and sends a push notification when it finishes, even with the app closed (needs HTTPS). Finished jobs and thumbnails are kept on the NAS, so the gallery survives ComfyUI restarts.
 - **Workflow Sync**: Safe, one-way pull of workflows directly from ComfyUI's user-data directory to your NAS.
+- **Enhance and Describe**: with an AI connection set up, ✨ Enhance expands a short prompt and 📷 Describe a photo writes a prompt from a picture (vision model), in the style the picked checkpoint expects; ↶ Undo restores your text.
 - **Upscale results**: ⤢ Upscale on any saved image runs it through an upscale model on the PC (2× or 4×) as a new job; the last model and size are remembered.
 
 ## New in v0.8.0

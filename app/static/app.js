@@ -222,6 +222,7 @@ async function selectWorkflow(wf, restored = null) {
   if ($('empty-workspace')) $('empty-workspace').classList.add('hide');
   $('form-title').textContent = prettyName(wf.name);
   $('prompt-box').classList.toggle('hide', !wf.takes_prompt);
+  showPromptHelp();
   $('no-prompt').classList.toggle('hide', wf.takes_prompt || !wf.image_inputs);
   $('images-box').classList.toggle('hide', !wf.image_inputs);
   $('images-label').textContent = wf.image_inputs > 1 ? `Input images (${wf.image_inputs}, in order)` : 'Input image';
@@ -313,6 +314,71 @@ async function pickImage(i, file) {
     renderSlots();
   }
 }
+
+/* Enhance rewrites the typed prompt with the AI connection's text model; Describe turns a photo into a prompt with
+   its vision model. Both write for the picked checkpoint's prompt style, and Undo brings the previous text back. */
+let promptBeforeHelp = null;
+
+function showPromptHelp() {
+  $('prompt-help-status').textContent = '';
+  setPromptUndo(null);
+  visionStatus().then(config => {
+    $('prompt-enhance').classList.toggle('hide', !config.ai_configured);
+    $('prompt-describe').classList.toggle('hide', !config.vision_configured);
+    $('prompt-help').classList.toggle('hide', !config.ai_configured && !config.vision_configured);
+  });
+}
+
+function setPromptUndo(text) {
+  promptBeforeHelp = text;
+  $('prompt-undo').classList.toggle('hide', text == null);
+}
+
+function pickedCheckpoint() {
+  return controls?.models?.length ? choices?.models?.[controls.models[0].node] || '' : '';
+}
+
+async function promptHelp(button, message, run) {
+  const status = $('prompt-help-status');
+  button.disabled = true;
+  status.textContent = message;
+  try {
+    const text = (await run()).prompt;
+    const before = $('prompt').value;
+    $('prompt').value = text;
+    $('prompt').dispatchEvent(new Event('input'));
+    setPromptUndo(before);
+    status.textContent = '';
+  } catch (e) {
+    status.textContent = e.status === 503 && e.message === 'ComfyUI is offline' ? 'ComfyUI PC is offline' : e.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+$('prompt-enhance').onclick = () => {
+  if (!$('prompt').value.trim()) return void ($('prompt-help-status').textContent = 'Type a short prompt first');
+  promptHelp($('prompt-enhance'), 'Enhancing… (the first run loads the model)', () =>
+    api('/prompt/enhance', { method: 'POST', json: { prompt: $('prompt').value, model: pickedCheckpoint() } }));
+};
+$('prompt-describe').onclick = () => $('prompt-describe-file').click();
+$('prompt-describe-file').onchange = e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (file) promptHelp($('prompt-describe'), 'Describing the photo… (the first run loads the model)', async () => {
+    const body = await prepareImage(file);
+    const up = await api('/uploads', { method: 'POST', body, headers: { 'Content-Type': body.type || 'application/octet-stream' } });
+    if (up.held) throw Error('ComfyUI PC is offline');
+    return api('/prompt/describe', { method: 'POST', json: { upload: up.name, model: pickedCheckpoint() } });
+  });
+};
+$('prompt-undo').onclick = () => {
+  if (promptBeforeHelp == null) return;
+  $('prompt').value = promptBeforeHelp;
+  $('prompt').dispatchEvent(new Event('input'));
+  setPromptUndo(null);
+};
+$('prompt').addEventListener('input', e => { if (e.isTrusted) setPromptUndo(null); });
 
 /* ---------- Saved Prompts ---------- */
 function savedPrompts() { try { return JSON.parse(load(PROMPTS_KEY) || '{}'); } catch (e) { return {}; } }

@@ -80,6 +80,13 @@
       <div id="prompt-box">
         <label for="prompt">Prompt</label>
         <textarea id="prompt" placeholder="Describe what you want to create…" spellcheck="false"></textarea>
+        <div class="row prompt-help hide" id="prompt-help">
+          <button class="ghost hide" type="button" id="prompt-enhance">✨ Enhance</button>
+          <button class="ghost hide" type="button" id="prompt-describe">📷 Describe a photo</button>
+          <button class="ghost hide" type="button" id="prompt-undo">↶ Undo</button>
+          <input type="file" id="prompt-describe-file" accept="image/*" class="hide">
+        </div>
+        <p class="status" id="prompt-help-status" role="status"></p>
         <div id="lora-triggers-box" class="hide" style="margin-top:6px">
           <small class="muted" style="display:block;margin-bottom:4px">LoRA Triggers (click to insert):</small>
           <div class="aspects" id="prompt-triggers" role="group" aria-label="LoRA Triggers"></div>

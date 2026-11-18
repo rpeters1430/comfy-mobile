@@ -970,6 +970,41 @@ async def vision_review(prompt_id: str, body: VisionReviewRequest, authorization
     while len(_vision_cache)>64: del _vision_cache[next(iter(_vision_cache))]
     return result
 
+class PromptHelp(BaseModel):
+    prompt: str = Field(default='', max_length=4000)
+    upload: str = Field(default='', max_length=64)
+    model: str = Field(default='', max_length=255)  # the checkpoint picked on the phone; picks the prompt style
+
+def model_label(name: str) -> str:
+    '''The checkpoint's bare name; PC folders never go to the AI provider.'''
+    return re.sub(r'\.(safetensors|ckpt|pt|pth|gguf)$', '', name.replace('\\', '/').rsplit('/', 1)[-1])
+
+@app.post('/api/prompt/enhance')
+async def enhance_prompt(body: PromptHelp, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    if not body.prompt.strip(): raise HTTPException(400, 'Type a prompt first')
+    try:
+        return {'prompt': await adviser.ai().enhance_prompt(body.prompt, model_label(body.model))}
+    except AIError as exc:
+        raise HTTPException(503, 'Enhance failed: ' + str(exc)) from exc
+
+@app.post('/api/prompt/describe')
+async def describe_photo(body: PromptHelp, authorization: str | None = Header(default=None)):
+    '''A photo uploaded through /api/uploads, described as a prompt by the vision model.'''
+    auth(authorization)
+    if not UPLOAD_NAME.fullmatch(body.upload): raise HTTPException(400, 'Invalid upload name')
+    try: ai = adviser.vision()
+    except AIError as exc: raise HTTPException(400, str(exc)) from exc
+    try:
+        image = await bounded_get(_http_client, f'{COMFY}/view', VISION_MAX_IMAGE, timeout=httpx.Timeout(60.0, connect=4.0),
+                                  params={'filename': body.upload, 'subfolder': '', 'type': 'input', 'preview': 'jpeg;90'})
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(502, 'ComfyUI could not serve the photo') from exc
+    try:
+        return {'prompt': await ai.describe_image(image, model_label(body.model))}
+    except AIError as exc:
+        raise HTTPException(503, 'Describe failed: ' + str(exc)) from exc
+
 @app.post('/api/uploads')
 async def upload(req: Request, authorization: str | None = Header(default=None)):
     '''Raw image body (PNG/JPEG/WebP) -> ComfyUI input folder under a server-chosen name.'''

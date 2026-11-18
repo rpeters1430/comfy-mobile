@@ -28,6 +28,7 @@ Not yet in a version bump or README "New in" section:
 - LoRA Manager recipes: sync and generate from a recipe (phone UI not yet checked in a real browser)
 - LoRA Manager trigger words and strengths; adviser works with LoRA Manager / PAG workflows
 - AI review of finished images, AI review button on result cards, "Run again with fixes"
+- ✨ Enhance and 📷 Describe a photo for the prompt, through the AI connection
 - ⤢ Upscale on results (2×/4× with any upscale model); fixed the catalog's empty upscaler list (V3 combo format)
 - Conversion fails up front on node settings it can't map; Power Lora Loader LoRAs and TriggerWord Toggle on/off choices from the PC are now sent
 - Fixes: Generate doing nothing (step limits), AI review apply (negative prompt, phone-added LoRA strengths), Civitai multi-version descriptions, Power Puter `code` dropped in conversion
@@ -44,7 +45,7 @@ Not yet in a version bump or README "New in" section:
 | --- | --- | --- | --- |
 | ✅ 1 | Fail closed on leftover widget values | Unmapped saved values now fail the workflow up front with the node name, instead of mid-run (Power Puter did this after 3½ minutes). Upload buttons and ShowText display text are ignored | S |
 | ✅ 2 | Upscale on results | ⤢ Upscale on result cards and the viewer: pick a model and 2×/4×; the saved image is read from ComfyUI's output folder, no re-upload. A hires refine (img2img) pass is not done yet | S–M |
-| 3 | Prompt enhance / describe image | ✨ Enhance next to the prompt box and Describe on photos, through the adviser connection (text model for enhance, vision model for describe) | M |
+| ✅ 3 | Prompt enhance / describe image | ✨ Enhance and 📷 Describe a photo under the prompt box, with Undo. Enhance uses the AI connection's text model, Describe its vision model; both write in the picked checkpoint's prompt style (tags, phrases or sentences) | M |
 | 4 | Fast / Balanced / Best quality chips | Per model family steps/CFG/hires presets on top of the existing sampler controls | S |
 | 5 | Release 0.9.0 | Bump `VERSION` and README, with a "New in v0.9.0" section from the unreleased list | S |
 
