@@ -18,7 +18,7 @@ if __package__:
     from .workflow_sync import WorkflowSync, bounded_get
     from .workflow_conversion import convert_ui, ConversionError
     from .workflow_controls import ControlError, MAX_EXTRA_LORAS, _options, apply_controls, find_controls, run_details
-    from .workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, view_query
+    from .workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, upscale_graph, view_query
     from .job_store import JOB_ID, JobStore
     from .preset_store import PresetStore
     from .deferred import HELD_ID, DeferredJobs
@@ -39,7 +39,7 @@ else:
     from workflow_sync import WorkflowSync, bounded_get
     from workflow_conversion import convert_ui, ConversionError
     from workflow_controls import ControlError, MAX_EXTRA_LORAS, _options, apply_controls, find_controls, run_details
-    from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, view_query
+    from workflow_jobs import JobError, MAX_UPLOAD, VIDEO_EXT, apply_job, check_view, cover, job_summary, safe_output, UPLOAD_NAME, upload_name, upscale_graph, view_query
     from job_store import JOB_ID, JobStore
     from preset_store import PresetStore
     from deferred import HELD_ID, DeferredJobs
@@ -324,10 +324,7 @@ async def catalog(authorization: str | None = Header(default=None)):
     if time.monotonic() - _last_sync_at > 15.0 and not workflow_sync.lock.locked():
         await _run_workflow_sync(automatic=True)
     names = {'checkpoints':('CheckpointLoaderSimple','ckpt_name'), 'loras':('LoraLoader','lora_name'), 'upscalers':('UpscaleModelLoader','model_name')}
-    out = {}
-    for key,(cls,field) in names.items():
-        inp = info.get(cls,{}).get('input',{}).get('required',{}).get(field,[])
-        out[key] = inp[0] if inp and isinstance(inp[0],list) else []
+    out = {key: _options(info, cls, field) for key,(cls,field) in names.items()}
     workflows=[]
     for source_dir in (SYNC_DIR,):
       if source_dir.exists():
@@ -588,6 +585,34 @@ async def check_job(job: Job, authorization: str | None = Header(default=None)):
     if job.stage != 'render': return {'issues': []}
     graph, info, *_ = await prepare_job(job)
     return {'issues': check_settings(graph, find_controls(graph, info))}
+
+class UpscaleJob(BaseModel):
+    filename: str = Field(max_length=255)
+    subfolder: str = Field(default='', max_length=255)
+    model: str = Field(max_length=255)
+    scale: Literal[2, 4] = 2
+
+@app.post('/api/jobs/{prompt_id}/upscale')
+async def upscale_job(prompt_id: str, body: UpscaleJob, authorization: str | None = Header(default=None)):
+    '''Queue an upscale of one image a job saved; only that job's own outputs can be named.'''
+    auth(authorization)
+    if not re.fullmatch(r'[0-9a-fA-F-]{36}',prompt_id): raise HTTPException(400,'Invalid job id')
+    try:
+        outputs = (await outputs_for(prompt_id))['outputs']
+        item = next((o for o in outputs if o.get('filename') == body.filename and o.get('subfolder') == body.subfolder and o.get('type') == 'output'), None)
+        if item is None: raise HTTPException(404, 'That image is not a saved output of this job')
+        info = await get_object_info()
+        if body.model not in _options(info, 'UpscaleModelLoader', 'model_name'): raise HTTPException(400, f'Upscale model not found in ComfyUI: {body.model}')
+        graph = upscale_graph(item, body.model, body.scale)
+        source = job_store.get(prompt_id) or {}
+        label = f"Upscale {body.scale}× · {re.sub(r'^Upscale [0-9]× · ', '', source.get('workflow') or 'image')}"
+        result = await submit_graph(graph, run_details(graph, info), label, source.get('prompt') or '',
+                                    {'upscale_of': prompt_id, **body.model_dump()})
+    except JobError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ComfyOffline as exc:
+        raise HTTPException(503, {'message': 'ComfyUI is offline', 'offline': True, 'can_hold': False}) from exc
+    return {**result, 'label': label}
 
 class RecipeJob(BaseModel):
     seed: int | None = Field(default=None, ge=0, le=18446744073709551615)

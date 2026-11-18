@@ -127,3 +127,30 @@ def cover(outputs: list[dict]) -> dict | None:
     """The output the gallery shows for a job: the first final file, else the first preview."""
     files = [o for o in outputs if o["kind"] != "text"]
     return next((o for o in files if not o["preview"]), files[0] if files else None)
+
+
+MODEL_SCALE = re.compile(r"(?<![0-9])([1-8])x(?![0-9a-z])|(?<![a-z])x([1-8])(?![0-9])", re.I)
+
+
+def upscale_graph(item: dict, model: str, scale: int) -> dict:
+    """A finished job's saved image through an upscale model, resized to `scale` times the original.
+
+    LoadImage reads ComfyUI's output folder through the ` [output]` annotation, so nothing is uploaded.
+    The model's own factor comes from its name (4x-UltraSharp, RealESRGAN_x4plus); without one its output is kept.
+    """
+    if item.get("kind") != "image" or item.get("type") != "output":
+        raise JobError("Only saved images can be upscaled")
+    path = f"{item['subfolder']}/{item['filename']}" if item["subfolder"] else item["filename"]
+    graph = {
+        "upscale_source": {"class_type": "LoadImage", "inputs": {"image": f"{path} [output]"}},
+        "upscale_model": {"class_type": "UpscaleModelLoader", "inputs": {"model_name": model}},
+        "upscale": {"class_type": "ImageUpscaleWithModel", "inputs": {"upscale_model": ["upscale_model", 0], "image": ["upscale_source", 0]}},
+    }
+    image = ["upscale", 0]
+    found = MODEL_SCALE.search(model.replace("\\", "/").rsplit("/", 1)[-1])
+    native = int(found.group(1) or found.group(2)) if found else None
+    if native and native != scale:
+        graph["upscale_resize"] = {"class_type": "ImageScaleBy", "inputs": {"image": image, "upscale_method": "lanczos", "scale_by": scale / native}}
+        image = ["upscale_resize", 0]
+    graph["upscale_save"] = {"class_type": "SaveImage", "inputs": {"images": image, "filename_prefix": "mobile/upscale"}}
+    return graph

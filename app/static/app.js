@@ -6,6 +6,7 @@ const PROMPTS_KEY = 'image-studio-mobile:prompts:v1';
 const CONTROLS_KEY = 'image-studio-mobile:controls:v1';
 const CAPTION_KEY = 'image-studio-mobile:caption:v1';
 const STYLE_KEY = 'image-studio-mobile:style:v1';
+const UPSCALE_KEY = 'image-studio-mobile:upscale:v1';
 // Per workflow: the PC file's modified time last opened here, and what could be changed then (see controlKeys).
 const SEEN_KEY = 'image-studio-mobile:workflow-seen:v1';
 const CONTROL_KEYS_KEY = 'image-studio-mobile:control-keys:v1';
@@ -1874,7 +1875,7 @@ function notifyDone(job, ok) {
 }
 
 /* Share hands the full-size file to the phone's share sheet, where "Set as wallpaper" and Photos live. */
-function resultActions(item) {
+function resultActions(item, job) {
   let file = null;
   const share = el('button', { class: 'secondary', type: 'button' }, '↗ Share');
   const save = el('a', { class: 'button ghost', href: item.url, download: item.filename }, '⬇ Save');
@@ -1904,8 +1905,49 @@ function resultActions(item) {
   };
   const reuse = item.kind === 'image'
     ? el('button', { class: 'ghost', type: 'button', onclick: () => useAsInput(item) }, 'Use as input') : null;
-  return el('div', { class: 'row result-actions' }, share, save, reuse);
+  const upscale = item.kind === 'image' && item.type === 'output' && job?.id
+    ? el('button', { class: 'ghost', type: 'button', onclick: () => openUpscale(job, item) }, '⤢ Upscale') : null;
+  return el('div', { class: 'row result-actions' }, share, save, reuse, upscale);
 }
+
+/* Upscale queues a small job on the PC: the saved image through an upscale model, resized to 2× or 4×. */
+let upscaleTarget = null;
+
+async function openUpscale(job, item) {
+  if (!catalog) await refresh();
+  const models = catalog?.models?.upscalers || [];
+  if (!models.length) return void showToast('No upscale models in ComfyUI (models/upscale_models)');
+  const last = loadJson(UPSCALE_KEY);
+  const pick = models.includes(last.model) ? last.model : models.find(m => /ultrasharp/i.test(m)) || models[0];
+  $('upscale-model').replaceChildren(...models.map(m => el('option', { value: m, selected: m === pick }, m.replace(/\.(safetensors|pth|pt)$/, ''))));
+  $('upscale-scale').value = String(last.scale === 4 ? 4 : 2);
+  $('upscale-error').textContent = '';
+  upscaleTarget = { job, item };
+  $('upscale-dialog').showModal();
+}
+
+$('upscale-start').onclick = async () => {
+  const { job, item } = upscaleTarget || {};
+  if (!job) return;
+  const model = $('upscale-model').value, scale = Number($('upscale-scale').value);
+  store(UPSCALE_KEY, JSON.stringify({ model, scale }));
+  $('upscale-start').disabled = true;
+  $('upscale-error').textContent = '';
+  try {
+    const r = await api(`/jobs/${encodeURIComponent(job.id)}/upscale`, { method: 'POST',
+      json: { filename: item.filename, subfolder: item.subfolder || '', model, scale } });
+    if (!r.prompt_id) throw Error('ComfyUI did not return a job ID');
+    const upscaled = { id: r.prompt_id, upscaleOf: job.id, workflow: r.label, prompt: job.prompt, details: r.details || null, created: Date.now() };
+    $('upscale-dialog').close();
+    if (viewer.open) viewer.close();
+    rememberJob(upscaled);
+    openJob(upscaled, true);
+  } catch (e) {
+    $('upscale-error').textContent = e.status === 503 ? 'ComfyUI PC is offline' : e.message;
+  } finally {
+    $('upscale-start').disabled = false;
+  }
+};
 
 /* A result becomes the next job's input: the open workflow's first empty photo slot, or the shared-photo banner
    until a workflow that takes a photo is picked. The file goes through the normal upload, so it gets a fresh name. */
@@ -1947,7 +1989,7 @@ function showResults(job, entry, r) {
   const named = r.outputs.find(o => o.kind === 'text' && o.node === 'mobile_characters');
   const texts = r.outputs.filter(o => o.kind === 'text' && o !== named);
   const nodes = finals.map(item => el('figure', { class: 'result' },
-    el('a', { href: item.url, target: '_blank', rel: 'noopener' }, mediaFor(item)), resultActions(item),
+    el('a', { href: item.url, target: '_blank', rel: 'noopener' }, mediaFor(item)), resultActions(item, job),
       item.kind === 'image' ? el('button', { class: 'secondary', type: 'button', onclick: () => viewImage(job, item) }, job.images?.length ? 'Compare / full screen' : 'Full screen & zoom') : null,
       visionButton(job, item)));
 
@@ -2897,7 +2939,7 @@ function showViewerItem(index) {
   $('viewer-zoom').classList.toggle('hide', video); $('viewer-zoom-label').classList.toggle('hide', video);
   $('viewer-zoom').value = '1'; $('viewer-zoom').oninput(); updateComparison();
   $('viewer-scroll').scrollTo(0, 0);
-  $('viewer-actions').replaceChildren(resultActions(item));
+  $('viewer-actions').replaceChildren(resultActions(item, state.job));
   drawPhotoDetails(video ? 'See video playback' : undefined);
   setupVisionReview(state, item);
   if (video) {

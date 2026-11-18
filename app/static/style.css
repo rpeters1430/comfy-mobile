@@ -594,8 +594,8 @@ details.controls details { border-top: 1px solid var(--md-outline-variant); }
   border-radius: var(--shape-lg-inc);
   opacity: 0.9;
 }
-.result-actions { margin-top: 8px; }
-.result-actions > * { flex: 1; }
+.result-actions { margin-top: 8px; flex-wrap: wrap; }
+.result-actions > * { flex: 1 1 40%; white-space: nowrap; }
 a.button {
   display: inline-flex;
   align-items: center;

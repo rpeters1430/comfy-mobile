@@ -299,6 +299,17 @@
     <div class="row"><button class="primary" id="recipe-generate" type="button">Generate</button><button class="ghost" value="cancel">Cancel</button></div>
   </form>
 </dialog>
+<dialog id="upscale-dialog" aria-labelledby="upscale-title">
+  <form method="dialog">
+    <h2 id="upscale-title">Upscale</h2>
+    <label for="upscale-model">Upscale model</label>
+    <select id="upscale-model"></select>
+    <label for="upscale-scale">Size</label>
+    <select id="upscale-scale"><option value="2">2× (recommended)</option><option value="4">4× (large file, slower)</option></select>
+    <p class="status" id="upscale-error" role="status"></p>
+    <div class="row"><button class="primary" id="upscale-start" type="button">Upscale</button><button class="ghost" value="cancel">Cancel</button></div>
+  </form>
+</dialog>
 <dialog id="image-viewer" aria-labelledby="viewer-title">
   <div class="row between"><h2 id="viewer-title">Image viewer</h2><button id="viewer-close" class="secondary" type="button">Close</button></div>
   <div class="row between" id="viewer-paging"><button id="viewer-previous" class="secondary" type="button">Previous</button><span id="viewer-count" class="status"></span><button id="viewer-next" class="secondary" type="button">Next</button></div>
