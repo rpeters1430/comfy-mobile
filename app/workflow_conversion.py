@@ -36,8 +36,28 @@ WIDGET_TYPES = ("STRING", "INT", "FLOAT", "BOOLEAN", "COMBO")
 DYNAMIC_COMBO = "COMFY_DYNAMICCOMBO_V3"
 AUTOGROW = "COMFY_AUTOGROW_V3"
 SUBGRAPH_INPUT, SUBGRAPH_OUTPUT = "-10", "-20"
-# Widgets added by a node's frontend script, absent from /object_info, in widgets_values order.
-FRONTEND_WIDGETS = {"Power Puter (rgthree)": ("outputs", "code")}
+# Widgets added by a node's frontend script, absent from /object_info, in widgets_values order after the schema's.
+FRONTEND_WIDGETS = {
+    "Power Puter (rgthree)": ("outputs", "code"),
+    "TriggerWord Toggle (LoraManager)": ("toggle_trigger_words", "orinalMessage"),
+}
+# Nodes whose extra saved values only show the last result.
+DISPLAY_WIDGETS = {"ShowText|pysssss"}
+UPLOAD_OPTIONS = ("image_upload", "video_upload", "audio_upload")
+
+
+def _frontend_widgets(kind, fields, leftover):
+    """Map values saved for frontend-only widgets. Returns (values by key, values still unaccounted for)."""
+    if kind in DISPLAY_WIDGETS:
+        return {}, []
+    if any(isinstance(d, list) and len(d) > 1 and isinstance(d[1], dict) and any(d[1].get(o) for o in UPLOAD_OPTIONS) for d in fields.values()):
+        leftover = leftover[1:]  # the upload button's value
+    if kind == "Power Lora Loader (rgthree)":
+        # Its header, divider and Add button serialize too; only the lora_N rows reach the node.
+        loras = [v for v in leftover if isinstance(v, dict) and "lora" in v]
+        return {f"lora_{i}": v for i, v in enumerate(loras, 1)}, []
+    names = FRONTEND_WIDGETS.get(kind, ())
+    return dict(zip(names, leftover)), leftover[len(names):]
 
 
 def _map_widgets(fields, values, widget_inputs=()):
@@ -49,7 +69,7 @@ def _map_widgets(fields, values, widget_inputs=()):
     by its chosen option's sub-widgets, sent to the API as `<combo>.<sub>` keys.
     Custom node widgets (e.g. LoraManager's AUTOCOMPLETE_TEXT_LORAS / LORAS) are included
     when the node's input entry marks them with a `widget` descriptor.
-    Returns (values by key, schema of the chosen dynamic sub-inputs, their required keys).
+    Returns (values by key, schema of the chosen dynamic sub-inputs, their required keys, values no input took).
     """
     mapped, extra, required = {}, {}, []
     pos = 0
@@ -87,7 +107,7 @@ def _map_widgets(fields, values, widget_inputs=()):
                 walk(list(sub.get("required", {}).items()) + list(sub.get("optional", {}).items()), key + ".", True)
 
     walk(list(fields.items()), "", False)
-    return mapped, extra, required
+    return mapped, extra, required, values[pos:]
 
 
 def _parse_links(raw):
@@ -268,15 +288,15 @@ def convert_ui(data, object_info):
                 for item in node.get("inputs", [])
                 if isinstance(item, dict) and item.get("widget") and item.get("name")
             }
-            widget_map, dynamic_fields, dynamic_required = _map_widgets(fields, widget_values, widget_inputs)
-            fields = {**fields, **dynamic_fields}
+            widget_map, dynamic_fields, dynamic_required, leftover = _map_widgets(fields, widget_values, widget_inputs)
+            frontend, unmapped = _frontend_widgets(kind, fields, leftover)
+            if any(v not in ("", [], {}, None) for v in unmapped):
+                raise ConversionError(f"{kind} (node {node['id']}): {len(unmapped)} saved setting(s) the app can't map; this node needs support in the app")
+            widget_map.update(frontend)
+            fields = {**{k: ["*", {}] for k in frontend}, **fields, **dynamic_fields}
             required += dynamic_required
         else:
             widget_map = {}
-        if kind in FRONTEND_WIDGETS and isinstance(widget_values, list):
-            for field, value in zip(FRONTEND_WIDGETS[kind], widget_values):
-                fields.setdefault(field, ["*", {}])
-                widget_map[field] = value
         for item in node.get("inputs", []):
             field = item.get("name")
             lid = item.get("link")

@@ -385,6 +385,46 @@ class ConversionTests(unittest.TestCase):
                             "widgets_values": [{"outputs": ["STRING"]}, "purge_vram(True)"]}]}
         self.assertEqual(convert_ui(graph, schema)["1"]["inputs"], {"outputs": {"outputs": ["STRING"]}, "code": "purge_vram(True)"})
 
+    def test_unmapped_widget_values_rejected(self):
+        schema = {"Mystery": {"input": {"required": {"steps": ["INT", {}]}}}}
+        graph = {"nodes": [{"id": 7, "type": "Mystery", "inputs": [], "widgets_values": [20, "frontend only"]}]}
+        with self.assertRaisesRegex(ConversionError, "Mystery \\(node 7\\)"):
+            convert_ui(graph, schema)
+        graph["nodes"][0]["widgets_values"] = [20, "", []]
+        self.assertEqual(convert_ui(graph, schema)["7"]["inputs"], {"steps": 20})
+
+    def test_upload_button_and_display_text_ignored(self):
+        schema = {
+            "LoadImage": {"input": {"required": {"image": [["a.png"], {"image_upload": True}]}}},
+            "ShowText|pysssss": {"input": {"required": {"text": ["STRING", {"forceInput": True}]}}},
+        }
+        graph = {"nodes": [
+            {"id": 1, "type": "LoadImage", "inputs": [], "widgets_values": ["a.png", "image"]},
+            {"id": 2, "type": "ShowText|pysssss", "inputs": [{"name": "text", "link": 3}], "widgets_values": ["old caption"]},
+            {"id": 4, "type": "Mystery", "inputs": []},
+        ], "links": [[3, 4, 0, 2, 0, "STRING"]]}
+        schema["Mystery"] = {"input": {"required": {}}, "output": ["STRING"]}
+        result = convert_ui(graph, schema)
+        self.assertEqual(result["1"]["inputs"], {"image": "a.png"})
+        self.assertEqual(result["2"]["inputs"], {"text": ["4", 0]})
+
+    def test_power_lora_loader_rows(self):
+        schema = {"Power Lora Loader (rgthree)": {"input": {"required": {}, "optional": {"model": ["MODEL"], "clip": ["CLIP"]}}}}
+        row = {"on": True, "lora": "detail.safetensors", "strength": 0.6}
+        graph = {"nodes": [{"id": 1, "type": "Power Lora Loader (rgthree)", "inputs": [],
+                            "widgets_values": [{}, {"type": "PowerLoraLoaderHeaderWidget"}, row, {}, ""]}]}
+        self.assertEqual(convert_ui(graph, schema)["1"]["inputs"], {"lora_1": row})
+
+    def test_trigger_word_toggle_state(self):
+        schema = {"TriggerWord Toggle (LoraManager)": {"input": {"required": {
+            "group_mode": ["BOOLEAN", {}], "default_active": ["BOOLEAN", {}], "allow_strength_adjustment": ["BOOLEAN", {}]}}}}
+        toggles = [{"text": "tifa", "active": False}]
+        graph = {"nodes": [{"id": 1, "type": "TriggerWord Toggle (LoraManager)", "inputs": [],
+                            "widgets_values": [True, True, False, toggles, "tifa"]}]}
+        inputs = convert_ui(graph, schema)["1"]["inputs"]
+        self.assertEqual(inputs["toggle_trigger_words"], {"__value__": toggles})
+        self.assertEqual(inputs["orinalMessage"], "tifa")
+
     def test_ollama_empty_model_choices_allowed_while_loader_empty_choices_rejected(self):
         schema = {
             "OllamaConnectivityV2": {"input": {"required": {
