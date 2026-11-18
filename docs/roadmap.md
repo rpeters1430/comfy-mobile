@@ -1,135 +1,57 @@
-# Roadmap: every workflow runnable from the phone
+# Roadmap
 
-Status as of 2026-10-28. Companion to `workflow-sync-plan.md`, which covers syncing only.
+Status as of 2026-11-17. Released version: 0.8.0 (2026-11-06). Sync details are in `workflow-sync-plan.md`.
 
 ## Where we are
 
+The original plan (phases 0–7: converter, parameters, image inputs, outputs/gallery, subgraphs, UI rebuild, sync) is done. Every workflow saved on the PC runs from the phone unless a model or node is missing there.
+
 | Area | State |
 | --- | --- |
-| Auth, health, queue, history list | Working |
-| Sync from ComfyUI `/userdata` | Working, still to be confirmed against the real PC |
-| UI → API conversion | Working: subgraphs, bypass/mute, V3 COMBO / dynamic combo / autogrow, model subfolders, link repair. 24/30 bundled workflows convert |
-| Prompt binding | Done: one prompt field found automatically; auto-caption workflows take none |
-| Image inputs | Done (backend): `POST /api/uploads` and `images` on jobs |
-| Viewing results | Done (backend): `/api/jobs/{id}/outputs` with signed, Range-capable view URLs |
-| Phone UI | Done (first version): filtered workflow cards, image slots with on-device resize, live job card, results with video and captions, gallery |
-| Broken bundled files | 03/04/06 (active LoRA set to `None`), 11–13 (orphaned guider `model` link). Re-save from ComfyUI or use the synced copies |
+| Sync | One-way pull of PC workflows (`/userdata`); the catalog shows synced PC workflows only. Reset and Sync now work while the PC is off |
+| UI → API conversion | Subgraphs, bypass/mute, V3 COMBO / dynamic combo / autogrow, LoRA Manager widgets, link repair, cross-OS model paths. Frontend-only widgets need a `FRONTEND_WIDGETS` entry (Power Puter so far) |
+| PC workflows (live check 2026-11-17) | 4/6 runnable: SDXL, SD15, MOSS Image to Prompt to Image and RenPy Anime Character Gen. Krea2 fails because its UNET (`finepornV5TurboNSFW_v5_int8_convrot`) is not on the PC. `Untitled 2026-11-14 16-20-09` is empty |
+| Bundled `workflows/` | 33 files, kept for tests only (not in the catalog); 1/33 converts against the current PC |
+| Run-time controls | Model/UNet, LoRAs (+4 extra), sampler, size/aspect, video length/quality, caption options, all node settings, negative prompt, wallpaper fit |
+| Jobs | Batches 1–8, wildcards and snippets, live progress stream, shared queue with Run next, held jobs while the PC is off, Wake-on-LAN, push notifications |
+| Gallery | NAS-stored history (SQLite), search/filter/favorites/multi-select, full-screen viewer, compare slider, use as input, photo details |
+| AI | Settings adviser (Ollama/Lemonade/OpenAI/Gemini/OpenRouter), optional web research, image vision review with "Run again with fixes", LoRA suggestions and trigger words (LoRA Manager / ModelHarbor) |
+| Other | Shared presets, LoRA Manager recipes, caption review before render, anime character naming in captions, share target, home-screen shortcuts |
+| Tests | 265 Python tests, 11 JS test files; CI runs them and builds the image on every push |
 
-### Workflow groups
+## Unreleased (on `main` since 0.8.0)
 
-| Group | Workflows | Needs |
-| --- | --- | --- |
-| A. Flat text-to-image | 01, 14, 15, 17, 19, 21, 23 | Phases 0, 1, 2, 4 |
-| B. Flat image-to-image / image-to-prompt | 02 (both), 07, 16, 18, 20, 22, 24, 26 (I2P), 27 | + Phase 3 |
-| C. Subgraph image | 03, 04, 05, 06, 25, 26 (I2I), 28 | + Phase 5 |
-| D. Subgraph video | 08, 09, 10, 11, 12, 13 | + Phase 5, video output |
+Not yet in a version bump or README "New in" section:
 
-Custom nodes in use (Booru Tagger, Qwen3VLAbliteratedPromptPair, FreeOllamaVRAM, rgthree, pysssss, Impact FaceDetailer, RIFE VFI) must be installed on the PC. The converter checks for them against live `/object_info`.
+- PC workflow changes reach the phone: every node setting, LoRA Manager LoRAs, update notices
+- Caption switches kept per workflow; anime/game character names in auto captions
+- LoRA Manager recipes: sync and generate from a recipe (phone UI not yet checked in a real browser)
+- LoRA Manager trigger words and strengths; adviser works with LoRA Manager / PAG workflows
+- AI review of finished images, AI review button on result cards, "Run again with fixes"
+- Fixes: Generate doing nothing (step limits), AI review apply (negative prompt, phone-added LoRA strengths), Civitai multi-version descriptions, Power Puter `code` dropped in conversion
 
-## Phase 0: ground truth (do first)
+## Known issues
 
-Done. To refresh the snapshot (ComfyUI is reachable over Tailscale):
+- **Silently skipped widgets.** A node whose widgets come only from its frontend script (not `/object_info`) loses those values in conversion, and the job fails only when ComfyUI reaches that node. Power Puter did this after 3½ minutes. Fix: fail closed when `widgets_values` has values left over that no input took.
+- **Krea2 workflow** needs its UNET on the PC, or the workflow re-saved with an installed one.
+- **Bundled workflows** are stale (1/33 runnable) and only used by tests. Decide whether to drop them and the 33-file assertion.
+- **Recipes UI** has not been checked on a phone; run `tests/browser-mobile.cjs` against it.
 
-```sh
-curl -o fixtures/object_info.local.json http://100.77.144.56:8188/object_info
-python tools/check_workflows.py                       # bundled workflows
-python tools/check_workflows.py fixtures/object_info.local.json path/to/workflow-sync
-```
+## Next
 
-Remaining failures as of this snapshot, counted by first error: subgraph (10), needs an uploaded LoadImage (6, and three of those also contain subgraphs), and auto-caption workflows with no typed prompt (7).
+| # | Feature | Notes | Effort |
+| --- | --- | --- | --- |
+| 1 | Fail closed on leftover widget values | See known issues; refuses the workflow up front with the node name | S |
+| 2 | One-tap Upscale on results | Reuse the wallpaper `_apply_fit` upscale nodes; 4x-UltraSharp and 4x-AnimeSharp are on the PC. Optional hires refine pass | S–M |
+| 3 | Prompt enhance / describe image | ✨ Enhance next to the prompt box and Describe on photos, through the adviser connection (text model for enhance, vision model for describe) | M |
+| 4 | Fast / Balanced / Best quality chips | Per model family steps/CFG/hires presets on top of the existing sampler controls | S |
+| 5 | Release 0.9.0 | Bump `VERSION` and README, with a "New in v0.9.0" section from the unreleased list | S |
 
-## Phase 1: converter correctness for flat graphs
+## Later
 
-1. **Node modes.** Drop mode 2 (muted) nodes and anything that only feeds into them. For mode 4 (bypassed) nodes, reconnect each downstream link to the bypassed node's input of the same type, which is how ComfyUI does it. Fail closed if the type match is ambiguous.
-2. **Widget count check.** If `widgets_values` is shorter than the expected number of slots, raise instead of falling back to defaults without saying so.
-3. **Legacy `PrimitiveNode`** (frontend-only, not in `/object_info`): substitute its value into the target input. Synced workflows from older ComfyUI versions may still use it.
-4. **Node IDs** that aren't plain integers (needed once subgraph IDs like `12:5` exist): make the dangling-link check stop relying on `isdigit()`.
-5. **Unit tests** for each case, built from small extracts of the bundled workflows.
-
-## Phase 2: workflow parameters (replaces `{{prompt}}`-only)
-
-Each workflow declares what the phone may set.
-
-- **Convention:** a node titled `📱 <Label>` in ComfyUI becomes an exposed parameter, e.g. `📱 Prompt` on a `PrimitiveStringMultiline`, `📱 Seed`, `📱 Image` on a LoadImage, `📱 Width`. Titles travel with the workflow, so syncing picks them up with no extra files.
-- **Fallback:** a parameter file `<workflow>.mobile.json` on the NAS for workflows you'd rather not edit.
-- **Backend:** `GET /api/workflows/{id}/parameters` returns typed fields (string/int/float/bool/enum/image) with the default, min and max from `/object_info`. `POST /api/jobs` takes `{workflow_id, params: {...}}` and validates every value against the schema.
-- **Compatibility:** keep `{{prompt}}` working as a shorthand for one prompt parameter.
-- **Seed:** keep the per-job override. Also cover `RandomNoise.noise_seed`, which subgraph workflows use.
-
-## Phase 3: image inputs
-
-1. `POST /api/uploads`: authenticated, PNG/JPEG/WebP only, size cap, re-encode or sniff magic bytes, forward to ComfyUI `/upload/image` with `type=input` and a generated filename (never one supplied by the client).
-2. The job sets each `📱 Image` LoadImage's `image` input to the uploaded name.
-3. On the phone: camera/gallery picker, preview, and multiple slots for workflows 05, 06 and 28.
-
-## Phase 4: outputs, progress, gallery
-
-1. `GET /api/jobs/{id}/outputs`: list images, videos and text (`PreviewAny` / `ShowText` captions) from `/history/{id}`.
-2. `GET /api/view?...`: proxy ComfyUI `/view` with filename/subfolder/type validated against the job's own outputs. Stream video with HTTP Range support so playback can seek.
-3. Progress: poll `/api/jobs/{id}` every 1 to 2 seconds, or bridge ComfyUI's websocket (`/ws?clientId=`) to the phone for step and percent progress.
-4. Gallery: the last N jobs with thumbnails, full-screen view, save/share, and "run again" with the same params.
-
-## Phase 5: subgraph expansion (unlocks groups C and D)
-
-1. Read `definitions.subgraphs`, inline each instance, and namespace the inner node IDs as `<outer>:<inner>` (the API format ComfyUI itself uses).
-2. Rewire the subgraph's input and output slots to the outer links. Apply widget values from the instance (these subgraph nodes carry their own `widgets_values` / proxy widgets, e.g. 15 values for 9 widget inputs, so inspect the format against real files first).
-3. Apply Phase 1's mode handling inside subgraphs as well.
-4. Fail closed on nested subgraphs or slot shapes we don't support (none in the bundled set today).
-5. Video: `SaveVideo` output goes through the Phase 4 Range-enabled viewer.
-
-## Phase 6: phone UI rebuild
-
-The current UI is a single minified 8-line `index.html`. Split it into readable HTML/CSS/JS files (still static, no build step).
-
-- Workflow list grouped by category (text→image, image→image, edit, video), with a runnable/not-runnable badge and the reason, from the Phase 0 checks.
-- A form built from the Phase 2 parameters.
-- Live progress, then the result inline. The gallery tab comes from Phase 4.
-- A sync screen: last run, files added or changed, and conversion status per synced workflow.
-
-## Phase 7: sync hardening (see `workflow-sync-plan.md`)
-
-Periodic polling, recording remote deletions as archived instead of deleting, keeping revision history, and re-running conversion diagnostics after each sync.
-
-## Feature ideas (after the core works)
-
-| Feature | Value | Effort |
-| --- | --- | --- |
-| ✅ Cancel/interrupt a job, remove queued jobs (`/interrupt`, `/queue` delete) | High | S |
-| ✅ Saved prompts per workflow (on the device for now; NAS-side presets later) | High | S |
-| ✅ PWA share target: share a photo from the gallery straight into an image-to-video or edit workflow | High | M |
-| ✅ Notification when a job finishes while the app is backgrounded (true push when the app is closed still needs Web Push + VAPID) | High | M |
-| ✅ Model and LoRA picker: swap the checkpoint/UNet, change or turn off the workflow's LoRAs, add up to 4 more (auto-detected, no `📱` titles needed) | Medium | S |
-| ✅ Sampler settings (steps, CFG, sampler, scheduler, hi-res denoise) and output shape (1:1 … 16:9), ported from the Open WebUI ComfyUI Studio function | Medium | S |
-| Named presets (save model, LoRAs and settings under a name), from ComfyUI Studio. Caption options are done | Medium | S |
-| Show the auto-caption text produced by the captioning workflows, edit it, then run again | Medium | M |
-| ✅ PC status: online, VRAM in use, "free VRAM" button | Medium | S |
-| Wake-on-LAN for the PC from the NAS | Medium | S |
-| ✅ Batch: 1–8 runs with random or consecutive seeds; Run again / Same seed on every result | Medium | S |
-| Before/after compare slider for image-to-image and edit | Low | S |
-| ✅ Job history stored on the NAS (ComfyUI history is lost when it restarts) | Medium | M |
-
-### 0.8.0 (from a look at other mobile ComfyUI clients: ComfyChair, CueForge, Mobile Comfy Creator, ComfyUIMini)
-
-| Feature | State |
+| Feature | Notes |
 | --- | --- |
-| Live progress stream instead of per-job polling; websocket-woken job watcher | ✅ |
-| Gzip; object_info fingerprint keeps catalog checks; SQLite job store | ✅ |
-| Shared queue view with Run next | ✅ |
-| Hold jobs (and photos) on the NAS while the PC is off, wake and start them later | ✅ |
-| Use a result as the next input | ✅ |
-| Gallery search, workflow filter, favorites, multi-select share/favorite/remove | ✅ |
-| Wildcards `{a\|b}` and shared `__snippets__` | ✅ |
-| Home-screen shortcuts, app badge | ✅ |
-| Mask editor for inpainting workflows | Next |
-| One-tap Upscale / Expand on results | Next |
-| Prompt enhance / describe image through the AI adviser connection | Next |
-| Fast / Balanced / Best quality chips for image workflows | Next |
-
-## Suggested milestones
-
-1. **First image on the phone:** Phases 0, 1, 2 (prompt only), 4. Group A runs end to end.
-2. **Photo in:** Phase 3 and the image parameters. Group B runs.
-3. **Subgraphs:** Phase 5. Groups C and D run, video included.
-4. **Feels like an app:** Phase 6 plus the top feature ideas.
-
-Housekeeping: update README (it still says UI workflows can't run). Bump the version in both places it appears with each milestone.
+| Mask editor for inpainting | Only worth it once an inpaint workflow is on the PC; none today |
+| One-tap Expand (outpaint) on results | Same dependency as the mask editor |
+| Sync screen | Last sync, files added/changed, conversion status per workflow (catalog already shows errors per card) |
+| Sync history | Keep revisions and archive deletions instead of removing them |
