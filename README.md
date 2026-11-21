@@ -1,7 +1,14 @@
-# Comfy Mobile — v0.9.0
+# Comfy Mobile — v0.9.0 (released 2026-11-17)
 
-Workflow management uses the PC as the source of truth. **Reset workflows** clears the app's downloaded library (including subfolders) immediately, even while the PC is offline. Automatic imports remain paused across restarts until **Sync now** succeeds. Sync downloads saved ComfyUI workflows and removes local copies deleted on the PC; it never uploads bundled workflows or changes PC files. Bundled examples are no longer included in the app's workflow catalog. History, images and presets are retained.
+## Current status
 
+Latest release: **v0.9.0** (2026-11-17) — PC workflow settings on the phone, Upscale, Enhance/Describe, AI image review, LoRA Manager recipes and trigger words. Nothing is unreleased; release notes are in the **New in v0.9.0** section below.
+
+Workflow management uses the PC as the source of truth. **Reset workflows** clears the app's downloaded library (including subfolders) immediately, even while the PC is offline. Automatic imports remain paused across restarts until **Sync now** succeeds. Sync downloads saved ComfyUI workflows and removes local copies deleted on the PC; it never uploads bundled workflows or changes PC files. Bundled examples are no longer included in the app's workflow catalog.
+
+**Runnability (live check):** every workflow saved on the PC runs from the phone unless a model or node is missing there. On a typical PC, 4/6 bundled examples are runnable (SDXL, SD15, MOSS Image-to-Prompt-to-Image and RenPy Anime Character Gen); Krea2 fails because its UNET is not installed, and empty example files are not runnable. All bundled workflows convert to ComfyUI API format; UI-format graphs are inlined and mapped automatically on execution.
+
+History, images and presets are retained.
 
 Mobile-first ComfyUI dashboard running on a NAS, connecting to ComfyUI on another machine.
 
@@ -39,6 +46,10 @@ If the phone still shows an older version, reload the tab and check that the upd
 - Fixed: Generate doing nothing with some node settings; approved AI reviews refused on workflows with a negative prompt; AI LoRA strengths for LoRAs added on the phone; Civitai creator settings from multi-version pages; an empty upscaler list.
 
 Upgrading: nothing to migrate. Recipes are copied to `data/recipes`. Choose the vision model for image review and Describe in **AI connection setup** (or set `ADVISER_VISION_MODEL`).
+
+## Roadmap
+
+See [docs/roadmap.md](docs/roadmap.md) for where each feature stands (runnability live check, known issues and next steps).
 
 ## New in v0.8.0
 
@@ -156,10 +167,12 @@ Keep the service on a trusted LAN or Tailscale network, not exposed to the publi
 
 ```sh
 python -m pip install -r requirements.txt
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests -v        # 281 Python tests
 python -m compileall -q app
-node --test 'tests/*.test.js'
+node --test 'tests/*.test.js'                  # 54 JS tests across 11 files
 ```
+
+All green on Python 3.11 (containers build on 3.15). `python -m pytest -q` (install pytest separately) also collects the bundled workflow smoke test, which asserts the `workflows/` folder holds 33 files.
 
 `python -m pytest -q` (install pytest separately) also collects the bundled workflow smoke test.
 Optional browser regression coverage: install Playwright in your development environment,
