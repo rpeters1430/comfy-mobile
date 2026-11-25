@@ -26,7 +26,7 @@ Nothing since 0.9.0. Release notes are in the README.
 ## Known issues
 
 - **Krea2 workflow** needs its UNET on the PC, or the workflow re-saved with an installed one.
-- **Bundled workflows** are stale (1/33 runnable) and only used by tests. Decide whether to drop them and the 33-file assertion.
+- **Bundled workflows** are stale (1/33 runnable) and only used by tests. With the PC on, run `curl -o fixtures/object_info.local.json http://<comfy>:8188/object_info && python tools/check_workflows.py --trim`, then drop or re-save the workflows that fail and commit `fixtures/object_info.bundled.json`. CI then converts every bundled workflow on each push.
 - **Recipes UI** has not been checked on a phone; run `tests/browser-mobile.cjs` against it.
 
 ## Next
