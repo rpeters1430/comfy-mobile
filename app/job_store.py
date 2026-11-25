@@ -8,6 +8,7 @@ Reads come from an in-memory copy. A `jobs.json` left by an older release is imp
 `jobs.json.migrated`."""
 import json
 import copy
+import heapq
 import sqlite3
 import threading
 from functools import wraps
@@ -18,10 +19,12 @@ import tempfile
 from pathlib import Path
 
 JOB_ID = re.compile(r"[0-9a-fA-F-]{36}")
-MAX_JOBS = 500
+# Non-favourite jobs kept; the oldest go first. Favourites are never evicted.
+MAX_JOBS = 5000
 MAX_THUMB = 2_000_000
 # A job still missing from ComfyUI's history after this long was lost (e.g. ComfyUI restarted while it was queued).
 WATCH_FOR = 24 * 3600
+LOST = {"status": "lost", "completed": False, "outputs": [], "interrupted": False, "errors": []}
 
 
 def write_atomic(path: Path, data: bytes) -> None:
@@ -154,8 +157,15 @@ class JobStore:
             return
         self.jobs[job_id] = {"workflow": workflow[:200], "prompt": prompt[:300], "created": int(time.time()), "summary": None, "params": copy.deepcopy(params), "details": copy.deepcopy(details)}
         self._put(job_id)
-        for old in sorted(self.jobs, key=lambda k: self.jobs[k]["created"])[:-MAX_JOBS]:
-            self._forget(old)
+        self._evict()
+
+    def _evict(self) -> None:
+        """Drop the oldest non-favourite jobs beyond MAX_JOBS."""
+        plain = [k for k, job in self.jobs.items() if not job.get("favorite")]
+        extra = len(plain) - MAX_JOBS
+        if extra > 0:
+            for old in heapq.nsmallest(extra, plain, key=lambda k: self.jobs[k].get("created", 0)):
+                self._forget(old)
 
     @synchronized
     def get(self, job_id: str) -> dict | None:
@@ -170,11 +180,20 @@ class JobStore:
             if job["summary"] is None:
                 (lost if now - job["created"] > WATCH_FOR else waiting).append(job_id)
         if lost:
-            lost_summary = {"status": "lost", "completed": False, "outputs": [], "interrupted": False, "errors": []}
             for job_id in lost:
-                self.jobs[job_id]["summary"] = copy.deepcopy(lost_summary)
+                self.jobs[job_id]["summary"] = copy.deepcopy(LOST)
             self._put(*lost)
         return waiting
+
+    @synchronized
+    def lose(self, job_id: str) -> bool:
+        """Mark an unfinished job lost (ComfyUI no longer knows it). False if it was already finished or gone."""
+        job = self.jobs.get(job_id)
+        if not job or job["summary"] is not None:
+            return False
+        job["summary"] = copy.deepcopy(LOST)
+        self._put(job_id)
+        return True
 
     @synchronized
     def finish(self, job_id: str, summary: dict) -> None:

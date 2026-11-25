@@ -1,8 +1,8 @@
-import asyncio, copy, hashlib, json, logging, os, re, secrets, time
+import asyncio, hashlib, json, logging, os, re, secrets, time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode
 import httpx
 from fastapi import FastAPI, HTTPException, Header, Request, Query
 from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
@@ -230,11 +230,58 @@ async def queue_snapshot(max_age: float = 1.0) -> dict:
 
 # Without websocket news (ComfyUI restarting) the watcher still checks this often.
 WATCH_INTERVAL = 10
+# A job that is neither queued nor in ComfyUI's history this many passes in a row, over at least LOST_AFTER
+# seconds, was dropped by ComfyUI (it restarted, or the queue was cleared on the PC). Several passes, so a job
+# finishing between the queue and history requests isn't reported lost.
+LOST_MISSES = 3
+LOST_AFTER = 20
+
+async def lose_job(job_id: str) -> None:
+    if not job_store.lose(job_id):
+        return
+    job = job_store.get(job_id)
+    if push.enabled and job:
+        payload = {'title': f"{job['workflow']} didn't finish", 'body': 'ComfyUI no longer has this job (it may have restarted).',
+                   'tag': job_id, 'url': '/?job=' + job_id}
+        await asyncio.to_thread(push.send, payload)
+
+async def check_watched(misses: dict) -> None:
+    '''One watcher pass: store jobs ComfyUI has finished and mark ones it no longer knows as lost. `misses` holds
+    each job's (count, first miss time) between passes. A failure on one job doesn't stop the others; ComfyUI
+    going offline ends the pass.'''
+    watching = job_store.watching()
+    for job_id in list(misses):
+        if job_id not in watching:
+            misses.pop(job_id)
+    if not watching:
+        return
+    snap = await queue_snapshot(0)
+    queued = set(snap['running']) | set(snap['pending'])
+    for job_id in watching:
+        if job_id in queued:
+            misses.pop(job_id, None)
+            continue
+        data = await request('GET', f'/history/{job_id}')
+        try:
+            if job_id in data:
+                misses.pop(job_id, None)
+                await finish_job(job_id, data[job_id])
+                continue
+            count, first = misses.get(job_id, (0, time.monotonic()))
+            misses[job_id] = (count + 1, first)
+            if count + 1 >= LOST_MISSES and time.monotonic() - first >= LOST_AFTER:
+                misses.pop(job_id)
+                await lose_job(job_id)
+        except HTTPException:
+            raise
+        except Exception:
+            log.exception('Job watcher failed on %s', job_id)
 
 async def watch_jobs():
     '''Follow jobs started from the app until ComfyUI reports them done, even when no phone is polling. ComfyUI's
     websocket wakes it when a prompt ends, so a finished job is stored and pushed within moments.'''
     progress.ended = asyncio.Event()  # bound to this event loop
+    misses: dict = {}
     while True:
         try:
             await asyncio.wait_for(progress.ended.wait(), timeout=WATCH_INTERVAL)
@@ -242,19 +289,9 @@ async def watch_jobs():
             pass
         progress.ended.clear()
         try:
-            watching = job_store.watching()
-            if not watching:
-                continue
-            snap = await queue_snapshot(0)
-            queued = set(snap['running']) | set(snap['pending'])
-            for job_id in watching:
-                if job_id in queued:
-                    continue
-                data = await request('GET', f'/history/{job_id}')
-                if job_id in data:
-                    await finish_job(job_id, data[job_id])
+            await check_watched(misses)
         except HTTPException:
-            pass  # ComfyUI is offline; try again later
+            misses.clear()  # ComfyUI is offline; its history can't be judged until it answers again
         except Exception:
             log.exception('Job watcher failed')
 
@@ -1259,7 +1296,7 @@ async def push_test(authorization: str | None = Header(default=None)):
 
 
 @app.get('/api/library/jobs')
-def library_jobs(limit: int = Query(default=30, ge=1, le=60), offset: int = Query(default=0, ge=0, le=500),
+def library_jobs(limit: int = Query(default=30, ge=1, le=60), offset: int = Query(default=0, ge=0),
                  q: str = Query(default='', max_length=200), workflow: str = Query(default='', max_length=200),
                  favorite: bool = False, authorization: str | None = Header(default=None)):
     auth(authorization)

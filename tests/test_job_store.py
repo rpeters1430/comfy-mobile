@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from app.job_store import MAX_JOBS, WATCH_FOR, JobStore
+from app.job_store import WATCH_FOR, JobStore
 from app.push import Push, PushError, push_host_allowed
 from app.workflow_jobs import cover, job_summary
 
@@ -50,16 +50,45 @@ class JobStoreTests(unittest.TestCase):
             self.assertEqual("lost", store.get(JOB)["summary"]["status"])
 
     def test_keeps_only_recent_jobs_and_their_thumbs(self):
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp, patch("app.job_store.MAX_JOBS", 5):
+            store = JobStore(Path(tmp))
+            ids = [f"{i:08x}-0000-4000-8000-000000000000" for i in range(6)]
+            with patch("app.job_store.time.time", side_effect=range(len(ids))):
+                for job_id in ids[:-1]:
+                    store.add(job_id, "w", "")
+                store.save_thumb(ids[0], WEBP)
+                store.add(ids[-1], "w", "")
+            self.assertNotIn(ids[0], store.jobs)
+            self.assertFalse(store.thumb_path(ids[0]).exists())
+            self.assertEqual(5, len(store.jobs))
+            self.assertEqual(5, len(JobStore(Path(tmp)).jobs))
+
+    def test_favourites_are_never_evicted(self):
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp, patch("app.job_store.MAX_JOBS", 3):
+            store = JobStore(Path(tmp))
+            ids = [f"{i:08x}-0000-4000-8000-000000000000" for i in range(8)]
+            with patch("app.job_store.time.time", side_effect=range(len(ids))):
+                store.add(ids[0], "w", "")
+                store.add(ids[1], "w", "")
+                store.mark(ids[0], True)
+                for job_id in ids[2:]:
+                    store.add(job_id, "w", "")
+            self.assertIn(ids[0], store.jobs)
+            self.assertNotIn(ids[1], store.jobs)
+            self.assertEqual(ids[-3:], sorted(k for k in store.jobs if k != ids[0]))
+            self.assertTrue(JobStore(Path(tmp)).get(ids[0])["favorite"])
+
+    def test_library_pages_past_the_old_500_limit(self):
         with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             store = JobStore(Path(tmp))
-            ids = [f"{i:08x}-0000-4000-8000-000000000000" for i in range(MAX_JOBS + 1)]
+            ids = [f"{i:08x}-0000-4000-8000-000000000000" for i in range(620)]
             with patch("app.job_store.time.time", side_effect=range(len(ids))):
                 for job_id in ids:
                     store.add(job_id, "w", "")
-            store.save_thumb(ids[-1], WEBP)
-            self.assertNotIn(ids[0], store.jobs)
-            self.assertEqual(MAX_JOBS, len(store.jobs))
-            self.assertEqual(WEBP, store.thumb_path(ids[-1]).read_bytes())
+            page = store.list_jobs(limit=60, offset=600)
+            self.assertEqual(620, page["total"])
+            self.assertEqual([ids[19 - i] for i in range(20)], [item["id"] for item in page["items"]])
+            self.assertFalse(page["has_more"])
 
     def test_rejects_bad_ids_and_non_webp_thumbs(self):
         with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:

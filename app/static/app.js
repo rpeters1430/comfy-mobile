@@ -2048,7 +2048,9 @@ function showResults(job, entry, r) {
   notifyDone(job, ok);
   entry.card.classList.remove('running');
   entry.state.className = 'status ' + (ok ? 'ok' : r.interrupted ? '' : 'error');
-  entry.statusText.textContent = ok ? 'Done' : r.interrupted ? 'Cancelled' : 'Failed: ' + (r.errors.map(e => `${/Caption|PromptPair/.test(e.node_type) ? 'Auto caption' : e.node_type}: ${e.exception_message}`).join('\n') || r.status);
+  entry.statusText.textContent = ok ? 'Done' : r.interrupted ? 'Cancelled'
+    : r.status === 'lost' ? "Didn't finish: ComfyUI no longer has this job (it may have restarted)"
+    : 'Failed: ' + (r.errors.map(e => `${/Caption|PromptPair/.test(e.node_type) ? 'Auto caption' : e.node_type}: ${e.exception_message}`).join('\n') || r.status);
 
   const finals = r.outputs.filter(o => o.kind !== 'text' && !o.preview);
   const previews = r.outputs.filter(o => o.kind !== 'text' && o.preview);
