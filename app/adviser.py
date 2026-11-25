@@ -1,6 +1,5 @@
 """Research tasks and conservative proposals; no graph execution or arbitrary AI patches."""
 import asyncio
-import copy
 import math
 import hashlib
 import json

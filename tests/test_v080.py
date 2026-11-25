@@ -1,6 +1,5 @@
 """0.8.0: progress stream, held jobs, shared queue, gallery library actions, snippets, gzip, object_info cache."""
 import asyncio
-import gzip
 import json
 import unittest
 from pathlib import Path

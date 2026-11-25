@@ -1,0 +1,4 @@
+# CI lint: pyflakes rules only (unused imports and variables, undefined names). Style is not enforced.
+target-version = "py314"
+[lint]
+select = ["F"]

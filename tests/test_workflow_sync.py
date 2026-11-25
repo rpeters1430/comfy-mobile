@@ -1,5 +1,4 @@
 import asyncio
-import json
 import unittest
 import httpx
 from tempfile import TemporaryDirectory

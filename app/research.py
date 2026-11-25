@@ -4,7 +4,7 @@ import ipaddress
 import json
 import re
 import socket
-from urllib.parse import urlsplit, urljoin, quote
+from urllib.parse import urlsplit, urljoin
 
 import httpx
 import trafilatura
