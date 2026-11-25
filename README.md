@@ -6,7 +6,7 @@ Latest release: **v0.9.0** (2026-11-17) — PC workflow settings on the phone, U
 
 Workflow management uses the PC as the source of truth. **Reset workflows** clears the app's downloaded library (including subfolders) immediately, even while the PC is offline. Automatic imports remain paused across restarts until **Sync now** succeeds. Sync downloads saved ComfyUI workflows and removes local copies deleted on the PC; it never uploads bundled workflows or changes PC files. Bundled examples are no longer included in the app's workflow catalog.
 
-**Runnability (live check):** every workflow saved on the PC runs from the phone unless a model or node is missing there. On a typical PC, 4/6 bundled examples are runnable (SDXL, SD15, MOSS Image-to-Prompt-to-Image and RenPy Anime Character Gen); Krea2 fails because its UNET is not installed, and empty example files are not runnable. All bundled workflows convert to ComfyUI API format; UI-format graphs are inlined and mapped automatically on execution.
+**Runnability (live check):** every workflow saved on the PC runs from the phone unless a model or node is missing there. On a typical PC, 4/6 bundled examples are runnable (SDXL, SD15, MOSS Image-to-Prompt-to-Image and RenPy Anime Character Gen); Krea2 fails because its UNET is not installed, and empty example files are not runnable. UI-format graphs are inlined and mapped automatically on execution. The bundled examples are test fixtures and many need models or custom nodes the PC no longer has.
 
 History, images and presets are retained.
 
@@ -94,7 +94,7 @@ The workflow catalog now shows saved PC workflows only. Unavailable workflows re
 
 ## New in v0.5.0
 
-- **Shared gallery:** loads NAS job history on every device, with pagination. New records retain complete rerun settings; older device records still work. “Clear device list” only clears local history. NAS records retain the most recent 500 jobs.
+- **Shared gallery:** loads NAS job history on every device, with pagination. New records retain complete rerun settings; older device records still work. “Clear device list” only clears local history. NAS records keep the most recent 5,000 jobs plus every favourite; favourites are never removed automatically.
 - **Shared named presets:** expand **Shared presets** in a workflow. Save a name, then load it from any device. Presets include models, LoRAs, sampling, caption, prompt, seed and wallpaper choices. They exclude input photos. Loading checks the current workflow/model options first. Saving with the selected name updates that preset; a new name creates another.
 - **Review captions:** for compatible Qwen/JoyCaption workflows, select **Review caption before rendering**, upload a photo and generate. The first job only captions the image. Edit positive/negative text in its result card, choose a run count and generate the approved render. PreviewAny must be installed. Ambiguous workflows or caption-dimension consumers show an unsupported explanation.
 - **Wake PC:** configure the NAS as described below, then use **Wake PC** in Settings. The app waits up to two minutes for ComfyUI. A wake packet does not start ComfyUI automatically; configure the PC's startup separately.
@@ -167,14 +167,13 @@ Keep the service on a trusted LAN or Tailscale network, not exposed to the publi
 
 ```sh
 python -m pip install -r requirements.txt
-python -m unittest discover -s tests -v        # 281 Python tests
+python -m unittest discover -s tests -v        # 296 Python tests
 python -m compileall -q app
 node --test 'tests/*.test.js'                  # 54 JS tests across 11 files
 ```
 
-All green on Python 3.11 (containers build on 3.15). `python -m pytest -q` (install pytest separately) also collects the bundled workflow smoke test, which asserts the `workflows/` folder holds 33 files.
+CI runs these on Python 3.14 and 3.15; the containers build on 3.15. The bundled workflow test asserts the `workflows/` folder holds 33 files, and converts each one against `fixtures/object_info.bundled.json` when that snapshot is committed (`python tools/check_workflows.py --trim` writes it from a local `/object_info` download, keeping only names already in `workflows/`).
 
-`python -m pytest -q` (install pytest separately) also collects the bundled workflow smoke test.
 Optional browser regression coverage: install Playwright in your development environment,
 run `npx playwright install chromium`, then `node tests/browser-mobile.cjs`.
 The browser suite mocks ComfyUI and network actions; a real PC wake and custom-node caption
