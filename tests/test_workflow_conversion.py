@@ -21,6 +21,39 @@ class ConversionTests(unittest.TestCase):
         with self.assertRaises(ConversionError):
             convert_ui(graph, self.schema)
 
+    def test_rgthree_canvas_only_nodes_are_skipped(self):
+        # Fast Groups Bypasser only toggles other nodes' modes, which are saved on those nodes.
+        graph = {"nodes": [
+            {"id": 1, "type": "Fast Groups Bypasser (rgthree)", "inputs": [], "outputs": [{"name": "OPT_CONNECTION", "links": None}],
+             "properties": {"matchTitle": "Optional:"}},
+            {"id": 2, "type": "Bookmark (rgthree)", "widgets_values": ["1", 1]},
+            {"id": 3, "type": "SaveImage", "inputs": [{"name": "images", "link": 6}], "widgets_values": ["test"]},
+            {"id": 5, "type": "LoadImageOutput", "outputs": [{"name": "IMAGE", "links": [6]}]},
+        ], "links": [[6, 5, 0, 3, 0, "IMAGE"]]}
+        self.schema["LoadImageOutput"] = {"input": {"required": {}}, "output": ["IMAGE"]}
+        out = convert_ui(graph, self.schema)
+        self.assertEqual({"3", "5"}, set(out))
+
+    def test_rgthree_image_comparer_slider_state_ignored(self):
+        self.schema["Image Comparer (rgthree)"] = {"input": {"required": {}, "optional": {"image_a": ["IMAGE"], "image_b": ["IMAGE"]}},
+                                                   "output": ["IMAGE"], "output_node": True}
+        self.schema["LoadImageOutput"] = {"input": {"required": {}}, "output": ["IMAGE"]}
+        graph = {"nodes": [
+            {"id": 1, "type": "LoadImageOutput", "outputs": [{"name": "IMAGE", "links": [6]}]},
+            {"id": 2, "type": "Image Comparer (rgthree)", "inputs": [{"name": "image_a", "link": 6}, {"name": "image_b", "link": None}],
+             "widgets_values": [[{"name": "A", "selected": True, "url": ""}, {"name": "B", "selected": True, "url": ""}]]},
+        ], "links": [[6, 1, 0, 2, 0, "IMAGE"]]}
+        out = convert_ui(graph, self.schema)
+        self.assertEqual({"image_a": ["1", 0]}, out["2"]["inputs"])
+
+    def test_connected_canvas_only_node_rejected(self):
+        graph = {"nodes": [
+            {"id": 1, "type": "Fast Muter (rgthree)", "outputs": [{"name": "OPT_CONNECTION", "links": [6]}]},
+            {"id": 3, "type": "SaveImage", "inputs": [{"name": "images", "link": 6}], "widgets_values": ["test"]},
+        ], "links": [[6, 1, 0, 3, 0, "*"]]}
+        with self.assertRaisesRegex(ConversionError, "canvas-only"):
+            convert_ui(graph, self.schema)
+
     def test_saveimage_widget_not_mapped_to_image_link(self):
         schema = {"SaveImage": {"input": {"required": {
             "images": ["IMAGE", {}], "filename_prefix": ["STRING", {"default": "ComfyUI"}]}}}}

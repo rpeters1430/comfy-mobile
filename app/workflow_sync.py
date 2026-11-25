@@ -84,14 +84,21 @@ class WorkflowSync:
 
     async def _sync(self):
         self.destination.mkdir(parents=True, exist_ok=True)
-        counts = {"pushed": 0, "downloaded": 0, "unchanged": 0, "removed": 0, "failed": 0}
+        counts = {"pushed": 0, "downloaded": 0, "unchanged": 0, "removed": 0, "failed": 0, "skipped": 0}
+        failed_names = []
         async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=5.0), follow_redirects=False) as client:
             entries = json.loads(await bounded_get(client, f"{self.comfy_url}/userdata", params={"dir": "workflows", "recurse": "true", "split": "false"}))
             if not isinstance(entries, list) or len(entries) > MAX_WORKFLOWS:
                 raise ValueError("Unexpected workflow listing")
-            valid_names = []
+            valid_names, workflow_count = [], 0
             for item in entries:
                 name = item if isinstance(item, str) else item.get("name") if isinstance(item, dict) else None
+                if isinstance(name, str) and not name.lower().endswith(".json"):
+                    # Backups and other files next to the workflows (e.g. x.json.bak). ComfyUI's own workflow
+                    # browser ignores them too, so they are neither failures nor reported by name.
+                    counts["skipped"] += 1
+                    continue
+                workflow_count += 1
                 if isinstance(name, str) and safe_relative_name(name):
                     valid_names.append(name)
                 else:
@@ -120,6 +127,8 @@ class WorkflowSync:
                     counts["downloaded"] += 1
                 except (httpx.HTTPError, ValueError, OSError, json.JSONDecodeError):
                     counts["failed"] += 1
+                    if len(failed_names) < 20:
+                        failed_names.append(name)
             if not counts["failed"]:
                 for existing in sorted(self.destination.rglob("*")):
                     if existing.suffix.lower() != ".json":
@@ -127,4 +136,5 @@ class WorkflowSync:
                     if not existing.is_symlink() and existing.relative_to(self.destination).as_posix() not in valid_names:
                         existing.unlink()
                         counts["removed"] += 1
-        return {"status": "ok" if not counts["failed"] else "partial", **counts, "remote_count": len(entries)}
+        return {"status": "ok" if not counts["failed"] else "partial", **counts, "failed_names": failed_names,
+                "remote_count": workflow_count}

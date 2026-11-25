@@ -41,9 +41,14 @@ FRONTEND_WIDGETS = {
     "Power Puter (rgthree)": ("outputs", "code"),
     "TriggerWord Toggle (LoraManager)": ("toggle_trigger_words", "orinalMessage"),
 }
-# Nodes whose extra saved values only show the last result.
-DISPLAY_WIDGETS = {"ShowText|pysssss"}
+# Nodes whose extra saved values only show the last result (rgthree's comparer saves its A/B slider state).
+DISPLAY_WIDGETS = {"ShowText|pysssss", "Image Comparer (rgthree)"}
 UPLOAD_OPTIONS = ("image_upload", "video_upload", "audio_upload")
+# Canvas-only nodes that ComfyUI's frontend leaves out of the prompt (LiteGraph `isVirtualNode`). rgthree's group and
+# node togglers only change other nodes' saved modes, which the converter already reads.
+VIRTUAL_NODES = {"MarkdownNote", "Note", "Reroute",
+                 "Fast Groups Bypasser (rgthree)", "Fast Groups Muter (rgthree)", "Fast Bypasser (rgthree)",
+                 "Fast Muter (rgthree)", "Fast Actions Button (rgthree)", "Bookmark (rgthree)", "Label (rgthree)"}
 
 
 def _frontend_widgets(kind, fields, leftover):
@@ -260,15 +265,14 @@ def convert_ui(data, object_info):
 
     result = {}
     edges = []
-    skipped = {"MarkdownNote", "Note", "Reroute"}
     for node in nodes:
         kind = node.get("type")
         if node.get("mode", 0) in (2, 4):
             continue
-        if kind in skipped:
-            # Notes must not be used as active graph dependencies.
+        if kind in VIRTUAL_NODES:
+            # Canvas-only nodes must not be used as active graph dependencies.
             if kind != "Reroute" and any(str(node.get("id")) == origin for origin, _, _, _ in links.values()):
-                raise ConversionError("Connected note node requires manual conversion")
+                raise ConversionError(f"Connected canvas-only node {kind!r} requires manual conversion")
             continue
         if kind not in object_info:
             raise ConversionError(f"Unsupported node or unexpanded subgraph: {kind}")

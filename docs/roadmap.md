@@ -10,7 +10,7 @@ The original plan (phases 0–7: converter, parameters, image inputs, outputs/ga
 | --- | --- |
 | Sync | One-way pull of PC workflows (`/userdata`); the catalog shows synced PC workflows only. Reset and Sync now work while the PC is off |
 | UI → API conversion | Subgraphs, bypass/mute, V3 COMBO / dynamic combo / autogrow, LoRA Manager widgets, link repair, cross-OS model paths. Frontend-only widgets are mapped for Power Puter, Power Lora Loader and TriggerWord Toggle; any other unmapped saved value fails the workflow up front |
-| PC workflows (live check 2026-11-17) | 4/6 runnable: SDXL, SD15, MOSS Image to Prompt to Image and RenPy Anime Character Gen. Krea2 fails because its UNET (`finepornV5TurboNSFW_v5_int8_convrot`) is not on the PC. `Untitled 2026-11-14 16-20-09` is empty |
+| PC workflows (live check 2026-11-25) | 2/2 runnable and run end to end through the app: SDXL and MOSS Image to Prompt to Image (Ollama). Two `.json.bak` backups in the folder are ignored by sync |
 | Bundled `workflows/` | 33 files, kept for tests only (not in the catalog); 1/33 converts against the current PC |
 | Run-time controls | Model/UNet, LoRAs (+4 extra), sampler, size/aspect, video length/quality, caption options, all node settings, negative prompt, wallpaper fit |
 | Jobs | Batches 1–8, wildcards and snippets, live progress stream, shared queue with Run next, held jobs while the PC is off, Wake-on-LAN, push notifications |
@@ -26,7 +26,7 @@ Nothing since 0.9.0. Release notes are in the README.
 ## Known issues
 
 - **Krea2 workflow** needs its UNET on the PC, or the workflow re-saved with an installed one.
-- **Bundled workflows** are stale (1/33 runnable) and only used by tests. With the PC on, run `curl -o fixtures/object_info.local.json http://<comfy>:8188/object_info && python tools/check_workflows.py --trim`, then drop or re-save the workflows that fail and commit `fixtures/object_info.bundled.json`. CI then converts every bundled workflow on each push.
+- **Bundled workflows** are stale (0/33 runnable on the ComfyUI install checked 2026-11-25: missing custom nodes and models) and only used by tests. With the PC on, run `curl -o fixtures/object_info.local.json http://<comfy>:8188/object_info && python tools/check_workflows.py --trim`, then drop or re-save the workflows that fail and commit `fixtures/object_info.bundled.json`. CI then converts every bundled workflow on each push.
 - **Recipes UI** has not been checked on a phone; run `tests/browser-mobile.cjs` against it.
 
 ## Next

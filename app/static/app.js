@@ -2538,7 +2538,9 @@ async function runWorkflowSync(reset = false) {
         ...(r.removed ? [`${r.removed} removed`] : []),
         `${r.failed} failed`,
       ];
-      $('sync-status').textContent = `${parts.join(' · ')} (of ${r.remote_count} in ComfyUI)`;
+      const ignored = r.skipped ? ` ${r.skipped} other file${r.skipped > 1 ? 's' : ''} (backups) ignored.` : '';
+      const failedNames = r.failed_names?.length ? ` Could not download: ${r.failed_names.join(', ')}.` : '';
+      $('sync-status').textContent = `${parts.join(' · ')} (of ${r.remote_count} in ComfyUI).${ignored}${failedNames}`;
       showToast(r.status === 'partial' ? 'Sync incomplete — some workflows could not be downloaded' : 'Sync complete');
       await refresh();
     }

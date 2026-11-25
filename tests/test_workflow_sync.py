@@ -124,6 +124,40 @@ class WorkflowLibraryTests(unittest.TestCase):
             self.assertEqual(1, result['removed'])
             self.assertEqual([], list(root.rglob('*.json')))
 
+    def test_backup_files_are_ignored_and_sync_still_prunes(self):
+        workflow = {"nodes": [{"id": 1, "type": "SaveImage"}]}
+        factory = httpx.AsyncClient
+        def handler(request):
+            if request.url.path == "/userdata":
+                return httpx.Response(200, json=["keep.json", "keep.json.bak-20261125", "notes.txt"])
+            if request.url.path.endswith(".json"):
+                return httpx.Response(200, json=workflow)
+            raise AssertionError(f"downloaded a non-workflow file: {request.url.path}")
+        def client(**kwargs):
+            return factory(transport=httpx.MockTransport(handler), **kwargs)
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp, patch("app.workflow_sync.httpx.AsyncClient", client):
+            sync_dir = Path(tmp)
+            (sync_dir / "deleted_on_pc.json").write_bytes(b'{"nodes": []}')
+            result = asyncio.run(WorkflowSync("http://localhost:8188", sync_dir).sync())
+            self.assertEqual("ok", result["status"])
+            self.assertEqual((1, 0, 2, 1, 1), (result["downloaded"], result["failed"], result["skipped"],
+                                               result["removed"], result["remote_count"]))
+            self.assertEqual(["keep.json"], sorted(p.name for p in sync_dir.rglob("*") if p.is_file()))
+
+    def test_failed_downloads_are_named(self):
+        factory = httpx.AsyncClient
+        def handler(request):
+            if request.url.path == "/userdata":
+                return httpx.Response(200, json=["good.json", "sub/broken.json"])
+            if "broken" in request.url.path:
+                return httpx.Response(200, content=b"not json")
+            return httpx.Response(200, json={"nodes": []})
+        def client(**kwargs):
+            return factory(transport=httpx.MockTransport(handler), **kwargs)
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp, patch("app.workflow_sync.httpx.AsyncClient", client):
+            result = asyncio.run(WorkflowSync("http://localhost:8188", Path(tmp)).sync())
+            self.assertEqual(("partial", ["sub/broken.json"]), (result["status"], result["failed_names"]))
+
     def test_partial_sync_does_not_prune_existing_files(self):
         workflow = {"nodes": [{"id": 1, "type": "SaveImage"}]}
         factory = httpx.AsyncClient
